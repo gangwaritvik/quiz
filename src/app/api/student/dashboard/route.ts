@@ -4,6 +4,7 @@ import { prisma } from '@/lib/db';
 import { resultsVisibility, sweepExpiredAttempts } from '@/lib/exam';
 import { statusForScore } from '@/lib/integrity';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
+import { effectiveEndsAt } from '@/lib/time-extension';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,7 +23,14 @@ export const GET = route(async () => {
     prisma.quizAssignment.findMany({
       where: {
         studentId,
-        quiz: { status: 'PUBLISHED', endsAt: { gt: now } },
+        quiz: {
+          status: 'PUBLISHED',
+          // Past the window only while this student is still sitting on extra time.
+          OR: [
+            { endsAt: { gt: now } },
+            { attempts: { some: { studentId, status: 'IN_PROGRESS', expiresAt: { gt: now } } } },
+          ],
+        },
       },
       include: {
         quiz: {
@@ -50,6 +58,7 @@ export const GET = route(async () => {
             releaseResults: true,
             releaseAnswers: true,
             endsAt: true,
+            maxExtensionMinutes: true,
             subject: { select: { name: true } },
           },
         },
@@ -137,7 +146,7 @@ export const GET = route(async () => {
         // The score is withheld unless faculty released it, exactly as on the
         // full results page — the dashboard must not become a side channel.
         released,
-        releasesAt: a.quiz.releaseResults ? a.quiz.endsAt.toISOString() : null,
+        releasesAt: a.quiz.releaseResults ? effectiveEndsAt(a.quiz).toISOString() : null,
         percentage: released ? a.percentage : null,
         awaitingMarking: a.pendingManualCount > 0,
       };

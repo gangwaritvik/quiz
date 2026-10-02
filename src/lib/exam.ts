@@ -15,6 +15,7 @@ import {
   type GradableQuestion,
 } from '@/lib/grading';
 import { recomputeIntegrityScore } from '@/lib/integrity';
+import { computeExpiresAt, effectiveEndsAt } from '@/lib/time-extension';
 
 /**
  * The exam engine. Everything that decides *what a student sees* and *what a
@@ -44,15 +45,16 @@ export const SUBMIT_GRACE_MS = 10_000;
 const TX_OPTIONS = { maxWait: 10_000, timeout: 15_000 };
 
 /**
- * Scores are visible only once faculty released them AND the exam window has
- * closed — otherwise an early finisher could relay answers to students still
- * sitting the paper. Correct answers additionally need `releaseAnswers`.
+ * Scores are visible only once faculty released them AND the exam is over for
+ * everyone — the window has closed and so has the longest time extension
+ * granted on it. Otherwise an early finisher could relay answers to a student
+ * still sitting the paper. Correct answers additionally need `releaseAnswers`.
  */
 export function resultsVisibility(
-  quiz: Pick<Quiz, 'releaseResults' | 'releaseAnswers' | 'endsAt'>,
+  quiz: Pick<Quiz, 'releaseResults' | 'releaseAnswers' | 'endsAt' | 'maxExtensionMinutes'>,
   now = new Date(),
 ) {
-  const windowClosed = now >= quiz.endsAt;
+  const windowClosed = now >= effectiveEndsAt(quiz);
   const results = quiz.releaseResults && windowClosed;
   return { results, answers: results && quiz.releaseAnswers, windowClosed };
 }
@@ -252,16 +254,15 @@ export async function startAttempt(input: StartAttemptInput) {
   if (now < quiz.startsAt) {
     throw new ApiError('QUIZ_UNAVAILABLE', 'This quiz has not started yet.');
   }
-  if (now > quiz.endsAt) {
-    throw new ApiError('QUIZ_UNAVAILABLE', 'The window for this quiz has closed.');
-  }
 
   const existing = await prisma.quizAttempt.findMany({
     where: { quizId: quiz.id, studentId: input.studentId },
     orderBy: { attemptNumber: 'desc' },
   });
 
-  // Resume an in-progress attempt instead of creating a second one.
+  // Resume an in-progress attempt instead of creating a second one. This sits
+  // before the window check: a student on extra time may reconnect after the
+  // window has closed, and their own clock decides whether they can continue.
   const live = existing.find((a) => a.status === 'IN_PROGRESS');
   if (live) {
     if (remainingTime(live.expiresAt).expired) {
@@ -269,6 +270,10 @@ export async function startAttempt(input: StartAttemptInput) {
       throw new ApiError('ATTEMPT_EXPIRED', 'Your previous attempt expired and was submitted.');
     }
     return { attempt: live, resumed: true, quiz };
+  }
+
+  if (now > quiz.endsAt) {
+    throw new ApiError('QUIZ_UNAVAILABLE', 'The window for this quiz has closed.');
   }
 
   if (quiz.singleAttempt && existing.length > 0) {
@@ -279,9 +284,7 @@ export async function startAttempt(input: StartAttemptInput) {
 
   // The exam window is anchored to the server clock at creation time and is
   // never extended by anything the client sends afterwards.
-  const expiresAt = new Date(
-    Math.min(now.getTime() + quiz.durationMinutes * 60_000, quiz.endsAt.getTime()),
-  );
+  const expiresAt = computeExpiresAt(now, quiz, assignment.extraMinutes);
 
   let attempt;
   try {
@@ -294,6 +297,7 @@ export async function startAttempt(input: StartAttemptInput) {
           attemptNumber: (existing[0]?.attemptNumber ?? 0) + 1,
           startedAt: now,
           expiresAt,
+          extraMinutes: assignment.extraMinutes,
           deviceHash: input.deviceHash,
           ipHash: input.ipHash,
           maxScore: paper.reduce((sum, q) => sum + q.marks, 0),

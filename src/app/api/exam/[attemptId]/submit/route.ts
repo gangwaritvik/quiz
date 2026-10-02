@@ -3,6 +3,7 @@ import { audit } from '@/lib/audit';
 import { requireStudent } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { finalizeAttempt, remainingTime, resultsVisibility } from '@/lib/exam';
+import { effectiveEndsAt } from '@/lib/time-extension';
 import { loadLiveAttempt } from '@/lib/exam-guard';
 import { getRequestContext } from '@/lib/session';
 import { submitExamSchema } from '@/lib/validation';
@@ -70,6 +71,6 @@ export const POST = route(async (request: Request, { params }: Params) => {
     // Scores are withheld here regardless; the results endpoint applies the
     // teacher's release policy.
     resultsReleased: resultsVisibility(finalized.quiz).results,
-    releasesAt: finalized.quiz.releaseResults ? finalized.quiz.endsAt.toISOString() : null,
+    releasesAt: finalized.quiz.releaseResults ? effectiveEndsAt(finalized.quiz).toISOString() : null,
   });
 });

@@ -3,6 +3,7 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  Clock,
   Expand,
   EyeOff,
   Loader2,
@@ -33,6 +34,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useExamSecurity } from '@/hooks/use-exam-security';
 import { useExamTimer, type ExamTimer, type TimerSync } from '@/hooks/use-exam-timer';
 import { ApiClientError, apiFetch, apiUpload } from '@/lib/client/api';
+import { extensionAdded, extensionMessage, readExtraMinutes } from '@/lib/timer-sync';
 import { cn, formatDateTime } from '@/lib/utils';
 
 /** What a save sends for one question. Only the fields for its type are set. */
@@ -88,6 +90,13 @@ interface ExamState {
   };
   questions: ExamQuestion[];
   timer: TimerSync;
+  /** Total faculty extension in minutes; absent means none. */
+  extraMinutes?: number;
+}
+
+interface HeartbeatResponse {
+  timer: TimerSync;
+  extraMinutes?: number;
 }
 
 interface SubmitResult {
@@ -163,9 +172,47 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
   const timerRef = React.useRef<ExamTimer | null>(null);
   /** Null unless an auto-submit is running; otherwise its failed tries so far. */
   const [autoSubmitFailures, setAutoSubmitFailures] = React.useState<number | null>(null);
+  /** The latest "faculty added time" notice; `dismissed` hides it but keeps the spoken text. */
+  const [extension, setExtension] = React.useState<{ message: string; dismissed: boolean } | null>(
+    null,
+  );
+  /** Total extension last reported by the server; null until the first state fetch. */
+  const knownExtraRef = React.useRef<number | null>(null);
+  const confirmingExpiry = React.useRef(false);
 
   const security = state?.quiz.security;
   const timerSync = state?.timer ?? null;
+
+  // --- Time extensions -----------------------------------------------------
+  // Called with each state / heartbeat response. The first call only records
+  // the baseline; later increases raise one notice each. The countdown itself
+  // is moved by the timer hook, never from here.
+  const noteExtension = React.useCallback(
+    (response: Parameters<typeof readExtraMinutes>[0], remainingMs: number) => {
+      const { known, added } = extensionAdded(knownExtraRef.current, readExtraMinutes(response));
+      knownExtraRef.current = known;
+      if (added <= 0) return;
+
+      const endsAt = formatDateTime(new Date(Date.now() + remainingMs), {
+        day: undefined,
+        month: undefined,
+        year: undefined,
+      });
+      setExtension({ message: extensionMessage(added, endsAt), dismissed: false });
+    },
+    [],
+  );
+
+  /** One heartbeat: re-anchors the timer, notes any extension, returns the server's remaining ms. */
+  const pingServer = React.useCallback(async () => {
+    const result = await apiFetch<HeartbeatResponse>(`/api/exam/${attemptId}/heartbeat`, {
+      method: 'POST',
+      body: {},
+    });
+    timerRef.current?.sync(result.timer);
+    noteExtension(result, result.timer.remainingMs);
+    return result.timer.remainingMs;
+  }, [attemptId, noteExtension]);
 
   // --- Submission ---------------------------------------------------------
   const submit = React.useCallback(
@@ -251,8 +298,49 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
     [attemptId],
   );
 
-  const timer = useExamTimer(timerSync, () => {
-    if (phase === 'active') void submit(true);
+  /**
+   * The local timer reached zero. Our clock may simply have run ahead of the
+   * server's, or faculty may have just added time, so ask the server before
+   * submitting. The server decides: a larger remaining time re-anchors the
+   * countdown and nothing is submitted; "expired" (ATTEMPT_EXPIRED, or no time
+   * left) proceeds to the auto-submit above, with all of its retry and jitter.
+   * While the server cannot be reached the answer is unknown, so keep asking
+   * at the auto-submit pace rather than submit an attempt that may have been
+   * extended. The server refuses late answers either way.
+   */
+  const confirmThenSubmit = React.useCallback(async () => {
+    if (confirmingExpiry.current) return;
+    confirmingExpiry.current = true;
+    try {
+      for (let failures = 0; ; failures++) {
+        try {
+          const remainingMs = await pingServer();
+          setConnectionLost(false);
+          if (remainingMs > 0) return;
+          break;
+        } catch (caught) {
+          const error = caught instanceof ApiClientError ? caught : null;
+          const unreachable = !error || error.isTransient || error.code === 'RATE_LIMITED';
+          // ATTEMPT_EXPIRED, or a hard failure that submit() will surface.
+          if (!unreachable) break;
+
+          setConnectionLost(true);
+          await sleep(AUTO_SUBMIT_BACKOFF_MS[failures] ?? AUTO_SUBMIT_RETRY_MS);
+          // A heartbeat meanwhile may have extended the timer.
+          if (unmounted.current || !timerRef.current?.expired) return;
+        }
+      }
+    } finally {
+      confirmingExpiry.current = false;
+    }
+    void submit(true);
+  }, [pingServer, submit]);
+
+  const timer = useExamTimer(timerSync, (lastServerRemainingMs) => {
+    if (phase !== 'active') return;
+    // The server's last word was already "no time left": nothing to confirm.
+    if (lastServerRemainingMs !== null && lastServerRemainingMs <= 0) void submit(true);
+    else void confirmThenSubmit();
   });
   timerRef.current = timer;
 
@@ -395,6 +483,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
       setState(result);
       setQuestions(result.questions);
       setPhase('active');
+      noteExtension(result, result.timer.remainingMs);
 
       // Resume where the student left off: first unanswered question. The
       // server decides what "answered" means for each type.
@@ -415,7 +504,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
       setBlockedError(error);
       setPhase('blocked');
     }
-  }, [attemptId, router]);
+  }, [attemptId, router, noteExtension]);
 
   React.useEffect(() => {
     void load();
@@ -434,11 +523,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
 
     const beat = async () => {
       try {
-        const result = await apiFetch<{ timer: TimerSync }>(
-          `/api/exam/${attemptId}/heartbeat`,
-          { method: 'POST', body: {} },
-        );
-        timerRef.current?.sync(result.timer);
+        await pingServer();
         setConnectionLost(false);
       } catch (caught) {
         if (caught instanceof ApiClientError && caught.code === 'ATTEMPT_EXPIRED') {
@@ -462,7 +547,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
 
     const interval = window.setInterval(() => void beat(), HEARTBEAT_MS);
     return () => window.clearInterval(interval);
-  }, [phase, attemptId, submit]);
+  }, [phase, submit, pingServer]);
 
   // --- Answer persistence --------------------------------------------------
   const persistAnswer = React.useCallback(
@@ -789,19 +874,45 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
 
       {/* Nothing on the exam surface animates in or out — banners and gates
           appear at once, so a gate never leaves the paper half-visible. */}
-      {connectionLost ? (
-        <div
-          className="sticky top-16 z-20 border-b border-warning/30 bg-warning-subtle"
-          role="status"
-        >
-          <div className="mx-auto flex max-w-[1440px] items-center gap-2.5 px-4 py-2.5 text-sm text-warning sm:px-6">
-            <WifiOff className="size-4 shrink-0" aria-hidden />
-            <p>
-              Connection interrupted. Your previous answer has been saved — we&apos;ll keep
-              retrying automatically.
-            </p>
-            <Loader2 className="ml-auto size-4 shrink-0 animate-spin" aria-hidden />
-          </div>
+      {/* Spoken once per extension. Always mounted so the region exists before
+          its text changes; polite, so it never interrupts the minute
+          announcements or the student's typing. */}
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {extension?.message ?? ''}
+      </p>
+
+      {connectionLost || (extension && !extension.dismissed) ? (
+        <div className="sticky top-16 z-20">
+          {connectionLost ? (
+            <div className="border-b border-warning/30 bg-warning-subtle" role="status">
+              <div className="mx-auto flex max-w-[1440px] items-center gap-2.5 px-4 py-2.5 text-sm text-warning sm:px-6">
+                <WifiOff className="size-4 shrink-0" aria-hidden />
+                <p>
+                  Connection interrupted. Your previous answer has been saved — we&apos;ll keep
+                  retrying automatically.
+                </p>
+                <Loader2 className="ml-auto size-4 shrink-0 animate-spin" aria-hidden />
+              </div>
+            </div>
+          ) : null}
+
+          {/* Neutral and static: it informs, it does not alarm. */}
+          {extension && !extension.dismissed ? (
+            <div className="border-b border-border bg-muted">
+              <div className="mx-auto flex max-w-[1440px] items-center gap-2.5 px-4 py-1.5 text-sm text-foreground sm:px-6">
+                <Clock className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <p>{extension.message}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto shrink-0 transition-none"
+                  onClick={() => setExtension({ ...extension, dismissed: true })}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

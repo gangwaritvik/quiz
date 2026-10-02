@@ -2,6 +2,7 @@ import { ok, route } from '@/lib/api';
 import { requireStudent } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { resultsVisibility, sweepExpiredAttempts } from '@/lib/exam';
+import { effectiveEndsAt } from '@/lib/time-extension';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
@@ -40,7 +41,7 @@ export const GET = route(async () => {
         durationMinutes: attempt.quiz.durationMinutes,
         // Scores stay hidden until results are released AND the window has closed.
         resultsReleased: released,
-        releasesAt: attempt.quiz.releaseResults ? attempt.quiz.endsAt.toISOString() : null,
+        releasesAt: attempt.quiz.releaseResults ? effectiveEndsAt(attempt.quiz).toISOString() : null,
         score: released ? attempt.score : null,
         maxScore: released ? attempt.maxScore : null,
         percentage: released ? attempt.percentage : null,

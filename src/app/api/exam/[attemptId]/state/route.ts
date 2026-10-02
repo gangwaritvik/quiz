@@ -57,5 +57,8 @@ export const GET = route(async (_request: Request, { params }: Params) => {
       expiresAt: remaining.expiresAt.toISOString(),
       serverNow: remaining.serverNow.toISOString(),
     },
+    // Total faculty-granted extra time, already inside `timer.expiresAt`. The
+    // client uses a rise in this to tell the student their time was extended.
+    extraMinutes: attempt.extraMinutes,
   });
 });

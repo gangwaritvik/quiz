@@ -32,15 +32,15 @@ enum UserStatus {
 }
 
 model User {
-  id           String     @id @default(cuid())
-  email        String     @unique
-  name         String
-  role         Role
-  status       UserStatus @default(ACTIVE)
-  avatarColor  String     @default("indigo")
-  lastLoginAt  DateTime?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id          String     @id @default(cuid())
+  email       String     @unique
+  name        String
+  role        Role
+  status      UserStatus @default(ACTIVE)
+  avatarColor String     @default("indigo")
+  lastLoginAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   student        Student?
   admin          Admin?
@@ -54,15 +54,15 @@ model User {
 }
 
 model Student {
-  id            String   @id @default(cuid())
-  userId        String   @unique
-  rollNumber    String   @unique // e.g. 23CSE041
-  department    String
-  section       String
-  semester      Int      @default(1)
-  enrollmentYear Int     @default(2023)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  rollNumber     String   @unique // e.g. 23CSE041
+  department     String
+  section        String
+  semester       Int      @default(1)
+  enrollmentYear Int      @default(2023)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   attempts    QuizAttempt[]
@@ -80,11 +80,11 @@ model Admin {
   title      String   @default("Faculty")
   createdAt  DateTime @default(now())
 
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  authoredQuizzes Quiz[]           @relation("QuizAuthor")
-  authoredQuestions Question[]     @relation("QuestionAuthor")
-  reviews         IntegrityReview[]
-  gradedAnswers   Answer[]         @relation("AnswerGrader")
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  authoredQuizzes   Quiz[]            @relation("QuizAuthor")
+  authoredQuestions Question[]        @relation("QuestionAuthor")
+  reviews           IntegrityReview[]
+  gradedAnswers     Answer[]          @relation("AnswerGrader")
 
   @@map("admins")
 }
@@ -94,16 +94,16 @@ model Admin {
 // ---------------------------------------------------------------------------
 
 model OtpChallenge {
-  id           String    @id @default(cuid())
-  userId       String
-  codeHash     String // scrypt hash — the plaintext code is never persisted
-  purpose      String    @default("login")
-  attempts     Int       @default(0)
-  maxAttempts  Int       @default(5)
-  consumedAt   DateTime?
-  expiresAt    DateTime
+  id            String    @id @default(cuid())
+  userId        String
+  codeHash      String // scrypt hash — the plaintext code is never persisted
+  purpose       String    @default("login")
+  attempts      Int       @default(0)
+  maxAttempts   Int       @default(5)
+  consumedAt    DateTime?
+  expiresAt     DateTime
   requestIpHash String?
-  createdAt    DateTime  @default(now())
+  createdAt     DateTime  @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -115,19 +115,19 @@ model OtpChallenge {
 /// One row per authenticated browser. `deviceHash` binds the session to a
 /// device fingerprint so a stolen cookie replayed elsewhere is detectable.
 model DeviceSession {
-  id           String    @id @default(cuid())
-  userId       String
-  tokenHash    String    @unique // SHA-256 of the opaque session token
-  deviceHash   String
-  deviceLabel  String    @default("Unknown device")
-  userAgent    String?
-  ipHash       String?
-  trusted      Boolean   @default(false) // "remember this device"
-  revokedAt    DateTime?
+  id            String    @id @default(cuid())
+  userId        String
+  tokenHash     String    @unique // SHA-256 of the opaque session token
+  deviceHash    String
+  deviceLabel   String    @default("Unknown device")
+  userAgent     String?
+  ipHash        String?
+  trusted       Boolean   @default(false) // "remember this device"
+  revokedAt     DateTime?
   revokedReason String?
-  lastSeenAt   DateTime  @default(now())
-  expiresAt    DateTime
-  createdAt    DateTime  @default(now())
+  lastSeenAt    DateTime  @default(now())
+  expiresAt     DateTime
+  createdAt     DateTime  @default(now())
 
   user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   attempts QuizAttempt[]
@@ -199,22 +199,22 @@ model Topic {
 }
 
 model Question {
-  id          String       @id @default(cuid())
+  id            String       @id @default(cuid())
   /// May contain LaTeX between $…$ (inline) or $$…$$ (display). Stored raw and
   /// rendered by KaTeX at display time; never interpolated as HTML.
-  text        String
-  type        QuestionType @default(MCQ_SINGLE)
-  difficulty  Difficulty   @default(MEDIUM)
-  marks       Int          @default(1)
-  negativeMarks Float      @default(0)
-  explanation String?
-  subjectId   String
-  topicId     String?
-  authorId    String?
-  usageCount  Int          @default(0)
-  active      Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  text          String
+  type          QuestionType @default(MCQ_SINGLE)
+  difficulty    Difficulty   @default(MEDIUM)
+  marks         Int          @default(1)
+  negativeMarks Float        @default(0)
+  explanation   String?
+  subjectId     String
+  topicId       String?
+  authorId      String?
+  usageCount    Int          @default(0)
+  active        Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
   // --- ASSERTION_REASON ---------------------------------------------------
   /// The two statements. The standard five-option answer set is generated as
@@ -266,18 +266,18 @@ model Question {
 }
 
 model Option {
-  id         String   @id @default(cuid())
-  questionId String
+  id           String  @id @default(cuid())
+  questionId   String
   /// May contain LaTeX, like Question.text.
-  text       String
-  isCorrect  Boolean  @default(false) // server-side only, never serialised to students
-  position   Int      @default(0)
+  text         String
+  isCorrect    Boolean @default(false) // server-side only, never serialised to students
+  position     Int     @default(0)
   /// Lets a choice be a diagram rather than prose. Optional — an option may
   /// carry text, an image, or both.
   imageAssetId String?
 
-  question   Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  imageAsset MediaAsset? @relation("OptionImage", fields: [imageAssetId], references: [id], onDelete: SetNull)
+  question   Question       @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  imageAsset MediaAsset?    @relation("OptionImage", fields: [imageAssetId], references: [id], onDelete: SetNull)
   answers    Answer[]
   selections AnswerOption[]
 
@@ -329,27 +329,32 @@ model Quiz {
   endsAt   DateTime
 
   // Security policy — every flag is enforced server-side, not just in the UI.
-  randomizeQuestions    Boolean @default(true)
-  randomizeOptions      Boolean @default(true)
-  singleAttempt         Boolean @default(true)
-  requireFullscreen     Boolean @default(true)
-  detectTabSwitch       Boolean @default(true)
-  blockCopyPaste        Boolean @default(true)
-  bindDeviceSession     Boolean @default(true)
-  cameraMonitoring      Boolean @default(false)
-  microphoneMonitoring  Boolean @default(false)
-  maxFullscreenExits    Int     @default(3)
+  randomizeQuestions     Boolean @default(true)
+  randomizeOptions       Boolean @default(true)
+  singleAttempt          Boolean @default(true)
+  requireFullscreen      Boolean @default(true)
+  detectTabSwitch        Boolean @default(true)
+  blockCopyPaste         Boolean @default(true)
+  bindDeviceSession      Boolean @default(true)
+  cameraMonitoring       Boolean @default(false)
+  microphoneMonitoring   Boolean @default(false)
+  maxFullscreenExits     Int     @default(3)
   /// When true students must answer questions in the order they are presented.
   /// They cannot jump ahead or return to a previous question.
   lockQuestionNavigation Boolean @default(false)
   /// Blocks the student from taking the exam if a secondary monitor or extended display is detected.
-  blockMultipleDisplays Boolean @default(false)
+  blockMultipleDisplays  Boolean @default(false)
   /// Requires continuous entire-screen sharing with the proctor.
-  requireScreenShare    Boolean @default(false)
+  requireScreenShare     Boolean @default(false)
 
   // Result release policy
   releaseResults Boolean @default(true)
   releaseAnswers Boolean @default(false)
+
+  /// Largest per-student time extension (minutes) granted on this quiz. Results
+  /// stay hidden until `endsAt` plus this, so nobody sees scores while an
+  /// extended student may still be sitting. Only ever raised, never lowered.
+  maxExtensionMinutes Int @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -383,10 +388,12 @@ model QuizQuestion {
 
 /// Explicit allow-list: a student may only reach a quiz they are assigned to.
 model QuizAssignment {
-  id         String   @id @default(cuid())
-  quizId     String
-  studentId  String
-  assignedAt DateTime @default(now())
+  id           String   @id @default(cuid())
+  quizId       String
+  studentId    String
+  assignedAt   DateTime @default(now())
+  /// Pre-start accommodation: extra minutes added to this student's clock when they begin.
+  extraMinutes Int      @default(0)
 
   quiz    Quiz    @relation(fields: [quizId], references: [id], onDelete: Cascade)
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -418,20 +425,23 @@ model QuizAttempt {
   attemptNumber Int @default(1)
 
   // Authoritative exam clock. `expiresAt` is computed once, server-side.
-  startedAt   DateTime  @default(now())
-  expiresAt   DateTime
-  submittedAt DateTime?
-  lastSeenAt  DateTime  @default(now())
+  startedAt    DateTime  @default(now())
+  expiresAt    DateTime
+  /// Total extra minutes applied to this attempt (pre-start accommodation plus
+  /// any added while it was running). Already included in `expiresAt`.
+  extraMinutes Int       @default(0)
+  submittedAt  DateTime?
+  lastSeenAt   DateTime  @default(now())
 
   deviceHash String?
   ipHash     String?
 
   // Populated at grading time by the server only.
-  score          Float?
-  maxScore       Float?
-  percentage     Float?
-  correctCount   Int?
-  incorrectCount Int?
+  score           Float?
+  maxScore        Float?
+  percentage      Float?
+  correctCount    Int?
+  incorrectCount  Int?
   unansweredCount Int?
 
   /// Answers still awaiting a human marker. While this is above zero the score
@@ -462,13 +472,13 @@ model QuizAttempt {
 /// The frozen, per-attempt question paper: which questions, in which order,
 /// with which option order. Generated server-side at attempt creation.
 model AttemptQuestion {
-  id         String @id @default(cuid())
-  attemptId  String
-  questionId String
-  position   Int
+  id          String   @id @default(cuid())
+  attemptId   String
+  questionId  String
+  position    Int
   /// Option ids in the shuffled order this student sees them.
   optionOrder String[] @default([])
-  marks      Int    @default(1)
+  marks       Int      @default(1)
 
   attempt  QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
   question Question    @relation(fields: [questionId], references: [id], onDelete: Restrict)
@@ -628,16 +638,16 @@ enum EventSeverity {
 }
 
 model ExamEvent {
-  id        String        @id @default(cuid())
-  attemptId String
-  type      ExamEventType
-  severity  EventSeverity @default(INFO)
+  id         String        @id @default(cuid())
+  attemptId  String
+  type       ExamEventType
+  severity   EventSeverity @default(INFO)
   /// Server-assigned timestamp. A client-supplied time is stored separately
   /// in `metadata.clientTs` for forensics but never used for scoring.
-  occurredAt DateTime     @default(now())
+  occurredAt DateTime      @default(now())
   durationMs Int?
   metadata   Json?
-  createdAt  DateTime     @default(now())
+  createdAt  DateTime      @default(now())
 
   attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
 
@@ -653,15 +663,15 @@ enum IntegrityStatus {
 }
 
 model IntegrityScore {
-  id        String          @id @default(cuid())
-  attemptId String          @unique
-  score     Int             @default(100)
-  status    IntegrityStatus @default(NORMAL)
+  id         String          @id @default(cuid())
+  attemptId  String          @unique
+  score      Int             @default(100)
+  status     IntegrityStatus @default(NORMAL)
   /// Per-signal breakdown, e.g. { "FULLSCREEN_EXIT": { count: 1, penalty: 6 } }
-  breakdown Json?
-  reviewed  Boolean         @default(false)
-  computedAt DateTime       @default(now())
-  updatedAt DateTime        @updatedAt
+  breakdown  Json?
+  reviewed   Boolean         @default(false)
+  computedAt DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
 
   attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
 

@@ -165,6 +165,7 @@ A successful login creates a database-backed `DeviceSession`. The access JWT is 
 5. Every answer save, heartbeat, event, and submit is authorized against that attempt and student.
 6. The server deadline is stored as `expiresAt`; late writes are rejected and expired attempts are finalized.
 7. Automatic answers are graded immediately. descriptive and image answers remain provisional until faculty grading.
+8. Time extensions (`src/lib/time-extension.ts`): faculty can set extra minutes for a student before they start (quiz detail > Extra time, `QuizAssignment.extraMinutes`) or add time to a running attempt (Live exams > Add time, `POST /api/admin/attempts/:id/extend`). Both move only the server deadline: `expiresAt = min(start + duration + extra, endsAt + extra)`. Caps are 120 minutes per grant and 180 per attempt. `Quiz.maxExtensionMinutes` only ever rises, and scores stay hidden until `endsAt + maxExtensionMinutes`.
 
 ### Results and integrity
 

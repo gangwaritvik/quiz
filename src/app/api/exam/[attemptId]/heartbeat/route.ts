@@ -52,6 +52,7 @@ export const POST = route(async (request: Request, { params }: Params) => {
       expiresAt: remaining.expiresAt.toISOString(),
       serverNow: new Date().toISOString(),
     },
+    extraMinutes: attempt.extraMinutes,
     integrity: integrity ?? { score: 100, status: 'NORMAL' },
   });
 });

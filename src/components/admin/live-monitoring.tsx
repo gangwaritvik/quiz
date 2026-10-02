@@ -12,6 +12,7 @@ import Link from "next/link";
 import * as React from "react";
 import { toast } from "sonner";
 
+import { AddTimeDialog } from "@/components/admin/add-time-dialog";
 import { ErrorState } from "@/components/shared/error-state";
 import {
   IntegrityBadge,
@@ -28,6 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Progress } from "@/components/ui/progress";
@@ -42,6 +44,7 @@ import { SkeletonRows } from "@/components/ui/skeleton";
 import { EVENT_LABELS_CLIENT } from "@/lib/event-labels";
 import { useApi } from "@/hooks/use-api";
 import { ApiClientError, apiFetch } from "@/lib/client/api";
+import { extraBadge } from "@/lib/extension-ui";
 import { cn, formatDuration } from "@/lib/utils";
 
 interface LiveStudent {
@@ -55,6 +58,10 @@ interface LiveStudent {
   answered: number;
   totalQuestions: number;
   remainingMs: number;
+  /** When the attempt ends, including any extra time. */
+  expiresAt: string;
+  /** Minutes faculty have added to this attempt; 0 for none. */
+  extraMinutes: number;
   startedAt: string;
   lastSeenAt: string;
   connection: "STABLE" | "UNSTABLE" | "OFFLINE";
@@ -106,6 +113,11 @@ export function LiveMonitoring() {
   const students = data?.students ?? [];
   const [releasing, setReleasing] = React.useState<LiveStudent | null>(null);
   const [releaseBusy, setReleaseBusy] = React.useState(false);
+  const [addingTime, setAddingTime] = React.useState<LiveStudent | null>(null);
+  // The list refreshes while the dialog is open; read the newest end time from it.
+  const addTimeTarget = addingTime
+    ? (students.find((row) => row.attemptId === addingTime.attemptId) ?? addingTime)
+    : null;
 
   const releaseDevice = async (student: LiveStudent) => {
     setReleaseBusy(true);
@@ -262,6 +274,7 @@ export function LiveMonitoring() {
               <LiveStudentRow
                 key={student.attemptId}
                 student={student}
+                onAddTime={() => setAddingTime(student)}
                 onLetBackIn={() => setReleasing(student)}
               />
             ))}
@@ -300,6 +313,14 @@ export function LiveMonitoring() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AddTimeDialog
+        target={addTimeTarget}
+        onOpenChange={(open) => {
+          if (!open) setAddingTime(null);
+        }}
+        onChanged={() => void refetch()}
+      />
     </PageShell>
   );
 }
@@ -310,9 +331,11 @@ export function LiveMonitoring() {
  */
 function LiveStudentRow({
   student,
+  onAddTime,
   onLetBackIn,
 }: {
   student: LiveStudent;
+  onAddTime: () => void;
   onLetBackIn: () => void;
 }) {
   const connection = CONNECTION_LABEL[student.connection];
@@ -326,7 +349,17 @@ function LiveStudentRow({
   return (
     <li className={cn("grid gap-3 px-5 py-4 sm:grid-cols-2", ROW_GRID)}>
       <div className="min-w-0 sm:col-span-2 lg:col-span-1">
-        <p className="truncate font-medium text-foreground">{student.name}</p>
+        <div className="flex min-w-0 items-center gap-2">
+          <p className="truncate font-medium text-foreground">{student.name}</p>
+          {student.extraMinutes > 0 ? (
+            <Badge variant="muted" className="tabular shrink-0">
+              <span aria-hidden>{extraBadge(student.extraMinutes)}</span>
+              <span className="sr-only">
+                {student.extraMinutes} extra minutes granted
+              </span>
+            </Badge>
+          ) : null}
+        </div>
         <p className="truncate text-xs text-muted-foreground">
           <span className="font-mono">{student.rollNumber}</span> · Section{" "}
           {student.section} · {student.quizTitle}
@@ -394,8 +427,8 @@ function LiveStudentRow({
         )}
       </div>
 
-      <div className="flex flex-col gap-2 sm:col-span-2 lg:col-span-1 lg:w-[8.5rem]">
-        <Button asChild variant="outline" className="w-full">
+      <div className="flex flex-col gap-2 sm:col-span-2 sm:flex-row sm:flex-wrap lg:col-span-1 lg:w-[8.5rem] lg:flex-col">
+        <Button asChild variant="outline" className="w-full sm:w-auto lg:w-full">
           <Link
             href={`/admin/integrity/${student.attemptId}`}
             aria-label={`View timeline for ${student.name}`}
@@ -405,7 +438,15 @@ function LiveStudentRow({
         </Button>
         <Button
           variant="secondary"
-          className="w-full"
+          className="w-full sm:w-auto lg:w-full"
+          onClick={onAddTime}
+          aria-label={`Add time for ${student.name}`}
+        >
+          Add time
+        </Button>
+        <Button
+          variant="secondary"
+          className="w-full sm:w-auto lg:w-full"
           onClick={onLetBackIn}
           aria-label={`Let ${student.name} back in`}
         >

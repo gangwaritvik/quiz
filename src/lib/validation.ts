@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { MAX_EXTENSION_MINUTES } from '@/lib/time-extension';
+
 /**
  * Every request body crossing the API boundary is parsed by one of these
  * schemas. Anything not described here is dropped rather than trusted.
@@ -192,6 +194,17 @@ export const updateQuizSchema = z
 
 export const assignQuizSchema = z.object({
   studentIds: z.array(cuid).max(2000),
+});
+
+/** Live grant: add time to one running attempt. */
+export const extendAttemptSchema = z.object({
+  minutes: z.number().int().min(1).max(MAX_EXTENSION_MINUTES),
+});
+
+/** Pre-start accommodation for one assigned student; 0 removes it. */
+export const setExtensionSchema = z.object({
+  studentId: cuid,
+  minutes: z.number().int().min(0).max(MAX_EXTENSION_MINUTES),
 });
 
 // ---------------------------------------------------------------------------

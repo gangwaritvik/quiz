@@ -28,6 +28,8 @@ export type AuditAction =
   | 'admin.device_reset'
   | 'admin.integrity_reviewed'
   | 'admin.assignment_updated'
+  /** Faculty added time to a running attempt, or set a student's extra time before they began. */
+  | 'admin.time_extended'
   | 'admin.media_uploaded'
   /** Manual marking changes a student's score after the fact, so it is logged. */
   | 'admin.answer_graded';

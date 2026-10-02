@@ -22,6 +22,7 @@ import Link from 'next/link';
 import * as React from 'react';
 import { toast } from 'sonner';
 
+import { ExtraTimePanel } from '@/components/admin/extra-time-panel';
 import {
   InstantQuestionBuilder,
   blankQuestion,
@@ -244,7 +245,12 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
                 </span>
               ) : null}
             </TabsTrigger>
+            <TabsTrigger value="extra-time">Extra time</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="extra-time">
+            <ExtraTimePanel quizId={quiz.id} durationMinutes={quiz.durationMinutes} />
+          </TabsContent>
 
           <TabsContent value="questions">
             <QuestionsTab

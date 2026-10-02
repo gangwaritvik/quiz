@@ -62,7 +62,7 @@ const URGENCY: Record<QuizState, number> = {
 function nextStep(quizzes: StudentQuizSummary[]) {
   const inProgress = quizzes.filter((quiz) => quiz.state === 'IN_PROGRESS').length;
   if (inProgress > 0) {
-    return `You have ${inProgress === 1 ? 'an exam' : `${inProgress} exams`} in progress. Resume before the window closes.`;
+    return `You have ${inProgress === 1 ? 'an exam' : `${inProgress} exams`} in progress. Resume now; your timer is still running.`;
   }
   const open = quizzes.filter((quiz) => quiz.state === 'AVAILABLE').length;
   if (open > 0) {

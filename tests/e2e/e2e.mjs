@@ -219,6 +219,88 @@ log(`     info     (g) statuses ${subs.map((s) => s.data?.status).join(',')}`);
 const evs = await prisma.examEvent.groupBy({ by: ['type'], where: { attemptId: a3, type: { in: ['ATTEMPT_SUBMITTED', 'AUTO_SUBMITTED'] } }, _count: { _all: true } });
 check('(g) exactly one ATTEMPT_SUBMITTED', evs.length === 1 && evs[0]._count._all === 1 && evs[0].type === 'ATTEMPT_SUBMITTED', JSON.stringify(evs));
 
+// ---------------- (i) per-student time extensions ----------------
+const quiz3 = await mkQuiz('E2E extend', ['23CSE004', '23CSE005', '23CSE006', '23CSE007']);
+const ext = `/api/admin/quizzes/${quiz3}/extensions`;
+await fac2('(i) non-owner reads extensions', 'GET', ext, undefined, { expect: [403] });
+await fac2('(i) non-owner sets extension', 'PUT', ext, { studentId: sid('23CSE004'), minutes: 15 }, { expect: [403] });
+const ex0 = await fac('(i) list extensions', 'GET', ext, undefined, { expect: [200] });
+check('(i) four assigned, none extended or started', ex0.data?.students?.length === 4 && ex0.data.students.every((s) => s.extraMinutes === 0 && s.started === false), JSON.stringify(ex0.data));
+await fac('(i) set 15 min for 23CSE004', 'PUT', ext, { studentId: sid('23CSE004'), minutes: 15 }, { expect: [200] });
+await fac('(i) 121 min refused', 'PUT', ext, { studentId: sid('23CSE004'), minutes: 121 }, { expect: [422] });
+await fac('(i) unassigned student refused', 'PUT', ext, { studentId: sid('23CSE008'), minutes: 10 }, { expect: [404] });
+
+const s4 = client('stu4', 'e2e-stu4-device');
+const s5 = client('stu5', 'e2e-stu5-device');
+const s6 = client('stu6', 'e2e-stu6-device');
+const s7 = client('stu7', 'e2e-stu7-device');
+for (const [c, roll] of [[s4, '23CSE004'], [s5, '23CSE005'], [s6, '23CSE006'], [s7, '23CSE007']]) await login(c, roll);
+await s4('(i) student cannot read extensions', 'GET', ext, undefined, abuse);
+await s4('(i) student cannot set extensions', 'PUT', ext, { studentId: sid('23CSE004'), minutes: 90 }, abuse);
+
+const brief4 = await s4('(i) briefing carries the extra time', 'GET', `/api/student/quizzes/${quiz3}`, undefined, { expect: [200] });
+check('(i) briefing extraMinutes is 15', brief4.data?.extraMinutes === 15, String(brief4.data?.extraMinutes));
+const st4 = await s4('(i) start with pre-agreed extra time', 'POST', '/api/exam/start', { quizId: quiz3, acknowledgedRules: true }, { expect: [200] });
+const mins4 = (Date.parse(st4.data.expiresAt) - Date.parse(st4.data.serverNow)) / 60_000;
+check('(i) clock is 30 + 15 = 45 minutes', mins4 > 44.5 && mins4 <= 45.01, `min=${mins4.toFixed(2)}`);
+const stt4 = (await s4('(i) state shows extraMinutes', 'GET', `/api/exam/${st4.data.attemptId}/state`, undefined, { expect: [200] })).data;
+check('(i) state extraMinutes is 15', stt4?.extraMinutes === 15);
+await fac('(i) setting extra time after the start is refused', 'PUT', ext, { studentId: sid('23CSE004'), minutes: 20 }, { expect: [409] });
+const ex1 = await fac('(i) list marks the student as started', 'GET', ext, undefined, { expect: [200] });
+check('(i) 23CSE004 shown as started with 15', ex1.data?.students.find((s) => s.rollNumber === '23CSE004')?.started === true && ex1.data.students.find((s) => s.rollNumber === '23CSE004').extraMinutes === 15);
+
+// live grants
+const st5 = await s5('(i) start (no pre-agreed time)', 'POST', '/api/exam/start', { quizId: quiz3, acknowledgedRules: true }, { expect: [200] });
+const a5 = st5.data.attemptId;
+const exp5 = Date.parse(st5.data.expiresAt);
+const extendUrl = (id) => `/api/admin/attempts/${id}/extend`;
+await s5('(i) student cannot extend', 'POST', extendUrl(a5), { minutes: 10 }, abuse);
+await fac2('(i) non-owner cannot extend', 'POST', extendUrl(a5), { minutes: 10 }, { expect: [403] });
+await fac('(i) add 0 refused', 'POST', extendUrl(a5), { minutes: 0 }, { expect: [422] });
+await fac('(i) add 121 refused', 'POST', extendUrl(a5), { minutes: 121 }, { expect: [422] });
+const e1 = await fac('(i) add 10 minutes', 'POST', extendUrl(a5), { minutes: 10 }, { expect: [200] });
+check('(i) deadline moved by exactly 10 min', Date.parse(e1.data?.expiresAt) - exp5 === 10 * 60_000 && e1.data.extraMinutes === 10 && e1.data.remainingMs > 0, JSON.stringify(e1.data));
+const hb5 = await s5('(i) heartbeat carries the new deadline', 'POST', `/api/exam/${a5}/heartbeat`, {}, { expect: [200] });
+check('(i) heartbeat extraMinutes and expiresAt agree', hb5.data?.extraMinutes === 10 && hb5.data.timer.expiresAt === e1.data.expiresAt, JSON.stringify(hb5.data?.timer));
+const live5 = await fac('(i) live feed', 'GET', '/api/admin/live', undefined, { expect: [200] });
+const row5 = live5.data?.students.find((s) => s.attemptId === a5);
+check('(i) live row has extraMinutes and expiresAt', row5?.extraMinutes === 10 && row5.expiresAt === e1.data.expiresAt, JSON.stringify(row5));
+await fac('(i) add 120 more (130 total)', 'POST', extendUrl(a5), { minutes: 120 }, { expect: [200] });
+await fac('(i) another 120 would pass the 180 cap', 'POST', extendUrl(a5), { minutes: 120 }, { expect: [422] });
+await fac('(i) add 50 more (180 total)', 'POST', extendUrl(a5), { minutes: 50 }, { expect: [200] });
+await fac('(i) one more minute is refused', 'POST', extendUrl(a5), { minutes: 1 }, { expect: [422] });
+
+// concurrent grants never overshoot the cap and are each applied once
+const st6 = await s6('(i) start for the concurrency test', 'POST', '/api/exam/start', { quizId: quiz3, acknowledgedRules: true }, { expect: [200] });
+const a6 = st6.data.attemptId;
+const burst = await Promise.all([1, 2, 3, 4, 5].map((i) => fac(`(i) concurrent add #${i}`, 'POST', extendUrl(a6), { minutes: 60 })));
+const granted = burst.filter((r) => r.status === 200).length;
+const row6 = await prisma.quizAttempt.findUnique({ where: { id: a6 }, select: { extraMinutes: true, expiresAt: true, startedAt: true } });
+check('(i) concurrent grants are applied once each, within the cap', granted >= 1 && row6.extraMinutes === granted * 60 && row6.extraMinutes <= 180, `granted=${granted} extra=${row6.extraMinutes} statuses=${burst.map((r) => r.status)}`);
+check('(i) deadline equals start + 30 + granted', row6.expiresAt.getTime() === row6.startedAt.getTime() + (30 + row6.extraMinutes) * 60_000);
+const q3 = await prisma.quiz.findUnique({ where: { id: quiz3 }, select: { maxExtensionMinutes: true } });
+check('(i) quiz release horizon is the largest extension (180)', q3.maxExtensionMinutes === 180, String(q3.maxExtensionMinutes));
+const audits = await prisma.auditLog.count({ where: { action: 'admin.time_extended' } });
+check('(i) every grant is audited', audits === 1 + 3 + granted, `audits=${audits} expected=${1 + 3 + granted}`);
+
+// the window closes while 23CSE005 is still sitting on extra time
+const closeEnd3 = new Date(Date.now() - 1000).toISOString();
+// The quiz PATCH refuses edits while students are sitting, so let the clock run out in the DB.
+await prisma.quiz.update({ where: { id: quiz3 }, data: { startsAt: new Date(Date.now() - 3600_000), endsAt: new Date(closeEnd3) } });
+const brief5 = await s5('(i) briefing after close, attempt open', 'GET', `/api/student/quizzes/${quiz3}`, undefined, { expect: [200] });
+check('(i) can resume past the window', brief5.data?.canStart === true && brief5.data.activeAttemptId === a5, JSON.stringify({ canStart: brief5.data?.canStart, active: brief5.data?.activeAttemptId }));
+const res5 = await s5('(i) resume after the window closed', 'POST', '/api/exam/start', { quizId: quiz3, acknowledgedRules: true }, { expect: [200] });
+check('(i) resumed the same attempt', res5.data?.resumed === true && res5.data.attemptId === a5);
+await s5('(i) state still served past the window', 'GET', `/api/exam/${a5}/state`, undefined, { expect: [200] });
+const dash5 = await s5('(i) dashboard keeps the open quiz', 'GET', '/api/student/dashboard', undefined, { expect: [200] });
+check('(i) dashboard lists it as in progress', dash5.data?.upcoming.some((q) => q.id === quiz3 && q.state === 'IN_PROGRESS'));
+await s7('(i) a student who never started cannot start after close', 'POST', '/api/exam/start', { quizId: quiz3, acknowledgedRules: true }, abuse);
+await fac('(i) extra time cannot be set on a closed quiz', 'PUT', ext, { studentId: sid('23CSE007'), minutes: 10 }, { expect: [409] });
+await s5('(i) submit', 'POST', `/api/exam/${a5}/submit`, { confirm: true }, { expect: [200] });
+const r5 = await s5('(i) result held while an extension may still run', 'GET', `/api/results/${a5}`, undefined, { expect: [200] });
+check('(i) released:false until end + 180 min', r5.data?.released === false && Math.abs(Date.parse(r5.data.releasesAt) - (Date.parse(closeEnd3) + 180 * 60_000)) < 1000, JSON.stringify({ released: r5.data?.released, releasesAt: r5.data?.releasesAt }));
+await fac('(i) add time after submit refused', 'POST', extendUrl(a5), { minutes: 5 }, { expect: [409] });
+
 // (e) events after the 60 s post-submit window
 const wait = Math.max(0, submittedAt + 120_000 - Date.now());
 log(`     info     waiting ${Math.round(wait / 1000)} s for post-submit window`);
@@ -235,7 +317,7 @@ check('(h) result candidate is the signed-in student', cand?.name === me.name &&
 const others = studentList.filter((s) => s.rollNumber !== me.rollNumber);
 check('(h) result carries no other student name/roll/email', !others.some((s) => r2.text.includes(`"${s.rollNumber}"`) || r2.text.includes(s.name) || r2.text.includes(s.email)), `others=${others.length}`);
 
-ids = { quizId, attemptId, quiz2, a2, a3 };
+ids = { quizId, attemptId, quiz2, a2, a3, quiz3, a5, a6 };
 } catch (e) {
   log(`FAIL crash    ${e.stack ?? e}`);
 } finally {

@@ -2,6 +2,7 @@ import { ApiError, ok, route } from '@/lib/api';
 import { requireStudent } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { resultsVisibility } from '@/lib/exam';
+import { effectiveEndsAt } from '@/lib/time-extension';
 import { MANUAL_TYPES } from '@/lib/grading';
 
 export const runtime = 'nodejs';
@@ -42,7 +43,7 @@ export const GET = route(async (_request: Request, { params }: Params) => {
   if (!visibility.results) {
     // Released results still wait for the window to close, so nobody can
     // relay a score or answer key to students who are still sitting the paper.
-    const releasesAt = attempt.quiz.releaseResults ? attempt.quiz.endsAt.toISOString() : null;
+    const releasesAt = attempt.quiz.releaseResults ? effectiveEndsAt(attempt.quiz).toISOString() : null;
     return ok({
       released: false,
       releasesAt,
@@ -139,7 +140,7 @@ export const GET = route(async (_request: Request, { params }: Params) => {
     candidate: { name: session.name, rollNumber: session.rollNumber ?? null },
     // Released implies the window has closed; this is the date it did, so the
     // page can say when results became available.
-    releasesAt: attempt.quiz.endsAt.toISOString(),
+    releasesAt: effectiveEndsAt(attempt.quiz).toISOString(),
     attempt: {
       id: attempt.id,
       status: attempt.status,

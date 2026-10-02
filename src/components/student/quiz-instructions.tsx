@@ -38,6 +38,7 @@ import { type CheckState, useSecurityChecks } from '@/hooks/use-security-checks'
 import { useApi } from '@/hooks/use-api';
 import { ApiClientError, apiFetch } from '@/lib/client/api';
 import { type ExamRule, type ExamRuleKey, buildExamRules } from '@/lib/quiz-rules';
+import { readExtraMinutes } from '@/lib/timer-sync';
 import { cn, formatDateTime, formatRelativeDay, pluralize } from '@/lib/utils';
 
 interface QuizBriefing {
@@ -63,7 +64,10 @@ interface QuizBriefing {
       blockMultipleDisplays?: boolean;
       requireScreenShare?: boolean;
     };
+    extraMinutes?: number;
   };
+  /** This student's agreed extra time in minutes; absent means none. */
+  extraMinutes?: number;
   canStart: boolean;
   blockedReason: string | null;
   activeAttemptId: string | null;
@@ -168,6 +172,7 @@ export function QuizInstructions({ quizId }: { quizId: string }) {
   }
 
   const { quiz } = data;
+  const extraMinutes = readExtraMinutes({ extraMinutes: data.extraMinutes ?? quiz.extraMinutes });
   const canProceed =
     data.canStart && checks.ready && (!needsMedia || mediaStarted) && acknowledged && !starting;
 
@@ -248,6 +253,12 @@ export function QuizInstructions({ quizId }: { quizId: string }) {
             )}
           </Fact>
         </dl>
+        {!readOnly && extraMinutes > 0 ? (
+          <p className="mt-4 text-sm text-foreground">
+            You have {pluralize(extraMinutes, 'extra minute')} (agreed with your faculty). Your
+            timer will be {pluralize(quiz.durationMinutes + extraMinutes, 'minute')}.
+          </p>
+        ) : null}
       </section>
 
       {readOnly ? (

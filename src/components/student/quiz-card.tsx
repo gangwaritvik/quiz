@@ -113,7 +113,7 @@ export function QuizCard({ quiz, index = 0 }: { quiz: StudentQuizSummary; index?
           <dd className={cn('tabular truncate', opensMatters ? 'font-medium text-foreground' : 'text-muted-foreground')}>
             {formatRelativeDay(quiz.startsAt)}
           </dd>
-          <dt className="text-muted-foreground">{quiz.state === 'CLOSED' ? 'Closed' : 'Closes'}</dt>
+          <dt className="text-muted-foreground">{quiz.state === 'CLOSED' || new Date(quiz.endsAt) < new Date() ? 'Closed' : 'Closes'}</dt>
           <dd className={cn('tabular truncate', closesMatters ? 'font-medium text-foreground' : 'text-muted-foreground')}>
             {formatRelativeDay(quiz.endsAt)}
           </dd>

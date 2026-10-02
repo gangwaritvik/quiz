@@ -26,7 +26,7 @@ export const GET = route(async (_request: Request, { params }: Params) => {
           subject: { select: { name: true, code: true } },
           attempts: {
             where: { studentId: session.studentId },
-            select: { id: true, status: true, attemptNumber: true },
+            select: { id: true, status: true, attemptNumber: true, expiresAt: true },
             orderBy: { attemptNumber: 'desc' },
           },
         },
@@ -46,12 +46,16 @@ export const GET = route(async (_request: Request, { params }: Params) => {
     (a) => a.status === 'SUBMITTED' || a.status === 'AUTO_SUBMITTED',
   );
 
+  // A student on extra time can still be sitting after the window closes, and
+  // must be able to get back in; their own clock decides, as on the server.
+  const canResume = latest?.status === 'IN_PROGRESS' && latest.expiresAt > now;
+
   const blockedReason =
     quiz.status !== 'PUBLISHED'
       ? 'This quiz is not currently open.'
       : now < quiz.startsAt
         ? 'This quiz has not started yet.'
-        : now > quiz.endsAt
+        : now > quiz.endsAt && !canResume
           ? 'The window for this quiz has closed.'
           : finished && quiz.singleAttempt
             ? 'You have already completed this quiz. Only one attempt is permitted.'
@@ -82,6 +86,7 @@ export const GET = route(async (_request: Request, { params }: Params) => {
         requireScreenShare: quiz.requireScreenShare,
       },
     },
+    extraMinutes: assignment.extraMinutes,
     canStart: blockedReason === null,
     blockedReason,
     activeAttemptId: latest?.status === 'IN_PROGRESS' ? latest.id : null,

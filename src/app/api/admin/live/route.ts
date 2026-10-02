@@ -80,6 +80,8 @@ export const GET = route(async (request: Request) => {
       answered: answeredByAttempt.get(attempt.id) ?? 0,
       totalQuestions: attempt.quiz.questionCount,
       remainingMs: remainingTime(attempt.expiresAt).remainingMs,
+      expiresAt: attempt.expiresAt.toISOString(),
+      extraMinutes: attempt.extraMinutes,
       startedAt: attempt.startedAt.toISOString(),
       lastSeenAt: attempt.lastSeenAt.toISOString(),
       connection,
@@ -89,8 +91,15 @@ export const GET = route(async (request: Request) => {
     };
   });
 
+  // A quiz stays on the board while anyone is still sitting it on extra time.
+  const sittingQuizIds = [...new Set(attempts.map((a) => a.quizId))];
   const liveQuizzes = await prisma.quiz.findMany({
-    where: { ...ownQuizWhere(session.adminId), status: 'PUBLISHED', startsAt: { lte: new Date() }, endsAt: { gte: new Date() } },
+    where: {
+      ...ownQuizWhere(session.adminId),
+      status: 'PUBLISHED',
+      startsAt: { lte: new Date() },
+      OR: [{ endsAt: { gte: new Date() } }, { id: { in: sittingQuizIds } }],
+    },
     select: {
       id: true,
       title: true,
