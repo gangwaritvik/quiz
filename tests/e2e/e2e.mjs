@@ -76,12 +76,12 @@ const paper = [
   { text: 'Explain the three-way handshake.', type: 'LONG_ANSWER', marks: 5, maxWords: 200, modelAnswer: 'SYN, SYN-ACK, ACK' },
   { text: 'Photograph your diagram of a TCP header.', type: 'IMAGE_ANSWER', marks: 2, maxAttachments: 2 },
 ];
-const mkQuiz = async (title, students) => {
+const mkQuiz = async (title, students, extra = {}) => {
   const now = Date.now();
   const r = await fac(`create quiz "${title}"`, 'POST', '/api/admin/quizzes', {
     title: `${title} ${new Date(now).toISOString()}`, subjectId, durationMinutes: 30, sourceMode: 'FIXED',
     startsAt: new Date(now - 60_000).toISOString(), endsAt: new Date(now + 3 * 3600_000).toISOString(),
-    status: 'DRAFT', security: { releaseResults: true, releaseAnswers: false }, questions: paper,
+    status: 'DRAFT', security: { releaseResults: true, releaseAnswers: false }, questions: paper, ...extra,
   }, { expect: [200] });
   const quizId = r.data.quizId;
   await fac('publish', 'PATCH', `/api/admin/quizzes/${quizId}`, { status: 'PUBLISHED' }, { expect: [200] });
@@ -374,6 +374,28 @@ check('(i) released:false until end + 180 min', r5.data?.released === false && M
 await fac('(i) add time after submit refused', 'POST', extendUrl(a5), { minutes: 5 }, { expect: [409] });
 const q5 = (await prisma.attemptQuestion.findFirst({ where: { attemptId: a5 }, select: { id: true } })).id;
 await s5('(j) flag after submit refused', 'POST', `/api/exam/${a5}/flag`, { attemptQuestionId: q5, markedForReview: true }, abuse);
+
+// ---------------- (l) quiz-wide marking scheme ----------------
+const quiz4 = await mkQuiz('E2E marking', ['23CSE009'], { negativeMarkingPct: 25 });
+const q4detail = (await fac('(l) quiz detail carries the scheme', 'GET', `/api/admin/quizzes/${quiz4}`, undefined, { expect: [200] })).data.quiz;
+check('(l) marking is returned', q4detail.marking?.negativeMarkingPct === 25 && q4detail.marking.multiPartialCredit === null, JSON.stringify(q4detail.marking));
+await fac('(l) 101% refused', 'PATCH', `/api/admin/quizzes/${quiz4}`, { negativeMarkingPct: 101 }, { expect: [422] });
+const s9 = client('stu9', 'e2e-stu9-device');
+await login(s9, '23CSE009');
+const st9 = await s9('(l) start', 'POST', '/api/exam/start', { quizId: quiz4, acknowledgedRules: true }, { expect: [200] });
+const a9 = st9.data.attemptId;
+const p9 = (await s9('(l) state', 'GET', `/api/exam/${a9}/state`, undefined, { expect: [200] })).data.questions;
+const mcq9 = p9.find((q) => q.type === 'MCQ_SINGLE');
+const wrong9 = mcq9.options.find((o) => !o.text.startsWith('Transmission')).id;
+await s9('(l) wrong MCQ answer (2 marks)', 'POST', `/api/exam/${a9}/answer`, { attemptQuestionId: mcq9.attemptQuestionId, selectedOptionId: wrong9 }, { expect: [200] });
+await s9('(l) right short answer (1 mark)', 'POST', `/api/exam/${a9}/answer`, { attemptQuestionId: p9.find((q) => q.type === 'SHORT_ANSWER').attemptQuestionId, textResponse: '80' }, { expect: [200] });
+await s9('(l) submit', 'POST', `/api/exam/${a9}/submit`, { confirm: true }, { expect: [200] });
+const scored9 = await prisma.quizAttempt.findUnique({ where: { id: a9 }, select: { score: true } });
+check('(l) a wrong 2-mark answer loses 25% (0.5): 1 - 0.5 = 0.5', scored9.score === 0.5, String(scored9.score));
+await fac('(l) change the scheme after the exam', 'PATCH', `/api/admin/quizzes/${quiz4}`, { negativeMarkingPct: 50, multiPartialCredit: false }, { expect: [200] });
+const dup = await fac('(l) duplicate copies the scheme', 'POST', `/api/admin/quizzes/${quiz4}/duplicate`, {}, { expect: [200] });
+const copy = await prisma.quiz.findFirst({ where: { title: { contains: '(copy)' }, negativeMarkingPct: 50, multiPartialCredit: false } });
+check('(l) the copy has the scheme', Boolean(copy), JSON.stringify(dup.data));
 
 // (e) events after the 60 s post-submit window
 const wait = Math.max(0, submittedAt + 120_000 - Date.now());

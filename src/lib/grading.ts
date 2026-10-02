@@ -147,6 +147,38 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/** A deduction as a score: zero stays +0, never -0. */
+function penalty(negativeMarks: number): number {
+  return negativeMarks === 0 ? 0 : -negativeMarks;
+}
+
+/** A quiz-wide marking scheme; `null` leaves each question's own setting alone. */
+export interface QuizMarking {
+  /** Percent of a question's marks lost on a wrong answer (25 = lose a quarter). */
+  negativeMarkingPct: number | null;
+  /** Whether multi-select questions give credit for a correct subset. */
+  multiPartialCredit: boolean | null;
+}
+
+/**
+ * The negative marks and partial-credit setting a question is graded with: the
+ * quiz's scheme where it has one, the question's own otherwise. The penalty is
+ * a share of the marks this question carries on this paper.
+ */
+export function effectiveMarking(
+  question: { negativeMarks: number; partialCredit: boolean },
+  marks: number,
+  quiz: QuizMarking,
+): { negativeMarks: number; partialCredit: boolean } {
+  return {
+    negativeMarks:
+      quiz.negativeMarkingPct === null
+        ? question.negativeMarks
+        : round2((marks * quiz.negativeMarkingPct) / 100),
+    partialCredit: quiz.multiPartialCredit ?? question.partialCredit,
+  };
+}
+
 function gradeSingleOption(
   question: GradableQuestion,
   selectedOptionId: string,
@@ -155,7 +187,7 @@ function gradeSingleOption(
   return {
     state: 'AUTO',
     isCorrect,
-    awardedMarks: isCorrect ? question.marks : -question.negativeMarks,
+    awardedMarks: isCorrect ? question.marks : penalty(question.negativeMarks),
   };
 }
 
@@ -173,7 +205,7 @@ function gradeMultiOption(question: GradableQuestion, selected: string[]): Grade
 
   const anyIncorrect = [...chosen].some((id) => !correct.has(id));
   if (anyIncorrect) {
-    return { state: 'AUTO', isCorrect: false, awardedMarks: -question.negativeMarks };
+    return { state: 'AUTO', isCorrect: false, awardedMarks: penalty(question.negativeMarks) };
   }
 
   if (correct.size > 0 && chosen.size === correct.size) {
@@ -217,7 +249,7 @@ export function gradeAnswer(
     return {
       state: 'AUTO',
       isCorrect,
-      awardedMarks: isCorrect ? question.marks : -question.negativeMarks,
+      awardedMarks: isCorrect ? question.marks : penalty(question.negativeMarks),
     };
   }
 

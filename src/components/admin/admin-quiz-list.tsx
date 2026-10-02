@@ -26,6 +26,7 @@ import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { toast } from 'sonner';
 
+import type { QuizMarkingValue } from '@/components/admin/marking-settings';
 import { QuizEditDialog } from '@/components/admin/quiz-edit-dialog';
 import { ErrorState } from '@/components/shared/error-state';
 import { PageHeader, PageShell } from '@/components/shared/page-header';
@@ -81,6 +82,7 @@ interface AdminQuiz {
   attemptCount: number;
   author: string;
   live: boolean;
+  marking: QuizMarkingValue;
   security: {
     requireFullscreen: boolean;
     cameraMonitoring: boolean;

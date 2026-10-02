@@ -156,6 +156,12 @@ export const quizSecuritySchema = z.object({
   releaseAnswers: z.boolean().default(false),
 });
 
+/** Quiz-wide marking scheme; null (or absent) leaves each question's own setting. */
+const quizMarkingFields = {
+  negativeMarkingPct: z.number().int().min(0).max(100).nullable().optional(),
+  multiPartialCredit: z.boolean().nullable().optional(),
+};
+
 // `createQuizSchema` lives below the question-bank section: a fixed-mode quiz
 // carries its own questions, so it depends on `instantQuestionSchema`.
 
@@ -180,6 +186,7 @@ export const updateQuizSchema = z
     hardPct: z.coerce.number().int().min(0).max(100).optional(),
     status: z.enum(['DRAFT', 'PUBLISHED', 'ARCHIVED']).optional(),
     security: quizSecuritySchema.partial().optional(),
+    ...quizMarkingFields,
   })
   .refine(
     (data) =>
@@ -402,6 +409,7 @@ export const createQuizSchema = z
     status: z.enum(['DRAFT', 'PUBLISHED']).default('DRAFT'),
     assignedStudentIds: z.array(cuid).default([]),
     security: quizSecuritySchema,
+    ...quizMarkingFields,
   })
   .superRefine((data, ctx) => {
     if (data.sourceMode === 'FIXED') {

@@ -351,6 +351,12 @@ model Quiz {
   releaseResults Boolean @default(true)
   releaseAnswers Boolean @default(false)
 
+  // Marking scheme for the whole quiz. Null leaves each question's own setting.
+  /// Percent of a question's marks lost on a wrong answer.
+  negativeMarkingPct Int?
+  /// Whether multi-select questions give credit for a correct subset.
+  multiPartialCredit Boolean?
+
   /// Largest per-student time extension (minutes) granted on this quiz. Results
   /// stay hidden until `endsAt` plus this, so nobody sees scores while an
   /// extended student may still be sitting. Only ever raised, never lowered.

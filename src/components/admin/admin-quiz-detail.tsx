@@ -33,6 +33,7 @@ import {
   type InstantQuestion,
   type SavedQuestion,
 } from '@/components/admin/instant-question-builder';
+import { describeMarking, type QuizMarkingValue } from '@/components/admin/marking-settings';
 import { QuizEditDialog } from '@/components/admin/quiz-edit-dialog';
 import { MathText } from '@/components/shared/math-text';
 import { ErrorState } from '@/components/shared/error-state';
@@ -70,6 +71,7 @@ interface QuizDetail {
     endsAt: string;
     difficultyMix: { easy: number; medium: number; hard: number };
     security: Record<string, boolean>;
+    marking: QuizMarkingValue;
   };
   /** True only for a fixed paper no student has been served yet. */
   editable: boolean;
@@ -481,6 +483,14 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
               })}
             </ul>
           </section>
+          <section className="p-5">
+            <h2 className="type-subheading font-sans">Marking</h2>
+            <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+              {describeMarking(quiz.marking).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </section>
         </aside>
       </div>
 
@@ -497,6 +507,7 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
                 endsAt: quiz.endsAt,
                 attemptCount: attempts.length,
                 security: quiz.security,
+                marking: quiz.marking,
               }
             : null
         }

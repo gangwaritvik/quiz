@@ -4,6 +4,7 @@ import { AlertTriangle, Check } from 'lucide-react';
 import * as React from 'react';
 import { toast } from 'sonner';
 
+import { MarkingSettings, type QuizMarkingValue } from '@/components/admin/marking-settings';
 import { SecuritySettings, type QuizSecurity } from '@/components/admin/security-settings';
 import { Button } from '@/components/ui/button';
 import {
@@ -30,6 +31,8 @@ export interface EditableQuiz {
   endsAt: string;
   attemptCount: number;
   security: Record<string, boolean>;
+  /** Absent when the caller does not know it; the scheme is then left untouched on save. */
+  marking?: QuizMarkingValue;
 }
 
 /** `datetime-local` wants local wall-clock time with no zone suffix. */
@@ -67,6 +70,7 @@ export function QuizEditDialog({
   const [startsAt, setStartsAt] = React.useState('');
   const [endsAt, setEndsAt] = React.useState('');
   const [security, setSecurity] = React.useState<QuizSecurity | null>(null);
+  const [marking, setMarking] = React.useState<QuizMarkingValue | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [errors, setErrors] = React.useState<Record<string, string[]>>({});
 
@@ -82,6 +86,7 @@ export function QuizEditDialog({
     setStartsAt(toLocalInput(quiz.startsAt));
     setEndsAt(toLocalInput(quiz.endsAt));
     setSecurity(quiz.security as unknown as QuizSecurity);
+    setMarking(quiz.marking ?? null);
     setErrors({});
   }, [quiz]);
 
@@ -116,6 +121,7 @@ export function QuizEditDialog({
           startsAt: fromLocalInput(startsAt),
           endsAt: fromLocalInput(endsAt),
           security,
+          ...(marking ? marking : {}),
         },
       });
       toast.success('Quiz updated.');
@@ -248,6 +254,17 @@ export function QuizEditDialog({
             </p>
             {errors.mediumPct ? <p className="text-xs text-destructive">{errors.mediumPct[0]}</p> : null}
           </DialogSection>
+
+          {marking ? (
+            <DialogSection title="Marking">
+              <MarkingSettings value={marking} onChange={setMarking} />
+              {quiz && quiz.attemptCount > 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Changes apply to attempts submitted from now on. Results already marked stay as they are.
+                </p>
+              ) : null}
+            </DialogSection>
+          ) : null}
 
           {security ? (
             <DialogSection title="Rules">

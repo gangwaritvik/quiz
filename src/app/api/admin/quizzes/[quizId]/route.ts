@@ -75,6 +75,10 @@ export const GET = route(async (_request: Request, { params }: Params) => {
       endsAt: quiz.endsAt.toISOString(),
       poolTopicIds: quiz.poolTopicIds,
       difficultyMix: { easy: quiz.easyPct, medium: quiz.mediumPct, hard: quiz.hardPct },
+      marking: {
+        negativeMarkingPct: quiz.negativeMarkingPct,
+        multiPartialCredit: quiz.multiPartialCredit,
+      },
       security: {
         randomizeQuestions: quiz.randomizeQuestions,
         randomizeOptions: quiz.randomizeOptions,
@@ -175,6 +179,8 @@ export const PATCH = route(async (request: Request, { params }: Params) => {
     body.easyPct !== undefined ||
     body.mediumPct !== undefined ||
     body.hardPct !== undefined ||
+    body.negativeMarkingPct !== undefined ||
+    body.multiPartialCredit !== undefined ||
     body.security !== undefined;
 
   if (editsSettings && live > 0) {
@@ -204,6 +210,8 @@ export const PATCH = route(async (request: Request, { params }: Params) => {
       ...(body.mediumPct !== undefined ? { mediumPct: body.mediumPct } : {}),
       ...(body.hardPct !== undefined ? { hardPct: body.hardPct } : {}),
       ...(body.status !== undefined ? { status: body.status } : {}),
+      ...(body.negativeMarkingPct !== undefined ? { negativeMarkingPct: body.negativeMarkingPct } : {}),
+      ...(body.multiPartialCredit !== undefined ? { multiPartialCredit: body.multiPartialCredit } : {}),
       ...(body.security ?? {}),
     },
   });

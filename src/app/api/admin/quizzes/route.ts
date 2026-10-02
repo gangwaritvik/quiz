@@ -44,6 +44,10 @@ export const GET = route(async () => {
       attemptCount: quiz._count.attempts,
       author: quiz.author?.user.name ?? 'Unassigned',
       live: quiz.status === 'PUBLISHED' && quiz.startsAt <= now && quiz.endsAt >= now,
+      marking: {
+        negativeMarkingPct: quiz.negativeMarkingPct,
+        multiPartialCredit: quiz.multiPartialCredit,
+      },
       security: {
         randomizeQuestions: quiz.randomizeQuestions,
         randomizeOptions: quiz.randomizeOptions,
@@ -124,6 +128,8 @@ export const POST = route(async (request: Request) => {
         startsAt: new Date(body.startsAt),
         endsAt: new Date(body.endsAt),
         ...body.security,
+        negativeMarkingPct: body.negativeMarkingPct ?? null,
+        multiPartialCredit: body.multiPartialCredit ?? null,
       },
     });
 

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 
 import {
+  effectiveMarking,
   gradeAnswer,
   hasResponse,
   matchesAcceptedAnswer,
@@ -166,7 +167,6 @@ describe('gradeAnswer: single option', () => {
   });
   test(
     'wrong answer with no negative marking is +0, not -0',
-    { todo: 'gradeSingleOption and the short-answer branch return -question.negativeMarks, i.e. -0 when negativeMarks is 0 (grading.ts gradeSingleOption)' },
     () => {
       const out = gradeAnswer(q({ negativeMarks: 0 }), r({ selectedOptionId: 'b' }));
       assert.ok(Object.is(out.awardedMarks, 0));
@@ -248,5 +248,39 @@ describe('gradeAnswer: text and manual types', () => {
   test('blank manual answers are unanswered rather than pending', () => {
     assert.equal(gradeAnswer(q({ type: 'LONG_ANSWER' }), r({ textResponse: '  ' })).state, 'UNANSWERED');
     assert.equal(gradeAnswer(q({ type: 'IMAGE_ANSWER' }), r()).state, 'UNANSWERED');
+  });
+});
+
+describe('effectiveMarking (quiz-wide scheme)', () => {
+  const question = { negativeMarks: 1, partialCredit: false };
+  const none = { negativeMarkingPct: null, multiPartialCredit: null };
+
+  test('with no quiz scheme each question keeps its own settings', () => {
+    assert.deepEqual(effectiveMarking(question, 4, none), { negativeMarks: 1, partialCredit: false });
+  });
+
+  test('the quiz penalty is a share of the marks the question carries', () => {
+    assert.equal(effectiveMarking(question, 4, { ...none, negativeMarkingPct: 25 }).negativeMarks, 1);
+    assert.equal(effectiveMarking(question, 2, { ...none, negativeMarkingPct: 25 }).negativeMarks, 0.5);
+    assert.equal(effectiveMarking(question, 3, { ...none, negativeMarkingPct: 33 }).negativeMarks, 0.99);
+  });
+
+  test('0% switches negative marking off even where a question asks for it', () => {
+    assert.equal(effectiveMarking(question, 4, { ...none, negativeMarkingPct: 0 }).negativeMarks, 0);
+  });
+
+  test('the quiz can force partial credit on or off', () => {
+    assert.equal(effectiveMarking(question, 4, { ...none, multiPartialCredit: true }).partialCredit, true);
+    assert.equal(
+      effectiveMarking({ ...question, partialCredit: true }, 4, { ...none, multiPartialCredit: false })
+        .partialCredit,
+      false,
+    );
+  });
+
+  test('graded with the scheme: a wrong single answer loses a quarter of its marks', () => {
+    const marking = effectiveMarking(question, 4, { ...none, negativeMarkingPct: 25 });
+    const out = gradeAnswer(q({ marks: 4, ...marking }), r({ selectedOptionId: 'b' }));
+    assert.equal(out.awardedMarks, -1);
   });
 });

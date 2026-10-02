@@ -23,6 +23,11 @@ import {
   type InstantQuestion,
 } from '@/components/admin/instant-question-builder';
 import {
+  DEFAULT_MARKING,
+  MarkingSettings,
+  type QuizMarkingValue,
+} from '@/components/admin/marking-settings';
+import {
   DEFAULT_SECURITY,
   SecuritySettings,
   type QuizSecurity,
@@ -112,6 +117,7 @@ export function CreateQuizForm() {
     toLocalInputValue(new Date(defaultStart.getTime() + 2 * 60 * 60 * 1000)),
   );
   const [security, setSecurity] = React.useState<QuizSecurity>(DEFAULT_SECURITY);
+  const [marking, setMarking] = React.useState<QuizMarkingValue>(DEFAULT_MARKING);
   const [assignedIds, setAssignedIds] = React.useState<string[]>([]);
   const [sectionFilter, setSectionFilter] = React.useState('ALL');
   const [activeSection, setActiveSection] = React.useState<ReviewSection>('content');
@@ -242,6 +248,7 @@ export function CreateQuizForm() {
           status,
           assignedStudentIds: assignedIds,
           security,
+          ...marking,
         },
       });
 
@@ -753,6 +760,15 @@ export function CreateQuizForm() {
                 description="Each control is enforced on the server, not only in the browser. Review these controls before publishing."
               >
                 <SecuritySettings value={security} onChange={setSecurity} />
+              </Section>
+            ) : null}
+
+            {activeSection === 'security' ? (
+              <Section
+                title="Marking"
+                description="Optional. Choose a negative-marking and partial-credit rule for the whole quiz, or leave each question as you set it in the editor."
+              >
+                <MarkingSettings value={marking} onChange={setMarking} />
               </Section>
             ) : null}
 

@@ -9,6 +9,7 @@ import { ApiError } from '@/lib/api';
 import { prisma } from '@/lib/db';
 import {
   FIXED_OPTION_ORDER_TYPES,
+  effectiveMarking,
   gradeAnswer,
   hasResponse,
   OPTION_TYPES,
@@ -926,6 +927,7 @@ async function gradeClaimedAttempt(attemptId: string, status: AttemptStatus) {
   const attempt = await prisma.quizAttempt.findUnique({
     where: { id: attemptId },
     include: {
+      quiz: { select: { negativeMarkingPct: true, multiPartialCredit: true } },
       questions: {
         include: {
           question: {
@@ -969,8 +971,7 @@ async function gradeClaimedAttempt(attemptId: string, status: AttemptStatus) {
     const gradable: GradableQuestion = {
       type: aq.question.type,
       marks: aq.marks,
-      negativeMarks: aq.question.negativeMarks,
-      partialCredit: aq.question.partialCredit,
+      ...effectiveMarking(aq.question, aq.marks, attempt.quiz),
       acceptedAnswers: aq.question.acceptedAnswers,
       caseSensitive: aq.question.caseSensitive,
       numericTolerance: aq.question.numericTolerance,

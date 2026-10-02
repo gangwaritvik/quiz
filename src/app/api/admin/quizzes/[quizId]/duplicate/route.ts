@@ -66,6 +66,8 @@ export const POST = route(async (request: Request, { params }: Params) => {
         hardPct: source.hardPct,
         startsAt: source.startsAt,
         endsAt: source.endsAt,
+        negativeMarkingPct: source.negativeMarkingPct,
+        multiPartialCredit: source.multiPartialCredit,
         randomizeQuestions: source.randomizeQuestions,
         randomizeOptions: source.randomizeOptions,
         singleAttempt: source.singleAttempt,
