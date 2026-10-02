@@ -215,6 +215,12 @@ export const sendNoticeSchema = z.object({
   message: z.string().trim().min(1, 'Write a message').max(500, 'Keep it under 500 characters'),
 });
 
+/** Give one student another attempt at a single-attempt quiz, or take back an unused one. */
+export const retakeGrantSchema = z.object({
+  studentId: cuid,
+  action: z.enum(['grant', 'revoke']),
+});
+
 /** Pause or resume one running attempt. */
 export const pauseAttemptSchema = z.object({
   action: z.enum(['pause', 'resume']),

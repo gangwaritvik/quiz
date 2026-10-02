@@ -1,5 +1,6 @@
 import { ok, route } from '@/lib/api';
 import { requireStudent } from '@/lib/auth';
+import { canStartAnother } from '@/lib/attempt-policy';
 import { prisma } from '@/lib/db';
 import { sweepExpiredAttempts } from '@/lib/exam';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
@@ -31,10 +32,21 @@ export const GET = route(async () => {
     orderBy: { quiz: { startsAt: 'desc' } },
   });
 
-  const quizzes = assignments.map(({ quiz }) => {
-    const latest = quiz.attempts[0];
-    const finished =
-      latest && (latest.status === 'SUBMITTED' || latest.status === 'AUTO_SUBMITTED');
+  const quizzes = assignments.map(({ quiz, extraAttempts }) => {
+    const live = quiz.attempts.find((a) => a.status === 'IN_PROGRESS');
+    // The newest finished attempt carries the result link and score.
+    const latest = quiz.attempts.find(
+      (a) => a.status === 'SUBMITTED' || a.status === 'AUTO_SUBMITTED',
+    );
+    const finished = Boolean(latest);
+    // A grant (or a quiz that allows several attempts) puts a finished quiz back on offer.
+    const retakeOpen =
+      finished &&
+      !live &&
+      quiz.status === 'PUBLISHED' &&
+      now >= quiz.startsAt &&
+      now <= quiz.endsAt &&
+      canStartAnother(quiz, extraAttempts, quiz.attempts.length);
 
     return {
       id: quiz.id,
@@ -46,19 +58,21 @@ export const GET = route(async () => {
       durationMinutes: quiz.durationMinutes,
       startsAt: quiz.startsAt.toISOString(),
       endsAt: quiz.endsAt.toISOString(),
-      state: finished
-        ? 'COMPLETED'
-        : latest?.status === 'IN_PROGRESS'
-          ? 'IN_PROGRESS'
-          : now > quiz.endsAt
+      state: live
+        ? 'IN_PROGRESS'
+        : retakeOpen
+          ? 'AVAILABLE'
+          : finished
+            ? 'COMPLETED'
+            : now > quiz.endsAt
             ? 'CLOSED'
             : now < quiz.startsAt
               ? 'SCHEDULED'
               : 'AVAILABLE',
-      activeAttemptId: latest?.status === 'IN_PROGRESS' ? latest.id : null,
+      activeAttemptId: live?.id ?? null,
       // A result link is offered only when the teacher has released results.
-      resultAttemptId: finished && quiz.releaseResults ? latest.id : null,
-      percentage: finished && quiz.releaseResults ? latest.percentage : null,
+      resultAttemptId: latest && quiz.releaseResults ? latest.id : null,
+      percentage: latest && quiz.releaseResults ? latest.percentage : null,
       cameraMonitoring: quiz.cameraMonitoring,
     };
   });

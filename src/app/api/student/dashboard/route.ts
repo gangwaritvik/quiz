@@ -1,5 +1,6 @@
 import { ok, route } from '@/lib/api';
 import { requireStudent } from '@/lib/auth';
+import { bestPerStudent, canStartAnother } from '@/lib/attempt-policy';
 import { prisma } from '@/lib/db';
 import { resultsVisibility, sweepExpiredAttempts } from '@/lib/exam';
 import { statusForScore } from '@/lib/integrity';
@@ -57,6 +58,7 @@ export const GET = route(async () => {
       where: { studentId, status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] } },
       select: {
         id: true,
+        quizId: true,
         percentage: true,
         submittedAt: true,
         pendingManualCount: true,
@@ -79,16 +81,19 @@ export const GET = route(async () => {
     }),
   ]);
 
-  const upcoming = assignments.map(({ quiz }) => {
+  const upcoming = assignments.map(({ quiz, extraAttempts }) => {
     const live = quiz.attempts.find((a) => a.status === 'IN_PROGRESS');
     const finished = quiz.attempts.find(
       (a) => a.status === 'SUBMITTED' || a.status === 'AUTO_SUBMITTED',
     );
 
-    const state = finished
-      ? 'COMPLETED'
-      : live
-        ? 'IN_PROGRESS'
+    // A live attempt comes first; a finished quiz is back on offer when the
+    // student may take another attempt (a retake granted by faculty).
+    const retakeOpen = Boolean(finished) && canStartAnother(quiz, extraAttempts, quiz.attempts.length);
+    const state = live
+      ? 'IN_PROGRESS'
+      : finished && !retakeOpen
+        ? 'COMPLETED'
         : now < quiz.startsAt
           ? 'SCHEDULED'
           : 'AVAILABLE';
@@ -114,8 +119,11 @@ export const GET = route(async () => {
   // feed the average, or it would leak a hidden score by difference.
   // Provisional scores (answers still being marked) are left out, as on the
   // results page, so both averages agree.
-  const visible = attempts.filter(
-    (a) => resultsVisibility(a.quiz, now).results && a.pendingManualCount === 0,
+  // A retaken quiz counts once, at the student's best attempt.
+  const visible = bestPerStudent(
+    attempts.filter((a) => resultsVisibility(a.quiz, now).results && a.pendingManualCount === 0),
+    (a) => a.quizId,
+    (a) => a.percentage,
   );
   const averageScore =
     visible.length > 0

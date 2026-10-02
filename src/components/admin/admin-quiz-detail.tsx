@@ -23,6 +23,7 @@ import * as React from 'react';
 import { toast } from 'sonner';
 
 import { AssignStudentsDialog } from '@/components/admin/assign-students-dialog';
+import { RetakeButton } from '@/components/admin/retake-button';
 import { ItemAnalysis } from '@/components/admin/item-analysis';
 import { ExtraTimePanel } from '@/components/admin/extra-time-panel';
 import {
@@ -82,9 +83,12 @@ interface QuizDetail {
     name: string;
     rollNumber: string;
     section: string;
+    extraAttempts: number;
   }>;
   attempts: Array<{
     id: string;
+    studentId: string;
+    attemptNumber: number;
     studentName: string;
     rollNumber: string;
     status: string;
@@ -171,6 +175,18 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
         10
       : null;
   const flagged = attempts.filter((a) => a.integrityStatus && a.integrityStatus !== 'NORMAL');
+
+  // Per student: how many attempts, whether one is live, whether an extra attempt
+  // is waiting, and which finished attempt is their newest (the retake control sits on it).
+  const extraByStudent = new Map(assignments.map((a) => [a.studentId, a.extraAttempts]));
+  const madeByStudent = new Map<string, number>();
+  const liveStudents = new Set<string>();
+  const newestFinished = new Map<string, string>();
+  for (const attempt of attempts) {
+    madeByStudent.set(attempt.studentId, (madeByStudent.get(attempt.studentId) ?? 0) + 1);
+    if (attempt.status === 'IN_PROGRESS') liveStudents.add(attempt.studentId);
+    else if (!newestFinished.has(attempt.studentId)) newestFinished.set(attempt.studentId, attempt.id);
+  }
 
   return (
     <PageShell>
@@ -313,7 +329,14 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
                     {attempts.map((attempt) => (
                       <TableRow key={attempt.id}>
                         <TableCell className="max-w-[14rem]">
-                          <p className="truncate font-medium">{attempt.studentName}</p>
+                          <p className="truncate font-medium">
+                            {attempt.studentName}
+                            {attempt.attemptNumber > 1 ? (
+                              <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                                Attempt {attempt.attemptNumber}
+                              </span>
+                            ) : null}
+                          </p>
                           <p className="font-mono text-xs text-muted-foreground">
                             {attempt.rollNumber}
                           </p>
@@ -376,6 +399,22 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
                                   Answers
                                 </Link>
                               </Button>
+                            ) : null}
+                            {quiz.security.singleAttempt &&
+                            attempt.status !== 'IN_PROGRESS' &&
+                            newestFinished.get(attempt.studentId) === attempt.id ? (
+                              <RetakeButton
+                                quizId={quiz.id}
+                                quizTitle={quiz.title}
+                                studentId={attempt.studentId}
+                                name={attempt.studentName}
+                                granted={
+                                  (extraByStudent.get(attempt.studentId) ?? 0) >
+                                  (madeByStudent.get(attempt.studentId) ?? 1) - 1
+                                }
+                                sitting={liveStudents.has(attempt.studentId)}
+                                onChanged={() => void refetch()}
+                              />
                             ) : null}
                             <Button asChild variant="ghost" size="sm">
                               <Link

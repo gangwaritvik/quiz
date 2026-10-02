@@ -1,5 +1,6 @@
 import { ok, route } from '@/lib/api';
 import { requireAdmin } from '@/lib/auth';
+import { bestPerStudent } from '@/lib/attempt-policy';
 import { prisma } from '@/lib/db';
 import { ownAttemptWhere } from '@/lib/ownership';
 
@@ -33,6 +34,15 @@ export const GET = route(async (request: Request) => {
     { title: string; subject: string; scores: number[]; flagged: number }
   >();
 
+  // A student who retook a quiz counts once, at their best attempt.
+  const bestIds = new Set(
+    bestPerStudent(
+      attempts,
+      (a) => `${a.quizId}:${a.studentId}`,
+      (a) => a.percentage,
+    ).map((a) => a.id),
+  );
+
   for (const attempt of attempts) {
     const entry = byQuiz.get(attempt.quiz.id) ?? {
       title: attempt.quiz.title,
@@ -40,7 +50,7 @@ export const GET = route(async (request: Request) => {
       scores: [],
       flagged: 0,
     };
-    if (attempt.percentage !== null) entry.scores.push(attempt.percentage);
+    if (attempt.percentage !== null && bestIds.has(attempt.id)) entry.scores.push(attempt.percentage);
     if (attempt.integrity && attempt.integrity.status !== 'NORMAL') entry.flagged += 1;
     byQuiz.set(attempt.quiz.id, entry);
   }

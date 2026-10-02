@@ -125,9 +125,12 @@ export const GET = route(async (_request: Request, { params }: Params) => {
       name: assignment.student.user.name,
       rollNumber: assignment.student.rollNumber,
       section: assignment.student.section,
+      extraAttempts: assignment.extraAttempts,
     })),
     attempts: quiz.attempts.map((attempt) => ({
       id: attempt.id,
+      studentId: attempt.studentId,
+      attemptNumber: attempt.attemptNumber,
       studentName: attempt.student.user.name,
       rollNumber: attempt.student.rollNumber,
       status: attempt.status,

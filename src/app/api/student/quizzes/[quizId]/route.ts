@@ -1,5 +1,6 @@
 import { ApiError, ok, route } from '@/lib/api';
 import { requireStudent } from '@/lib/auth';
+import { canStartAnother } from '@/lib/attempt-policy';
 import { prisma } from '@/lib/db';
 
 export const runtime = 'nodejs';
@@ -42,9 +43,6 @@ export const GET = route(async (_request: Request, { params }: Params) => {
   const { quiz } = assignment;
   const now = new Date();
   const latest = quiz.attempts[0];
-  const finished = quiz.attempts.some(
-    (a) => a.status === 'SUBMITTED' || a.status === 'AUTO_SUBMITTED',
-  );
 
   // A student on extra time can still be sitting after the window closes, and
   // must be able to get back in; their own clock decides, as on the server.
@@ -57,8 +55,10 @@ export const GET = route(async (_request: Request, { params }: Params) => {
         ? 'This quiz has not started yet.'
         : now > quiz.endsAt && !canResume
           ? 'The window for this quiz has closed.'
-          : finished && quiz.singleAttempt
-            ? 'You have already completed this quiz. Only one attempt is permitted.'
+          : !canResume && !canStartAnother(quiz, assignment.extraAttempts, quiz.attempts.length)
+            ? assignment.extraAttempts > 0
+              ? 'You have used all the attempts you were given for this quiz.'
+              : 'You have already completed this quiz. Only one attempt is permitted.'
             : null;
 
   return ok({

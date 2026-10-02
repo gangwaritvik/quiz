@@ -33,6 +33,8 @@ export type AuditAction =
   /** Faculty paused or resumed one student's running attempt. */
   | 'admin.attempt_paused'
   | 'admin.attempt_resumed'
+  /** Faculty gave a student another attempt at a single-attempt quiz, or took one back. */
+  | 'admin.attempt_granted'
   /** Faculty broadcast a notice to a quiz's students. */
   | 'admin.notice_sent'
   | 'admin.media_uploaded'

@@ -16,6 +16,7 @@ import {
   type GradableQuestion,
 } from '@/lib/grading';
 import { recomputeIntegrityScore } from '@/lib/integrity';
+import { canStartAnother } from '@/lib/attempt-policy';
 import { shouldApply } from '@/lib/offline-queue';
 import { computeExpiresAt, effectiveEndsAt, pauseAdjustedExpiresAt } from '@/lib/time-extension';
 
@@ -278,8 +279,13 @@ export async function startAttempt(input: StartAttemptInput) {
     throw new ApiError('QUIZ_UNAVAILABLE', 'The window for this quiz has closed.');
   }
 
-  if (quiz.singleAttempt && existing.length > 0) {
-    throw new ApiError('CONFLICT', 'You have already attempted this quiz. Only one attempt is permitted.');
+  if (!canStartAnother(quiz, assignment.extraAttempts, existing.length)) {
+    throw new ApiError(
+      'CONFLICT',
+      assignment.extraAttempts > 0
+        ? 'You have used all the attempts you were given for this quiz.'
+        : 'You have already attempted this quiz. Only one attempt is permitted.',
+    );
   }
 
   const paper = await buildQuestionPaper(quiz);

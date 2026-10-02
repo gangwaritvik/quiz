@@ -409,6 +409,36 @@ check('(m) the right short answer earned everything', iaShort?.facility === 1);
 check('(m) separation is withheld with one attempt', iaMcq?.discrimination === null);
 check('(m) the answer key is part of the option list for faculty', iaMcq?.distractors.some((d) => d.correct) === true);
 
+// ---------------- (n) retake grants ----------------
+const retakeUrl = `/api/admin/quizzes/${quiz4}/retakes`;
+const grant9 = { studentId: sid('23CSE009'), action: 'grant' };
+await fac2('(n) non-owner cannot grant a retake', 'POST', retakeUrl, grant9, { expect: [403] });
+await s9('(n) student cannot grant a retake', 'POST', retakeUrl, grant9, abuse);
+await s9('(n) a second attempt is refused before a grant', 'POST', '/api/exam/start', { quizId: quiz4, acknowledgedRules: true }, abuse);
+check('(n) the briefing says the quiz is done', (await s9('(n) briefing before', 'GET', `/api/student/quizzes/${quiz4}`, undefined, { expect: [200] })).data?.canStart === false);
+await fac('(n) unassigned student refused', 'POST', retakeUrl, { studentId: sid('23CSE008'), action: 'grant' }, { expect: [404] });
+const g1 = await fac('(n) grant a retake', 'POST', retakeUrl, grant9, { expect: [200] });
+check('(n) one extra attempt, unused', g1.data?.extraAttempts === 1 && g1.data.attemptsMade === 1 && g1.data.canStart === true, JSON.stringify(g1.data));
+check('(n) the briefing now lets them start', (await s9('(n) briefing after', 'GET', `/api/student/quizzes/${quiz4}`, undefined, { expect: [200] })).data?.canStart === true);
+const dash9 = await s9('(n) dashboard after the grant', 'GET', '/api/student/dashboard', undefined, { expect: [200] });
+check('(n) dashboard offers it again', dash9.data?.upcoming.find((q) => q.id === quiz4)?.state === 'AVAILABLE');
+const list9 = await s9('(n) quiz list after the grant', 'GET', '/api/student/quizzes', undefined, { expect: [200] });
+const row9 = list9.data?.quizzes.find((q) => q.id === quiz4);
+check('(n) list offers it again and keeps the first result link', row9?.state === 'AVAILABLE' && Boolean(row9.resultAttemptId), JSON.stringify([row9?.state, row9?.resultAttemptId]));
+const re9 = await s9('(n) start the retake', 'POST', '/api/exam/start', { quizId: quiz4, acknowledgedRules: true }, { expect: [200] });
+check('(n) it is a new attempt', re9.data?.resumed === false && re9.data.attemptId !== a9);
+const dashLive = await s9('(n) dashboard while sitting', 'GET', '/api/student/dashboard', undefined, { expect: [200] });
+check('(n) a live retake shows as in progress, not completed', dashLive.data?.upcoming.find((q) => q.id === quiz4)?.state === 'IN_PROGRESS');
+await s9('(n) submit the retake', 'POST', `/api/exam/${re9.data.attemptId}/submit`, { confirm: true }, { expect: [200] });
+await s9('(n) no third attempt', 'POST', '/api/exam/start', { quizId: quiz4, acknowledgedRules: true }, abuse);
+const g2 = await fac('(n) grant another', 'POST', retakeUrl, grant9, { expect: [200] });
+const rv9 = await fac('(n) take it back', 'POST', retakeUrl, { ...grant9, action: 'revoke' }, { expect: [200] });
+check('(n) taking back removes only the unused grant', g2.data?.extraAttempts === 2 && rv9.data?.extraAttempts === 1 && rv9.data.canStart === false, JSON.stringify([g2.data, rv9.data]));
+const sums = await fac('(n) results summary', 'GET', `/api/admin/results?quizId=${quiz4}`, undefined, { expect: [200] });
+check('(n) a retaker counts once in the quiz average', sums.data?.quizSummaries.find((q) => q.quizId === quiz4)?.attempts === 1, JSON.stringify(sums.data?.quizSummaries));
+await prisma.quiz.update({ where: { id: quiz4 }, data: { startsAt: new Date(Date.now() - 7200_000), endsAt: new Date(Date.now() - 1000) } });
+await fac('(n) no grant once the window has closed', 'POST', retakeUrl, grant9, { expect: [409] });
+
 // (e) events after the 60 s post-submit window
 const wait = Math.max(0, submittedAt + 120_000 - Date.now());
 log(`     info     waiting ${Math.round(wait / 1000)} s for post-submit window`);

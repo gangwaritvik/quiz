@@ -401,6 +401,8 @@ model QuizAssignment {
   assignedAt   DateTime @default(now())
   /// Pre-start accommodation: extra minutes added to this student's clock when they begin.
   extraMinutes Int      @default(0)
+  /// Attempts faculty granted beyond the quiz's own limit (single-attempt quizzes).
+  extraAttempts Int     @default(0)
 
   quiz    Quiz    @relation(fields: [quizId], references: [id], onDelete: Cascade)
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
