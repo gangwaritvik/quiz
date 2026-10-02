@@ -3,6 +3,7 @@
 import { AlertTriangle, Check, Minus, ShieldCheck } from 'lucide-react';
 import * as React from 'react';
 
+import { FACULTY_REVIEW_NOTE, monitoringStatus } from '@/components/exam/status-labels';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,6 +49,8 @@ export function SecurityIndicator({
     (microphoneActive === false ? 1 : 0) +
     (screenShareActive === false ? 1 : 0) +
     (singleDisplayActive === false ? 1 : 0);
+
+  const monitoring = monitoringStatus(counters);
 
   const rows = [
     { label: 'Secure session', ok: true, detail: 'Answers are saved on the server' },
@@ -100,15 +103,9 @@ export function SecurityIndicator({
           },
         ]
       : []),
-    {
-      label: 'No suspicious activity detected',
-      ok:
-        counters.tabSwitches === 0 &&
-        counters.copyPasteAttempts === 0 &&
-        counters.fullscreenExits === 0,
-      detail: describeActivity(counters),
-    },
+    { label: monitoring.label, ok: !monitoring.recorded, detail: monitoring.detail },
   ];
+  const chipDescription = `Exam Secure Mode: ${monitoring.label}. ${FACULTY_REVIEW_NOTE}.`;
 
   return (
     <DropdownMenu>
@@ -119,7 +116,7 @@ export function SecurityIndicator({
             ? 'border-warning/50 bg-warning-subtle text-warning data-[hovered]:bg-warning-subtle/70'
             : 'border-border bg-card text-muted-foreground data-[hovered]:bg-accent data-[hovered]:text-accent-foreground',
         )}
-        aria-label="Security status"
+        aria-label={chipDescription}
       >
         {/* Icon shape, not just colour, says whether anything needs attention. */}
         {issues > 0 ? (
@@ -171,15 +168,6 @@ export function SecurityIndicator({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
-
-function describeActivity(counters: SecurityCounters) {
-  const parts: string[] = [];
-  if (counters.tabSwitches) parts.push(`${counters.tabSwitches} tab switch${counters.tabSwitches === 1 ? '' : 'es'}`);
-  if (counters.fullscreenExits) parts.push(`${counters.fullscreenExits} fullscreen exit${counters.fullscreenExits === 1 ? '' : 's'}`);
-  if (counters.copyPasteAttempts) parts.push(`${counters.copyPasteAttempts} clipboard attempt${counters.copyPasteAttempts === 1 ? '' : 's'}`);
-  if (counters.blurEvents) parts.push(`${counters.blurEvents} focus change${counters.blurEvents === 1 ? '' : 's'}`);
-  return parts.length === 0 ? 'Nothing recorded this session' : parts.join(' · ');
 }
 
 /** Small neutral marker used in the navigator legend. */

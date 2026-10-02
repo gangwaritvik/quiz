@@ -133,6 +133,13 @@ export const GET = route(async (_request: Request, { params }: Params) => {
     showAnswers,
     provisional,
     pendingManualCount: attempt.pendingManualCount,
+    // The signed-in student's own particulars for the answer-sheet header.
+    // Taken from the session, which is the attempt's owner (checked above), so
+    // no other student's record is read or returned.
+    candidate: { name: session.name, rollNumber: session.rollNumber ?? null },
+    // Released implies the window has closed; this is the date it did, so the
+    // page can say when results became available.
+    releasesAt: attempt.quiz.endsAt.toISOString(),
     attempt: {
       id: attempt.id,
       status: attempt.status,

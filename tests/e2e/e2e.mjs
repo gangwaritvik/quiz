@@ -228,6 +228,13 @@ const late = await stu('(e) events 2 min after submit', 'POST', `/api/exam/${att
 const after = await prisma.examEvent.count({ where: { attemptId } });
 check('(e) late events not stored', after === before, `status=${late.status} body=${late.text.slice(0, 120)}`);
 
+// (h) result header: the student's own candidate details, and nobody else's
+const me = studentList.find((s) => s.rollNumber === '23CSE001');
+const cand = d.candidate;
+check('(h) result candidate is the signed-in student', cand?.name === me.name && cand?.rollNumber === me.rollNumber && Object.keys(cand).length === 2, JSON.stringify(cand));
+const others = studentList.filter((s) => s.rollNumber !== me.rollNumber);
+check('(h) result carries no other student name/roll/email', !others.some((s) => r2.text.includes(`"${s.rollNumber}"`) || r2.text.includes(s.name) || r2.text.includes(s.email)), `others=${others.length}`);
+
 ids = { quizId, attemptId, quiz2, a2, a3 };
 } catch (e) {
   log(`FAIL crash    ${e.stack ?? e}`);

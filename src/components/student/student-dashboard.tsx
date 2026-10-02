@@ -39,9 +39,15 @@ interface RecentResult {
   subject: string;
   submittedAt: string | null;
   released: boolean;
+  /** Set when results are held until the quiz window closes. */
+  releasesAt?: string | null;
   percentage: number | null;
   awaitingMarking: boolean;
 }
+
+/** Plain-language status labels are long; on a phone they wrap to two lines. */
+const STATUS_BADGE =
+  'max-w-[9rem] shrink-0 whitespace-normal leading-tight sm:max-w-none sm:whitespace-nowrap';
 
 /** Display order: what needs action now comes first. */
 const URGENCY: Record<QuizState, number> = {
@@ -271,6 +277,11 @@ function RecentResults({ results, loading }: { results: RecentResult[]; loading:
                     {result.subject}
                     {result.submittedAt ? ` · ${formatDateTime(result.submittedAt)}` : ''}
                   </p>
+                  {!result.released && result.releasesAt ? (
+                    <p className="tabular mt-0.5 truncate text-xs text-muted-foreground">
+                      Quiz closes {formatDateTime(result.releasesAt)}
+                    </p>
+                  ) : null}
                 </div>
 
                 {result.released && typeof result.percentage === 'number' ? (
@@ -283,14 +294,16 @@ function RecentResults({ results, loading }: { results: RecentResult[]; loading:
                     ) : null}
                   </span>
                 ) : result.awaitingMarking ? (
-                  <Badge variant="warning">
+                  <Badge variant="warning" className={STATUS_BADGE}>
                     <Hourglass aria-hidden />
-                    Being marked
+                    Being marked by your faculty
                   </Badge>
                 ) : (
-                  <Badge variant="muted">
+                  <Badge variant="muted" className={STATUS_BADGE}>
                     <Lock aria-hidden />
-                    Not released
+                    {result.releasesAt
+                      ? 'Available after the quiz closes'
+                      : 'Awaiting release by your faculty'}
                   </Badge>
                 )}
                 <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />

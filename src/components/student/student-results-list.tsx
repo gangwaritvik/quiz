@@ -43,6 +43,7 @@ export function StudentResultsList() {
   const withheld = submitted.filter((attempt) => !attempt.resultsReleased);
   // Provisional scores are shown but never averaged: they can still change.
   const final = released.filter((attempt) => !attempt.awaitingMarking);
+  const provisional = released.length - final.length;
 
   const average =
     final.length > 0
@@ -63,7 +64,7 @@ export function StudentResultsList() {
     <PageShell>
       <PageHeader
         title="Results"
-        description="Scores are published only after your faculty releases them for a quiz."
+        description="Scores appear once your faculty has released them and the quiz has closed."
       />
 
       {initialLoading ? (
@@ -91,7 +92,8 @@ export function StudentResultsList() {
               <Progress value={average} aria-label="Average score" className="mt-3 h-1.5" />
               <p className="mt-2 text-xs text-muted-foreground">
                 {pluralize(final.length, 'final result')} counted
-                {withheld.length > 0 ? ` · ${withheld.length} awaiting release` : ''}
+                {provisional > 0 ? ` · ${provisional} provisional, not counted` : ''}
+                {withheld.length > 0 ? ` · ${withheld.length} not yet released` : ''}
               </p>
             </section>
           ) : null}
@@ -142,14 +144,19 @@ export function StudentResultsList() {
                   </p>
                   {attempt.releasesAt ? (
                     <p className="tabular mt-1 text-xs text-muted-foreground">
-                      Results will be available after the quiz closes on{' '}
-                      {formatDateTime(attempt.releasesAt)}.
+                      Quiz closes {formatDateTime(attempt.releasesAt)}
                     </p>
                   ) : null}
                 </div>
-                <Badge variant="muted" className="shrink-0">
+                {/* Wraps to two lines on a phone so the title keeps its room. */}
+                <Badge
+                  variant="muted"
+                  className="max-w-[9rem] shrink-0 whitespace-normal leading-tight sm:max-w-none sm:whitespace-nowrap"
+                >
                   <Lock aria-hidden />
-                  Awaiting release
+                  {attempt.releasesAt
+                    ? 'Available after the quiz closes'
+                    : 'Awaiting release by your faculty'}
                 </Badge>
               </li>
             ))}

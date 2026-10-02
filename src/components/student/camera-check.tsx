@@ -16,7 +16,10 @@ interface CameraCheckProps {
   onStart: () => void;
 }
 
-/** Pre-exam camera preview with the privacy notice the student is entitled to. */
+/**
+ * Pre-exam camera preview with the privacy notice the student is entitled to.
+ * Sits inside the "Your device" card, so its heading is one level below it.
+ */
 export function CameraCheck({
   stream,
   state,
@@ -36,9 +39,9 @@ export function CameraCheck({
 
   return (
     <section aria-labelledby="camera-check-heading">
-      <h2 id="camera-check-heading" className="type-heading">
+      <h3 id="camera-check-heading" className="type-subheading">
         Camera check
-      </h2>
+      </h3>
       <p className="mt-1 text-sm text-muted-foreground">Position your face inside the frame.</p>
 
       {/* The frame stays dark in both themes: it stands in for the camera. */}
@@ -90,12 +93,11 @@ export function CameraCheck({
         )}
       </div>
 
-      <p className="mt-4 flex max-w-md items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+      <p className="mt-3 flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
         <Lock className="mt-0.5 size-3.5 shrink-0" aria-hidden />
         <span>
-          <span className="font-medium text-foreground">Your privacy.</span> The video stream stays
-          on your device. SecureQuiz records only whether the camera remained available during the
-          exam — no video, images or audio are uploaded or stored.
+          Video stays on your device and is never uploaded or stored. Only whether the camera stayed
+          available is recorded.
         </span>
       </p>
     </section>

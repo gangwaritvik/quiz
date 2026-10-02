@@ -95,7 +95,11 @@ export const GET = route(async () => {
   const completed = attempts.length;
   // Only attempts whose results are visible (released and window closed) may
   // feed the average, or it would leak a hidden score by difference.
-  const visible = attempts.filter((a) => resultsVisibility(a.quiz, now).results);
+  // Provisional scores (answers still being marked) are left out, as on the
+  // results page, so both averages agree.
+  const visible = attempts.filter(
+    (a) => resultsVisibility(a.quiz, now).results && a.pendingManualCount === 0,
+  );
   const averageScore =
     visible.length > 0
       ? Math.round(

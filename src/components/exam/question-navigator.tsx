@@ -3,6 +3,7 @@
 import { Check, Flag, Lock } from 'lucide-react';
 import * as React from 'react';
 
+import { questionLabel } from '@/components/exam/status-labels';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
@@ -32,21 +33,22 @@ interface QuestionNavigatorProps {
 }
 
 /*
- * One style per status, shared by the grid and its legend so the key always
- * matches. No transitions: the "current" marker must jump, not glide.
+ * One fill per answer state, shared by the grid and its legend so the key always
+ * matches. "Marked for review" is not a fill: it is a corner flag that sits on
+ * top of either state. No transitions: the "current" marker must jump, not glide.
  */
 const STATUS_CLASSES = {
   unanswered: 'border-input bg-card text-foreground',
   answered: 'border-primary/50 bg-accent text-accent-foreground',
-  flagged: 'border-warning/60 bg-warning-subtle text-warning',
   locked: 'border-dashed border-border bg-muted text-muted-foreground',
 } as const;
 
 /**
  * The question grid.
  *
- * Status is encoded three ways — fill colour, icon, and an off-screen text
- * label — so it is legible without colour perception and to a screen reader.
+ * Answered is a fill plus a check; marked-for-review is a separate corner flag,
+ * so a flagged question still shows whether it has an answer. Both are in the
+ * button's accessible name and the legend, so nothing depends on colour alone.
  * The current question gets an inset ink border and an underlined number,
  * kept distinct from the focus outline (which sits outside the cell).
  */
@@ -98,11 +100,7 @@ export function QuestionNavigator({
         {questions.map((question, index) => {
           const isCurrent = index === currentIndex;
           const isLocked = lockNavigation && index > highestVisited && !isCurrent;
-          const status = question.markedForReview
-            ? 'flagged'
-            : question.answered
-              ? 'answered'
-              : 'unanswered';
+          const status = question.answered ? 'answered' : 'unanswered';
 
           return (
             <button
@@ -112,15 +110,10 @@ export function QuestionNavigator({
               disabled={isLocked}
               aria-current={isCurrent ? 'true' : undefined}
               aria-disabled={isLocked}
-              title={
-                isLocked
-                  ? 'This question is not yet accessible'
-                  : status === 'flagged'
-                    ? `Q${index + 1} — marked for review`
-                    : status === 'answered'
-                      ? `Q${index + 1} — answered`
-                      : `Q${index + 1} — not answered`
-              }
+              aria-label={questionLabel(index + 1, question, {
+                locked: isLocked,
+                current: isCurrent,
+              })}
               className={cn(
                 'tabular relative flex aspect-square min-h-11 items-center justify-center rounded-md border text-sm font-semibold',
                 STATUS_CLASSES[isLocked ? 'locked' : status],
@@ -156,18 +149,6 @@ export function QuestionNavigator({
                   ) : null}
                 </>
               )}
-
-              <span className="sr-only">
-                {`, ${
-                  isLocked
-                    ? 'locked'
-                    : status === 'flagged'
-                      ? 'marked for review'
-                      : status === 'answered'
-                        ? 'answered'
-                        : 'not answered'
-                }${isCurrent ? ', current question' : ''}`}
-              </span>
             </button>
           );
         })}
@@ -178,7 +159,7 @@ export function QuestionNavigator({
         <LegendRow
           swatch={<span className={cn('block size-4 rounded-sm border', STATUS_CLASSES.unanswered)} />}
           label="Not answered"
-          count={questions.filter((q) => !q.answered && !q.markedForReview).length}
+          count={questions.length - answered}
         />
         <LegendRow
           swatch={
@@ -191,8 +172,8 @@ export function QuestionNavigator({
         />
         <LegendRow
           swatch={
-            <span className={cn('flex size-4 items-center justify-center rounded-sm border', STATUS_CLASSES.flagged)}>
-              <Flag className="size-2.5 fill-warning text-warning" />
+            <span className={cn('relative block size-4 rounded-sm border', STATUS_CLASSES.unanswered)}>
+              <Flag className="absolute right-0.5 top-0.5 size-2.5 fill-warning text-warning" />
             </span>
           }
           label="Marked for review"
@@ -210,6 +191,9 @@ export function QuestionNavigator({
           />
         ) : null}
       </dl>
+      <p className="mt-2 text-xs text-muted-foreground">
+        A flag can sit on an answered or an unanswered question.
+      </p>
     </div>
   );
 }

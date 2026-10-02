@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import {
   ArrowLeft,
   Check,
+  ChevronDown,
   Circle,
   CircleSlash,
   Clock,
@@ -55,6 +56,8 @@ interface ResultData {
   showAnswers?: boolean;
   provisional?: boolean;
   pendingManualCount?: number;
+  /** The signed-in student's own details, for the answer-sheet header. */
+  candidate?: { name: string; rollNumber: string | null };
   attempt?: {
     id: string;
     status: string;
@@ -157,11 +160,13 @@ export function StudentResultDetail({ attemptId }: { attemptId: string }) {
       >
         <h1 className="type-title break-words">{data.quiz.title}</h1>
 
-        {/* Head of an answer booklet: the paper's particulars in a ruled grid.
-            The candidate name and roll number are not in this payload, so
-            those cells are left out rather than guessed. */}
-        <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-4">
+        {/* Head of an answer booklet: the candidate and the paper's particulars
+            in a ruled grid. Two columns on a phone, three from `sm`; six cells
+            fill both evenly. A missing value leaves its cell out. */}
+        <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-3">
           {[
+            { label: 'Candidate', value: data.candidate?.name },
+            { label: 'Roll no.', value: data.candidate?.rollNumber, mono: true },
             { label: 'Paper', value: data.quiz.title },
             {
               label: 'Subject',
@@ -189,6 +194,7 @@ export function StudentResultDetail({ attemptId }: { attemptId: string }) {
                   className={cn(
                     'mt-1 break-words text-sm font-medium text-foreground',
                     cell.numeric && 'tabular',
+                    cell.mono && 'font-mono',
                   )}
                 >
                   {cell.value}
@@ -246,7 +252,7 @@ export function StudentResultDetail({ attemptId }: { attemptId: string }) {
                 {data.pendingManualCount} answer
                 {data.pendingManualCount === 1 ? '' : 's'} on this paper still{' '}
                 {data.pendingManualCount === 1 ? 'needs' : 'need'} to be marked by your faculty.
-                Your total will rise once that is done.
+                Your total can rise once that is done.
               </p>
             </div>
           ) : (
@@ -284,6 +290,12 @@ export function StudentResultDetail({ attemptId }: { attemptId: string }) {
         </section>
 
         <div className="min-w-0 space-y-12 lg:col-start-1 lg:row-start-1">
+          <ReadingGuide
+            provisional={Boolean(data.provisional)}
+            underReview={Boolean(data.integrity && data.integrity.status !== 'NORMAL')}
+            closedAt={data.releasesAt ?? null}
+          />
+
           <section aria-labelledby="topics-heading">
             <h2 id="topics-heading" className="type-heading">
               Performance by topic
@@ -354,6 +366,62 @@ export function StudentResultDetail({ attemptId }: { attemptId: string }) {
         </div>
       </div>
     </PageShell>
+  );
+}
+
+/**
+ * A short, closed-by-default note on what the page's labels mean. Only the
+ * labels that actually appear on this result are explained, so a student with
+ * nothing flagged is never told about a status that does not apply to them.
+ */
+function ReadingGuide({
+  provisional,
+  underReview,
+  closedAt,
+}: {
+  provisional: boolean;
+  underReview: boolean;
+  /** When the quiz window closed; results are never visible before this. */
+  closedAt: string | null;
+}) {
+  return (
+    <details className="group rounded-lg border border-border bg-card">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2.5 text-sm font-medium text-foreground [&::-webkit-details-marker]:hidden">
+        How to read this result
+        <ChevronDown
+          className="size-4 shrink-0 text-muted-foreground group-open:rotate-180"
+          aria-hidden
+        />
+      </summary>
+      <ul className="list-disc space-y-2.5 border-t border-border py-4 pl-9 pr-4 text-sm leading-relaxed text-muted-foreground">
+        {provisional ? (
+          <li>
+            <span className="font-medium text-foreground">Provisional.</span> Some of your written or
+            photographed answers are still being marked by your faculty. They add nothing to your
+            total yet and are not counted as wrong. Marks given for them are added on, so your total
+            can go up.
+          </li>
+        ) : null}
+        {underReview ? (
+          <li>
+            <span className="font-medium text-foreground">Under review by your faculty.</span> A
+            person may look at how this attempt went before your result is final. It is not a
+            finding about you, and there is nothing you need to do. If you have questions, contact
+            your faculty member.
+          </li>
+        ) : null}
+        <li>
+          <span className="font-medium text-foreground">When results appear.</span> Scores are
+          shown after the quiz closes and your faculty releases them
+          {closedAt ? `. This quiz closed on ${formatDateTime(closedAt)}` : ''}.
+        </li>
+        <li>
+          <span className="font-medium text-foreground">Topic bars.</span> Each bar is the share of
+          questions you got right in that topic. Answers still being marked are left out, and
+          topics with very few questions may not appear.
+        </li>
+      </ul>
+    </details>
   );
 }
 

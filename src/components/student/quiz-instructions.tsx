@@ -6,11 +6,11 @@ import {
   ArrowLeft,
   BatteryMedium,
   Check,
+  ChevronRight,
   ClipboardX,
-  Clock,
   Copy,
   Loader2,
-  ListChecks,
+  type LucideIcon,
   Lock,
   Maximize,
   Mic,
@@ -37,6 +37,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { type CheckState, useSecurityChecks } from '@/hooks/use-security-checks';
 import { useApi } from '@/hooks/use-api';
 import { ApiClientError, apiFetch } from '@/lib/client/api';
+import { type ExamRule, type ExamRuleKey, buildExamRules } from '@/lib/quiz-rules';
 import { cn, formatDateTime, formatRelativeDay, pluralize } from '@/lib/utils';
 
 interface QuizBriefing {
@@ -68,26 +69,19 @@ interface QuizBriefing {
   activeAttemptId: string | null;
 }
 
-const BASE_RULES = [
-  {
-    icon: MonitorCheck,
-    text: 'Stay inside the examination window until you submit',
-  },
-  {
-    icon: ClipboardX,
-    text: 'Do not switch to other applications or browser tabs',
-  },
-  { icon: Copy, text: 'Do not use copy, paste or cut during the exam' },
-  {
-    icon: Lock,
-    text: 'Do not share, photograph or redistribute the questions',
-  },
-  { icon: Wifi, text: 'Maintain a stable internet connection throughout' },
-  {
-    icon: BatteryMedium,
-    text: 'Ensure your device has sufficient battery or is plugged in',
-  },
-];
+const RULE_ICONS: Record<ExamRuleKey, LucideIcon> = {
+  window: MonitorCheck,
+  tabs: ClipboardX,
+  clipboard: Copy,
+  confidentiality: Lock,
+  connection: Wifi,
+  battery: BatteryMedium,
+  fullscreen: Maximize,
+  camera: Video,
+  microphone: Mic,
+  screenShare: ScreenShare,
+  singleDisplay: Monitor,
+};
 
 export function QuizInstructions({ quizId }: { quizId: string }) {
   const router = useRouter();
@@ -185,53 +179,26 @@ export function QuizInstructions({ quizId }: { quizId: string }) {
         ? `This quiz closed on ${formatDateTime(quiz.endsAt)}`
         : (data.blockedReason ?? 'This quiz cannot be started.');
 
-  const exits = quiz.security.maxFullscreenExits;
-  const rules = [
-    ...BASE_RULES,
-    ...(quiz.security.requireFullscreen
-      ? [
-          {
-            icon: Maximize,
-            text:
-              exits > 0
-                ? `Fullscreen is required. ${exits} or more exits from fullscreen are flagged for your faculty`
-                : 'Fullscreen is required for this exam',
-          },
-        ]
-      : []),
-    ...(quiz.security.cameraMonitoring
-      ? [
-          {
-            icon: Video,
-            text: 'Keep your camera on and available throughout the exam',
-          },
-        ]
-      : []),
-    ...(quiz.security.microphoneMonitoring
-      ? [
-          {
-            icon: Mic,
-            text: 'Keep your microphone on and available throughout the exam',
-          },
-        ]
-      : []),
-    ...(quiz.security.requireScreenShare
-      ? [
-          {
-            icon: ScreenShare,
-            text: 'Share your entire screen and keep sharing until you submit',
-          },
-        ]
-      : []),
-    ...(quiz.security.blockMultipleDisplays
-      ? [
-          {
-            icon: Monitor,
-            text: 'Use a single display; disconnect external monitors',
-          },
-        ]
-      : []),
-  ];
+  const rules = buildExamRules(quiz.security);
+
+  // Checks that are not a clean pass, plus a camera/microphone not yet asked for.
+  const needAttention =
+    checks.checks.filter((check) => check.state === 'warn' || check.state === 'fail').length +
+    (needsMedia && !mediaStarted ? 1 : 0);
+
+  // The reason the start button is disabled, in the order the page is read.
+  const startHint =
+    canProceed || starting
+      ? null
+      : needsMedia && !mediaStarted
+        ? `Check your ${quiz.security.cameraMonitoring ? 'camera' : 'microphone'} to continue`
+        : checks.pending
+          ? 'Waiting for your device checks to finish'
+          : !checks.ready
+            ? `Resolve ${pluralize(checks.blocking.length, 'device check')} above to continue`
+            : !acknowledged
+              ? 'Tick the confirmation above to continue'
+              : null;
 
   return (
     <PageShell>
@@ -241,7 +208,6 @@ export function QuizInstructions({ quizId }: { quizId: string }) {
         initial={{ opacity: 0, y: 4 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
-        className="border-b border-border pb-6"
       >
         <p className="type-eyebrow">
           {quiz.subject} · {quiz.subjectCode}
@@ -252,28 +218,37 @@ export function QuizInstructions({ quizId }: { quizId: string }) {
             {quiz.description}
           </p>
         ) : null}
+      </motion.header>
 
-        <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 sm:flex sm:flex-wrap">
-          <Fact label="Questions">
-            <ListChecks className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            {quiz.questionCount}
-          </Fact>
-          <Fact label="Duration">
-            <Clock className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            {quiz.durationMinutes} minutes
-          </Fact>
-          <Fact label="Opens">{formatRelativeDay(quiz.startsAt)}</Fact>
+      <section
+        aria-labelledby="briefing-heading"
+        className="mt-6 rounded-lg border border-border bg-card p-5 sm:p-6"
+      >
+        <h2 id="briefing-heading" className="type-subheading">
+          {readOnly ? 'Quiz details' : 'Before you begin'}
+        </h2>
+        {readOnly ? null : (
+          <p className="mt-1 text-sm text-muted-foreground">
+            Your timer starts only when you press Start.
+          </p>
+        )}
+        <dl className="mt-5 grid grid-cols-2 gap-x-8 gap-y-4 sm:flex sm:flex-wrap">
+          <Fact label="Duration">{quiz.durationMinutes} minutes</Fact>
+          <Fact label="Questions">{quiz.questionCount}</Fact>
+          {readOnly ? <Fact label="Opens">{formatRelativeDay(quiz.startsAt)}</Fact> : null}
           <Fact label="Closes">{formatRelativeDay(quiz.endsAt)}</Fact>
-          {quiz.security.singleAttempt ? (
-            <Fact label="Attempts">
+          <Fact label="Attempts">
+            {quiz.security.singleAttempt ? (
               <Badge variant="warning">
                 <AlertTriangle aria-hidden />
                 One attempt only
               </Badge>
-            </Fact>
-          ) : null}
+            ) : (
+              'More than one allowed'
+            )}
+          </Fact>
         </dl>
-      </motion.header>
+      </section>
 
       {readOnly ? (
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted px-4 py-3.5 text-sm text-foreground">
@@ -287,72 +262,86 @@ export function QuizInstructions({ quizId }: { quizId: string }) {
       <div
         className={cn(
           'mt-10 grid gap-10',
-          !readOnly && 'lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start',
+          !readOnly && 'lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start',
         )}
       >
         <div className="min-w-0 space-y-10">
           <section aria-labelledby="rules-heading">
             <h2 id="rules-heading" className="type-heading">
-              Examination rules
+              {readOnly ? 'Examination rules' : 'Rules for this exam'}
             </h2>
-            <ul className="mt-4 divide-y divide-border border-y border-border">
-              {rules.map((rule) => (
-                <li key={rule.text} className="flex items-start gap-3 py-3">
-                  <rule.icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-                  <span className="text-sm leading-relaxed text-foreground">{rule.text}</span>
-                </li>
-              ))}
-            </ul>
-
-            <p className="mt-4 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-              <span className="font-medium text-foreground">What is monitored.</span> SecureQuiz
-              records events such as leaving fullscreen, switching windows and losing connection,
-              and shows them to your faculty as context. These signals are an indicator for human
-              review — they are not treated as proof of misconduct, and ordinary interruptions are
-              expected.
-            </p>
+            {readOnly ? (
+              <RuleList rules={rules.all} className="mt-4" />
+            ) : (
+              <>
+                {rules.highlights.length > 0 ? (
+                  <RuleList rules={rules.highlights} className="mt-4" />
+                ) : (
+                  <p className="mt-4 text-sm text-muted-foreground">
+                    This exam adds no special settings. The standard rules still apply.
+                  </p>
+                )}
+                <details className="group mt-3">
+                  <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md py-2 text-sm font-medium text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&::-webkit-details-marker]:hidden">
+                    <ChevronRight
+                      className="size-4 shrink-0 text-muted-foreground group-open:rotate-90"
+                      aria-hidden
+                    />
+                    Read all exam rules ({rules.all.length})
+                  </summary>
+                  <RuleList rules={rules.all} className="mt-2" />
+                </details>
+              </>
+            )}
           </section>
 
-          {!readOnly && quiz.security.cameraMonitoring ? (
-            <CameraCheck
-              stream={checks.stream}
-              state={checks.checks.find((c) => c.id === 'camera')?.state ?? 'pending'}
-              detail={checks.checks.find((c) => c.id === 'camera')?.detail ?? ''}
-              onRetry={() => void checks.retryMedia()}
-              started={mediaStarted}
-              onStart={() => setMediaStarted(true)}
-            />
-          ) : null}
+          <section
+            aria-labelledby="privacy-heading"
+            className="rounded-lg border border-border bg-card p-5"
+          >
+            <h2 id="privacy-heading" className="type-subheading flex items-center gap-2">
+              <Lock className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+              What is recorded
+            </h2>
+            <ul className="mt-3 space-y-1.5 text-sm leading-relaxed text-muted-foreground">
+              <li>
+                Your faculty can see events such as window or tab switches, full-screen exits, copy
+                or paste attempts and connection drops, each with a time.
+              </li>
+              <li>Camera and screen previews stay on your device and are not uploaded.</li>
+              <li>These are signals for your faculty to review, not a verdict.</li>
+            </ul>
+          </section>
         </div>
 
-        {/* Readiness and the one primary action live together, so the reason
-            the start button is disabled is always right above it. */}
         {readOnly ? null : (
-          <section
-            aria-labelledby="checks-heading"
-            className="rounded-lg border border-border bg-card lg:sticky lg:top-24"
-          >
-            <div className="p-5">
+          <div className="min-w-0 space-y-6">
+            <section
+              aria-labelledby="checks-heading"
+              className="rounded-lg border border-border bg-card p-5"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 id="checks-heading" className="type-subheading">
-                  Security checks
+                  Your device
                 </h2>
-                {checks.pending ? (
-                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                    Checking
-                  </span>
-                ) : checks.ready ? (
-                  <Badge variant="success">
-                    <Check aria-hidden />
-                    All clear
-                  </Badge>
-                ) : (
-                  <Badge variant="danger">
-                    <AlertTriangle aria-hidden />
-                    Action needed
-                  </Badge>
-                )}
+                <div role="status">
+                  {checks.pending ? (
+                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                      Checking
+                    </span>
+                  ) : needAttention === 0 ? (
+                    <Badge variant="success">
+                      <Check aria-hidden />
+                      All checks passed
+                    </Badge>
+                  ) : (
+                    <Badge variant={checks.blocking.length > 0 ? 'danger' : 'warning'}>
+                      <AlertTriangle aria-hidden />
+                      {needAttention} {needAttention === 1 ? 'needs' : 'need'} attention
+                    </Badge>
+                  )}
+                </div>
               </div>
 
               <ul className="mt-2 divide-y divide-border">
@@ -386,40 +375,34 @@ export function QuizInstructions({ quizId }: { quizId: string }) {
                 ))}
               </ul>
 
-              {checks.blocking.length > 0 && !checks.pending ? (
-                <p className="mt-2 flex items-start gap-1.5 rounded-md bg-danger-subtle px-3 py-2.5 text-xs leading-relaxed text-danger">
-                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                  Resolve {pluralize(checks.blocking.length, 'check')} before you can start.
-                </p>
+              {quiz.security.cameraMonitoring ? (
+                <div className="mt-2 border-t border-border pt-4">
+                  <CameraCheck
+                    stream={checks.stream}
+                    state={checks.checks.find((c) => c.id === 'camera')?.state ?? 'pending'}
+                    detail={checks.checks.find((c) => c.id === 'camera')?.detail ?? ''}
+                    onRetry={() => void checks.retryMedia()}
+                    started={mediaStarted}
+                    onStart={() => setMediaStarted(true)}
+                  />
+                </div>
               ) : null}
-            </div>
+            </section>
 
-            <div className="border-t border-border p-5">
+            <div>
               <div className="flex items-start gap-3">
                 <Checkbox
                   id="ack-rules"
                   checked={acknowledged}
                   onCheckedChange={(value) => setAcknowledged(value === true)}
-                  disabled={!data.canStart}
                   className="mt-0.5"
-                  aria-describedby="ack-detail"
                 />
                 <label
                   htmlFor="ack-rules"
-                  className={cn(
-                    'text-sm',
-                    data.canStart ? 'cursor-pointer' : 'cursor-not-allowed opacity-60',
-                  )}
+                  className="cursor-pointer text-sm leading-relaxed text-foreground"
                 >
-                  <span className="font-medium text-foreground">
-                    I understand the examination rules.
-                  </span>
-                  <span
-                    id="ack-detail"
-                    className="mt-1 block text-xs leading-relaxed text-muted-foreground"
-                  >
-                    I confirm I am the registered candidate and will complete this exam on my own.
-                  </span>
+                  I understand the exam rules, I am the registered candidate, and I will complete
+                  this exam on my own.
                 </label>
               </div>
 
@@ -429,10 +412,17 @@ export function QuizInstructions({ quizId }: { quizId: string }) {
                 disabled={!canProceed}
                 loading={starting}
                 onClick={() => void startExam()}
+                aria-describedby={startHint ? 'start-hint' : undefined}
               >
                 {starting ? 'Preparing your paper…' : 'Start secure exam'}
                 {starting ? null : <ShieldCheck aria-hidden />}
               </Button>
+
+              {startHint ? (
+                <p id="start-hint" className="mt-3 text-center text-sm text-foreground">
+                  {startHint}
+                </p>
+              ) : null}
 
               {startError ? (
                 <p role="alert" className="mt-3 flex items-start gap-1.5 text-xs text-destructive">
@@ -445,10 +435,26 @@ export function QuizInstructions({ quizId }: { quizId: string }) {
                 </p>
               )}
             </div>
-          </section>
+          </div>
         )}
       </div>
     </PageShell>
+  );
+}
+
+function RuleList({ rules, className }: { rules: ExamRule[]; className?: string }) {
+  return (
+    <ul className={cn('divide-y divide-border border-y border-border', className)}>
+      {rules.map((rule) => {
+        const Icon = RULE_ICONS[rule.key];
+        return (
+          <li key={rule.key} className="flex items-start gap-3 py-3">
+            <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+            <span className="text-sm leading-relaxed text-foreground">{rule.text}</span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
