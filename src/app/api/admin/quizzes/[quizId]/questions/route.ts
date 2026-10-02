@@ -3,6 +3,7 @@ import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { deleteUnreferencedAssets } from '@/lib/media';
+import { assertQuizOwner } from '@/lib/ownership';
 import { questionFieldsFromInput, questionOptionsFromInput } from '@/lib/questions';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 import { getRequestContext } from '@/lib/session';
@@ -40,6 +41,7 @@ export const PUT = route(async (request: Request, { params }: Params) => {
   const session = await requireAdmin();
   const context = await getRequestContext();
   const { quizId } = await params;
+  await assertQuizOwner(quizId, session.adminId);
 
   enforceRateLimit(RATE_LIMITS.adminWrite, `quiz-questions:${session.userId}`);
 

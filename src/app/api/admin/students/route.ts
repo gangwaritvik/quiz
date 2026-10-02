@@ -4,6 +4,7 @@ import { ApiError, assertSameOrigin, ok, parseBody, parseQuery, route } from '@/
 import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { ownAttemptWhere } from '@/lib/ownership';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 import { getRequestContext } from '@/lib/session';
 import { createStudentSchema, studentFilterSchema } from '@/lib/validation';
@@ -12,7 +13,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const GET = route(async (request: Request) => {
-  await requireAdmin();
+  const session = await requireAdmin();
   const filters = parseQuery(request, studentFilterSchema);
 
   const where: Prisma.StudentWhereInput = {
@@ -45,7 +46,8 @@ export const GET = route(async (request: Request) => {
             _count: { select: { deviceSessions: true } },
           },
         },
-        _count: { select: { attempts: true } },
+        // Directory is shared; the attempt count covers only this faculty's quizzes.
+        _count: { select: { attempts: { where: ownAttemptWhere(session.adminId) } } },
       },
       orderBy: { rollNumber: 'asc' },
       skip: (filters.page - 1) * filters.pageSize,

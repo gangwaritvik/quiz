@@ -16,7 +16,8 @@ interface Params {
  * Every read is authorised against the *relationship* between the viewer and
  * the asset, not merely against holding its id:
  *
- *  - faculty may read any asset, since they author papers and mark answers;
+ *  - faculty may read any question or option image (the bank is shared), but
+ *    an answer image only if it belongs to an attempt on a quiz they authored;
  *  - a student may read a question or option image only if that question is on
  *    a paper they were actually served;
  *  - a student may read an answer image only if it is attached to their own
@@ -61,7 +62,20 @@ export const GET = route(async (_request: Request, { params }: Params) => {
   });
   if (!asset) throw new ApiError('NOT_FOUND', 'That file could not be found.');
 
-  if (session.role !== 'ADMIN') {
+  if (session.role === 'ADMIN') {
+    if (asset.kind === 'ANSWER_IMAGE') {
+      // adminId checked first: an undefined filter value would match every quiz.
+      const owned =
+        session.adminId &&
+        (await prisma.answerAttachment.findFirst({
+          where: { assetId: asset.id, answer: { attempt: { quiz: { authorId: session.adminId } } } },
+          select: { id: true },
+        }));
+      if (!owned) {
+        throw new ApiError('FORBIDDEN', "That answer belongs to another faculty member's quiz.");
+      }
+    }
+  } else {
     if (!session.studentId) {
       throw new ApiError('FORBIDDEN', 'You cannot view this file.');
     }

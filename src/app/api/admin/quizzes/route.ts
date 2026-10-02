@@ -2,6 +2,7 @@ import { ApiError, assertSameOrigin, ok, parseBody, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { ownQuizWhere } from '@/lib/ownership';
 import { questionFieldsFromInput, questionOptionsFromInput } from '@/lib/questions';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 import { getRequestContext } from '@/lib/session';
@@ -11,9 +12,10 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export const GET = route(async () => {
-  await requireAdmin();
+  const session = await requireAdmin();
 
   const quizzes = await prisma.quiz.findMany({
+    where: ownQuizWhere(session.adminId),
     include: {
       subject: { select: { name: true, code: true } },
       author: { include: { user: { select: { name: true } } } },

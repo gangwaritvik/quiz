@@ -1,6 +1,7 @@
 import { ok, route } from '@/lib/api';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { ownAttemptWhere, ownQuizWhere } from '@/lib/ownership';
 import { remainingTime, sweepExpiredAttempts } from '@/lib/exam';
 
 export const runtime = 'nodejs';
@@ -18,14 +19,14 @@ const OFFLINE_MS = 90_000;
  * about a minute and a half.
  */
 export const GET = route(async (request: Request) => {
-  await requireAdmin();
+  const session = await requireAdmin();
   await sweepExpiredAttempts();
 
   const url = new URL(request.url);
   const quizId = url.searchParams.get('quizId');
 
   const attempts = await prisma.quizAttempt.findMany({
-    where: { status: 'IN_PROGRESS', ...(quizId ? { quizId } : {}) },
+    where: { ...ownAttemptWhere(session.adminId), status: 'IN_PROGRESS', ...(quizId ? { quizId } : {}) },
     include: {
       student: { include: { user: { select: { name: true } } } },
       quiz: { select: { id: true, title: true, questionCount: true, durationMinutes: true } },
@@ -89,7 +90,7 @@ export const GET = route(async (request: Request) => {
   });
 
   const liveQuizzes = await prisma.quiz.findMany({
-    where: { status: 'PUBLISHED', startsAt: { lte: new Date() }, endsAt: { gte: new Date() } },
+    where: { ...ownQuizWhere(session.adminId), status: 'PUBLISHED', startsAt: { lte: new Date() }, endsAt: { gte: new Date() } },
     select: {
       id: true,
       title: true,

@@ -3,6 +3,7 @@ import type { Prisma } from '@prisma/client';
 import { ok, parseQuery, route } from '@/lib/api';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { ownAttemptWhere } from '@/lib/ownership';
 import { gradingQueueSchema } from '@/lib/validation';
 
 export const runtime = 'nodejs';
@@ -17,10 +18,12 @@ export const dynamic = 'force-dynamic';
  * shown a total that will later move.
  */
 export const GET = route(async (request: Request) => {
-  await requireAdmin();
+  const session = await requireAdmin();
+  const own = ownAttemptWhere(session.adminId);
   const filters = parseQuery(request, gradingQueueSchema);
 
   const where: Prisma.QuizAttemptWhereInput = {
+    ...own,
     ...(filters.quizId ? { quizId: filters.quizId } : {}),
     ...(filters.includeCompleted
       ? { OR: [{ pendingManualCount: { gt: 0 } }, { manualGradedAt: { not: null } }] }
@@ -53,7 +56,9 @@ export const GET = route(async (request: Request) => {
       skip: (filters.page - 1) * filters.pageSize,
       take: filters.pageSize,
     }),
-    prisma.answer.count({ where: { requiresManualGrading: true, gradedAt: null } }),
+    prisma.answer.count({
+      where: { requiresManualGrading: true, gradedAt: null, attempt: own },
+    }),
   ]);
 
   return ok({
@@ -63,7 +68,7 @@ export const GET = route(async (request: Request) => {
     pageCount: Math.max(1, Math.ceil(total / filters.pageSize)),
     summary: {
       attemptsPending: await prisma.quizAttempt.count({
-        where: { pendingManualCount: { gt: 0 } },
+        where: { ...own, pendingManualCount: { gt: 0 } },
       }),
       answersPending,
     },

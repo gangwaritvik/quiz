@@ -1,19 +1,21 @@
 import { ok, route } from '@/lib/api';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { ownAttemptWhere } from '@/lib/ownership';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /** Graded attempts across all quizzes, with per-quiz aggregates. */
 export const GET = route(async (request: Request) => {
-  await requireAdmin();
+  const session = await requireAdmin();
 
   const url = new URL(request.url);
   const quizId = url.searchParams.get('quizId');
 
   const attempts = await prisma.quizAttempt.findMany({
     where: {
+      ...ownAttemptWhere(session.adminId),
       status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] },
       ...(quizId ? { quizId } : {}),
     },

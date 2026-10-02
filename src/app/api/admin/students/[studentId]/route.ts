@@ -2,6 +2,7 @@ import { ApiError, assertSameOrigin, ok, parseBody, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { ownAttemptWhere } from '@/lib/ownership';
 import { getRequestContext } from '@/lib/session';
 import { updateStudentSchema } from '@/lib/validation';
 
@@ -13,7 +14,7 @@ interface Params {
 }
 
 export const GET = route(async (_request: Request, { params }: Params) => {
-  await requireAdmin();
+  const session = await requireAdmin();
   const { studentId } = await params;
 
   const student = await prisma.student.findUnique({
@@ -22,7 +23,9 @@ export const GET = route(async (_request: Request, { params }: Params) => {
       user: {
         select: { id: true, name: true, email: true, status: true, lastLoginAt: true },
       },
+      // Directory fields are shared; attempts only from this faculty's quizzes.
       attempts: {
+        where: ownAttemptWhere(session.adminId),
         include: {
           quiz: { select: { title: true, releaseResults: true } },
           integrity: { select: { score: true, status: true } },

@@ -31,6 +31,10 @@ export const PATCH = route(async (request: Request, { params }: Params) => {
     },
   });
   if (!existing) throw new ApiError('NOT_FOUND', 'Question not found.');
+  // The bank is shared for reading; only the author edits or retires a question.
+  if (existing.authorId !== session.adminId) {
+    throw new ApiError('FORBIDDEN', 'Only the faculty member who wrote this question can change it.');
+  }
 
   // The images this question referenced before the edit. Options are replaced
   // wholesale below, and the diagram may have been cleared, so any of these can
@@ -91,6 +95,9 @@ export const DELETE = route(async (request: Request, { params }: Params) => {
 
   const existing = await prisma.question.findUnique({ where: { id: questionId } });
   if (!existing) throw new ApiError('NOT_FOUND', 'Question not found.');
+  if (existing.authorId !== session.adminId) {
+    throw new ApiError('FORBIDDEN', 'Only the faculty member who wrote this question can change it.');
+  }
 
   await prisma.question.update({ where: { id: questionId }, data: { active: false } });
 

@@ -2,6 +2,7 @@ import { ApiError, assertSameOrigin, ok, parseBody, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { assertAttemptOwner } from '@/lib/ownership';
 import { EVENT_LABELS, computeIntegrity } from '@/lib/integrity';
 import { getRequestContext } from '@/lib/session';
 import { integrityReviewSchema } from '@/lib/validation';
@@ -15,8 +16,9 @@ interface Params {
 
 /** Full investigation view: the score, its derivation, and the raw timeline. */
 export const GET = route(async (_request: Request, { params }: Params) => {
-  await requireAdmin();
+  const session = await requireAdmin();
   const { attemptId } = await params;
+  await assertAttemptOwner(attemptId, session.adminId);
 
   const attempt = await prisma.quizAttempt.findUnique({
     where: { id: attemptId },
@@ -97,14 +99,9 @@ export const POST = route(async (request: Request, { params }: Params) => {
   const session = await requireAdmin();
   const context = await getRequestContext();
   const { attemptId } = await params;
+  await assertAttemptOwner(attemptId, session.adminId);
 
   const body = await parseBody(request, integrityReviewSchema);
-
-  const attempt = await prisma.quizAttempt.findUnique({
-    where: { id: attemptId },
-    select: { id: true },
-  });
-  if (!attempt) throw new ApiError('NOT_FOUND', 'Attempt not found.');
 
   const review = await prisma.$transaction(async (tx) => {
     const created = await tx.integrityReview.create({

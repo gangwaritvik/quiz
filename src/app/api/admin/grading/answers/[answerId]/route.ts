@@ -2,6 +2,7 @@ import { assertSameOrigin, ok, parseBody, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
 import { gradeAnswerManually } from '@/lib/exam';
+import { assertAnswerOwner } from '@/lib/ownership';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 import { getRequestContext } from '@/lib/session';
 import { gradeAnswerSchema } from '@/lib/validation';
@@ -26,6 +27,7 @@ export const POST = route(async (request: Request, { params }: Params) => {
   const session = await requireAdmin();
   const context = await getRequestContext();
   const { answerId } = await params;
+  await assertAnswerOwner(answerId, session.adminId);
 
   enforceRateLimit(RATE_LIMITS.adminWrite, `grade:${session.userId}`);
 

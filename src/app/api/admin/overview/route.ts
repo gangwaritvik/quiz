@@ -2,6 +2,7 @@ import { ok, route } from '@/lib/api';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { sweepExpiredAttempts } from '@/lib/exam';
+import { ownAttemptWhere, ownQuizWhere } from '@/lib/ownership';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
@@ -13,6 +14,9 @@ export const GET = route(async () => {
   await sweepExpiredAttempts();
 
   const now = new Date();
+  // Every count and list below is limited to this faculty member's own quizzes.
+  const ownQuiz = ownQuizWhere(session.adminId);
+  const ownAttempt = ownAttemptWhere(session.adminId);
 
   const [
     activeExams,
@@ -31,18 +35,26 @@ export const GET = route(async () => {
     integrityEventCounts,
   ] = await Promise.all([
       prisma.quiz.count({
-        where: { status: 'PUBLISHED', startsAt: { lte: now }, endsAt: { gte: now } },
+        where: { ...ownQuiz, status: 'PUBLISHED', startsAt: { lte: now }, endsAt: { gte: now } },
       }),
-      prisma.quizAttempt.count({ where: { status: 'IN_PROGRESS' } }),
-      prisma.quizAttempt.count({ where: { status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] } } }),
+      prisma.quizAttempt.count({ where: { ...ownAttempt, status: 'IN_PROGRESS' } }),
+      prisma.quizAttempt.count({
+        where: { ...ownAttempt, status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] } },
+      }),
       prisma.integrityScore.count({
-        where: { status: { in: ['REVIEW_RECOMMENDED', 'HIGH_RISK'] }, reviewed: false },
+        where: {
+          status: { in: ['REVIEW_RECOMMENDED', 'HIGH_RISK'] },
+          reviewed: false,
+          attempt: ownAttempt,
+        },
       }),
       // Descriptive and uploaded answers a person still has to mark. Students
       // are waiting on these, so the count is surfaced in the sidebar.
-      prisma.answer.count({ where: { requiresManualGrading: true, gradedAt: null } }),
+      prisma.answer.count({
+        where: { requiresManualGrading: true, gradedAt: null, attempt: ownAttempt },
+      }),
       prisma.quizAttempt.findMany({
-        where: { status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] } },
+        where: { ...ownAttempt, status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] } },
         select: {
           percentage: true,
           submittedAt: true,
@@ -53,7 +65,7 @@ export const GET = route(async () => {
         take: 400,
       }),
       prisma.quiz.findMany({
-        where: { status: { not: 'DRAFT' } },
+        where: { ...ownQuiz, status: { not: 'DRAFT' } },
         select: {
           id: true,
           title: true,
@@ -69,7 +81,7 @@ export const GET = route(async () => {
       }),
       // Papers still with a marker, oldest first — the queue a person works.
       prisma.quizAttempt.findMany({
-        where: { pendingManualCount: { gt: 0 } },
+        where: { ...ownAttempt, pendingManualCount: { gt: 0 } },
         select: {
           id: true,
           submittedAt: true,
@@ -83,7 +95,7 @@ export const GET = route(async () => {
       // log: each one already carries the names and the timestamp needed to
       // write a sentence, where an audit row would need a lookup per entry.
       prisma.quizAttempt.findMany({
-        where: { submittedAt: { not: null } },
+        where: { ...ownAttempt, submittedAt: { not: null } },
         select: {
           id: true,
           submittedAt: true,
@@ -94,13 +106,17 @@ export const GET = route(async () => {
         take: 5,
       }),
       prisma.quiz.findMany({
-        where: { status: { not: 'DRAFT' } },
+        where: { ...ownQuiz, status: { not: 'DRAFT' } },
         select: { id: true, title: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
         take: 4,
       }),
       prisma.integrityScore.findMany({
-        where: { status: { in: ['REVIEW_RECOMMENDED', 'HIGH_RISK'] }, reviewed: false },
+        where: {
+          status: { in: ['REVIEW_RECOMMENDED', 'HIGH_RISK'] },
+          reviewed: false,
+          attempt: ownAttempt,
+        },
         select: {
           id: true,
           computedAt: true,
@@ -117,13 +133,13 @@ export const GET = route(async () => {
           section: true,
           user: { select: { name: true } },
           attempts: {
-            where: { status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] } },
+            where: { ...ownAttempt, status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] } },
             select: { quizId: true, percentage: true, pendingManualCount: true },
           },
           // Only exams that have closed can be counted as missed — an open one
           // is simply not sat yet.
           assignments: {
-            where: { quiz: { status: { not: 'DRAFT' }, endsAt: { lt: now } } },
+            where: { quiz: { ...ownQuiz, status: { not: 'DRAFT' }, endsAt: { lt: now } } },
             select: { quizId: true },
           },
         },
@@ -136,6 +152,7 @@ export const GET = route(async () => {
       prisma.examEvent.groupBy({
         by: ['type'],
         _count: { _all: true },
+        where: { attempt: ownAttempt },
         orderBy: { _count: { type: 'desc' } },
         take: 7,
       }),

@@ -1,6 +1,7 @@
 import { ApiError, ok, route } from '@/lib/api';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { assertAttemptOwner } from '@/lib/ownership';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,8 +12,9 @@ interface Params {
 
 /** Faculty-only view of one student's complete submitted paper and responses. */
 export const GET = route(async (_request: Request, { params }: Params) => {
-  await requireAdmin();
+  const session = await requireAdmin();
   const { attemptId } = await params;
+  await assertAttemptOwner(attemptId, session.adminId);
 
   const attempt = await prisma.quizAttempt.findUnique({
     where: { id: attemptId },

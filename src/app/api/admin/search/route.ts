@@ -1,6 +1,7 @@
 import { ok, parseQuery, route } from '@/lib/api';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { ownQuizWhere } from '@/lib/ownership';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 import { adminSearchSchema } from '@/lib/validation';
 
@@ -26,7 +27,7 @@ export const GET = route(async (request: Request) => {
 
   const [quizzes, students, questions] = await Promise.all([
     prisma.quiz.findMany({
-      where: { title: contains },
+      where: { ...ownQuizWhere(session.adminId), title: contains },
       select: {
         id: true,
         title: true,

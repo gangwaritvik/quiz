@@ -3,6 +3,7 @@ import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { deleteUnreferencedAssets } from '@/lib/media';
+import { assertQuizOwner } from '@/lib/ownership';
 import { getRequestContext } from '@/lib/session';
 import { updateQuizSchema } from '@/lib/validation';
 
@@ -14,8 +15,9 @@ interface Params {
 }
 
 export const GET = route(async (_request: Request, { params }: Params) => {
-  await requireAdmin();
+  const session = await requireAdmin();
   const { quizId } = await params;
+  await assertQuizOwner(quizId, session.adminId);
 
   const quiz = await prisma.quiz.findUnique({
     where: { id: quizId },
@@ -141,6 +143,7 @@ export const PATCH = route(async (request: Request, { params }: Params) => {
   const session = await requireAdmin();
   const context = await getRequestContext();
   const { quizId } = await params;
+  await assertQuizOwner(quizId, session.adminId);
 
   const body = await parseBody(request, updateQuizSchema);
 
@@ -234,6 +237,7 @@ export const DELETE = route(async (request: Request, { params }: Params) => {
   const session = await requireAdmin();
   const context = await getRequestContext();
   const { quizId } = await params;
+  await assertQuizOwner(quizId, session.adminId);
 
   const quiz = await prisma.quiz.findUnique({
     where: { id: quizId },

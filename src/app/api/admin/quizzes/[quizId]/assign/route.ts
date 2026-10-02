@@ -1,7 +1,8 @@
-import { ApiError, assertSameOrigin, ok, parseBody, route } from '@/lib/api';
+import { assertSameOrigin, ok, parseBody, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { assertQuizOwner } from '@/lib/ownership';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 import { getRequestContext } from '@/lib/session';
 import { assignQuizSchema } from '@/lib/validation';
@@ -24,8 +25,7 @@ export const POST = route(async (request: Request, { params }: Params) => {
   enforceRateLimit(RATE_LIMITS.adminWrite, `assign:${session.userId}`);
   const body = await parseBody(request, assignQuizSchema);
 
-  const quiz = await prisma.quiz.findUnique({ where: { id: quizId } });
-  if (!quiz) throw new ApiError('NOT_FOUND', 'Quiz not found.');
+  await assertQuizOwner(quizId, session.adminId);
 
   const validStudents = await prisma.student.findMany({
     where: { id: { in: body.studentIds }, user: { status: 'ACTIVE' } },

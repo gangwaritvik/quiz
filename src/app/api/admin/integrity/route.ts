@@ -3,13 +3,15 @@ import type { Prisma } from '@prisma/client';
 import { ok, route } from '@/lib/api';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { ownQuizWhere } from '@/lib/ownership';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /** Attempts ordered by how much they warrant a human look. */
 export const GET = route(async (request: Request) => {
-  await requireAdmin();
+  const session = await requireAdmin();
+  const ownQuiz = ownQuizWhere(session.adminId);
 
   const url = new URL(request.url);
   const status = url.searchParams.get('status');
@@ -21,7 +23,7 @@ export const GET = route(async (request: Request) => {
       : {}),
     ...(reviewed === 'true' ? { reviewed: true } : {}),
     ...(reviewed === 'false' ? { reviewed: false } : {}),
-    attempt: { status: { not: 'IN_PROGRESS' } },
+    attempt: { status: { not: 'IN_PROGRESS' }, quiz: ownQuiz },
   };
 
   const scores = await prisma.integrityScore.findMany({
@@ -42,7 +44,7 @@ export const GET = route(async (request: Request) => {
   const counts = await prisma.integrityScore.groupBy({
     by: ['status'],
     _count: { _all: true },
-    where: { attempt: { status: { not: 'IN_PROGRESS' } } },
+    where: { attempt: { status: { not: 'IN_PROGRESS' }, quiz: ownQuiz } },
   });
 
   return ok({
