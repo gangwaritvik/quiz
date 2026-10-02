@@ -188,6 +188,11 @@ const keyFields = new Set(['isCorrect', 'modelAnswer', 'acceptedAnswers', 'expla
 const leaked = (v) =>
   Array.isArray(v) ? v.some(leaked) : v && typeof v === 'object' ? Object.entries(v).some(([k, x]) => keyFields.has(k) || leaked(x)) : false;
 check('(a) no answer-key fields in result (releaseAnswers=false)', !leaked(r2.data));
+check('(a) no topic scores while the key is withheld', Array.isArray(r2.data?.topicPerformance) && r2.data.topicPerformance.length === 0, JSON.stringify(r2.data?.topicPerformance));
+await prisma.quiz.update({ where: { id: quizId }, data: { releaseAnswers: true } });
+const rKey = await stu('(a) result with the key released', 'GET', `/api/results/${attemptId}`, undefined, { expect: [200] });
+check('(a) topic scores appear once the key is released', (rKey.data?.topicPerformance?.length ?? 0) > 0);
+await prisma.quiz.update({ where: { id: quizId }, data: { releaseAnswers: false } });
 
 // ---------------- (c) release-device, (f) parallel start, (g) parallel submit ----------------
 const quiz2 = await mkQuiz('E2E device', ['23CSE002', '23CSE003']);

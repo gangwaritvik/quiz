@@ -331,8 +331,10 @@ export function StudentResultDetail({ attemptId }: { attemptId: string }) {
                 ))}
               </ul>
             ) : (
-              <p className="mt-3 text-sm text-muted-foreground">
-                No topic breakdown is available for this paper.
+              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                {data.showAnswers
+                  ? 'No topic breakdown is available for this paper.'
+                  : 'Your faculty has not released the answer key, so scores by topic are withheld too. A topic score would show which of your answers were wrong.'}
               </p>
             )}
           </section>
@@ -353,8 +355,8 @@ export function StudentResultDetail({ attemptId }: { attemptId: string }) {
             {!data.showAnswers ? (
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
                 Your faculty has released scores but not the answer key for this quiz. Per-question
-                results are withheld too — knowing which questions you got right would reveal the
-                key for the paper you sat. Your totals and topic breakdown are shown here.
+                results and scores by topic are withheld too — knowing which questions you got
+                right would reveal the key for the paper you sat. Your totals are shown here.
               </p>
             ) : null}
 
@@ -428,8 +430,8 @@ function ReadingGuide({
         </li>
         <li>
           <span className="font-medium text-foreground">Topic bars.</span> Each bar is the share of
-          questions you got right in that topic. Answers still being marked are left out, and
-          topics with very few questions may not appear.
+          questions you got right in that topic, shown once your faculty releases the answers.
+          Answers still being marked are left out.
         </li>
       </ul>
     </details>

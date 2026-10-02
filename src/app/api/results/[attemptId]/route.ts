@@ -102,9 +102,8 @@ export const GET = route(async (_request: Request, { params }: Params) => {
     },
   });
 
-  // Topic performance is derived from grading flags only — no answer text is
-  // needed, so this stays available even when answers are withheld. Answers
-  // still awaiting a marker are excluded rather than counted as wrong.
+  // Topic performance is derived from grading flags. Answers still awaiting a
+  // marker are excluded rather than counted as wrong.
   const topicTotals = new Map<string, { correct: number; total: number }>();
   for (const aq of attemptQuestions) {
     const answer = aq.answers[0];
@@ -117,10 +116,10 @@ export const GET = route(async (_request: Request, { params }: Params) => {
     topicTotals.set(topic, entry);
   }
 
-  // A topic with one or two questions maps its percentage straight back to
-  // per-question correctness, so it is shown only alongside the answer key.
-  const topicPerformance = [...topicTotals.entries()]
-    .filter(([, value]) => showAnswers || value.total >= 3)
+  // With the answer key withheld, a topic's score is itself a leak: "0 of 3 in
+  // Topic A" tells a student, and anyone they share it with, that every option
+  // they chose there was wrong. So topics are shown only with the key.
+  const topicPerformance = [...(showAnswers ? topicTotals.entries() : [])]
     .map(([topic, value]) => ({
       topic,
       correct: value.correct,
@@ -207,8 +206,8 @@ export const GET = route(async (_request: Request, { params }: Params) => {
       // With answers withheld, per-question correctness is itself an answer
       // key: a student knows which option they picked, so "you got Q3 right"
       // discloses the correct option for Q3 and can be shared with students
-      // who have not sat the paper. Only aggregate counts and topic
-      // percentages — which do not map back to a specific option — are safe.
+      // who have not sat the paper. Only whole-paper counts are safe;
+      // topic scores are not either, and are withheld above.
       const base = {
         position: aq.position,
         text: aq.question.text,
