@@ -27,7 +27,7 @@ export const GET = route(async (request: Request) => {
     // shared bank — they would otherwise clutter it and be reused by mistake.
     adHoc: false,
     ...(filters.subjectId ? { subjectId: filters.subjectId } : {}),
-    ...(filters.topicId ? { topicId: filters.topicId } : {}),
+    ...(filters.topicId ? { topicId: filters.topicId === 'none' ? null : filters.topicId } : {}),
     ...(filters.difficulty ? { difficulty: filters.difficulty } : {}),
     ...(filters.type ? { type: filters.type } : {}),
     ...(filters.search

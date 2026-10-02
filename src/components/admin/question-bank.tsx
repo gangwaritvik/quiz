@@ -1,24 +1,28 @@
 'use client';
 
 import {
+  ArrowLeft,
+  BookOpen,
   ChevronLeft,
   ChevronRight,
   FileQuestion,
   Pencil,
   Plus,
   Search,
+  SearchX,
   SignalHigh,
   SignalLow,
   SignalMedium,
-  SlidersHorizontal,
   Trash2,
   Upload,
   X,
 } from 'lucide-react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
 import { toast } from 'sonner';
 
 import { CsvImportDialog } from '@/components/admin/csv-import-dialog';
+import { FilterSelect } from '@/components/admin/filter-select';
 import { QuestionEditor, type QuestionRecord } from '@/components/admin/question-editor';
 import { ErrorState } from '@/components/shared/error-state';
 import { MathText } from '@/components/shared/math-text';
@@ -33,18 +37,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Badge, badgeVariants } from '@/components/ui/badge';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import {
   Table,
@@ -56,11 +53,9 @@ import {
 } from '@/components/ui/table';
 import { useApi } from '@/hooks/use-api';
 import { ApiClientError, apiFetch } from '@/lib/client/api';
-import { buildFilterChips } from '@/lib/filter-chips';
 import {
   QUESTION_TYPE_LABEL,
   QUESTION_TYPE_ORDER,
-  type QuestionTypeValue,
   isManuallyMarked,
   isOptionBased,
 } from '@/lib/question-types';
@@ -79,14 +74,18 @@ interface QuestionsResponse {
   questions: QuestionListItem[];
 }
 
+interface SubjectMeta {
+  id: string;
+  name: string;
+  code: string;
+  topics: Array<{ id: string; name: string; count: number }>;
+  /** Questions in the subject that have no topic. */
+  noTopic: number;
+  pool: { EASY: number; MEDIUM: number; HARD: number; total: number };
+}
+
 interface MetaData {
-  subjects: Array<{
-    id: string;
-    name: string;
-    code: string;
-    topics: Array<{ id: string; name: string }>;
-    pool: { total: number };
-  }>;
+  subjects: SubjectMeta[];
 }
 
 const DIFFICULTY_VARIANT = {
@@ -103,57 +102,240 @@ const DIFFICULTY_ICON = {
 } as const;
 
 const ALL = 'ALL';
+/** The topic filter's value for questions that have no topic. */
+const NO_TOPIC = 'none';
 
+/**
+ * The question bank, one subject at a time. A teacher first picks the subject;
+ * only then do they see its questions, with that subject's topics down the
+ * side. The chosen subject lives in the URL, so refresh and Back keep it.
+ */
 export function QuestionBank() {
-  const { data: meta } = useApi<MetaData>('/api/admin/meta');
+  // useSearchParams needs a Suspense boundary above it.
+  return (
+    <React.Suspense
+      fallback={
+        <PageShell>
+          <SkeletonRows rows={5} />
+        </PageShell>
+      }
+    >
+      <QuestionBankView />
+    </React.Suspense>
+  );
+}
 
+function QuestionBankView() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { data: meta, error, refetch: refetchMeta } = useApi<MetaData>('/api/admin/meta');
+
+  const subjectId = searchParams.get('subject') ?? '';
+  const subject = meta?.subjects.find((entry) => entry.id === subjectId);
+
+  if (error && !meta) {
+    return (
+      <PageShell>
+        <ErrorState error={error} onRetry={() => void refetchMeta()} />
+      </PageShell>
+    );
+  }
+
+  if (!meta) {
+    return (
+      <PageShell>
+        <PageHeader title="Question bank" />
+        <SkeletonRows rows={4} className="mt-8" />
+      </PageShell>
+    );
+  }
+
+  if (!subject) {
+    return (
+      <SubjectPicker
+        subjects={meta.subjects}
+        onPick={(id) => router.push(`${pathname}?subject=${encodeURIComponent(id)}`)}
+      />
+    );
+  }
+
+  return (
+    <SubjectBank
+      // A fresh set of filters for each subject.
+      key={subject.id}
+      subject={subject}
+      subjects={meta.subjects}
+      onBack={() => router.push(pathname)}
+      onChanged={() => void refetchMeta()}
+    />
+  );
+}
+
+/** Step one: which subject's bank to open. */
+function SubjectPicker({
+  subjects,
+  onPick,
+}: {
+  subjects: SubjectMeta[];
+  onPick: (subjectId: string) => void;
+}) {
+  return (
+    <PageShell>
+      <PageHeader
+        title="Question bank"
+        description="Choose a subject to see its questions. Quizzes draw their papers from here at exam time."
+      />
+
+      {subjects.length === 0 ? (
+        <div className="mt-8">
+          <EmptyState
+            icon={BookOpen}
+            title="No subjects yet"
+            description="Questions belong to a subject. Once a subject exists, its bank will appear here."
+          />
+        </div>
+      ) : (
+        <ul className="stagger mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {subjects.map((subject) => (
+            <li key={subject.id}>
+              <button
+                type="button"
+                onClick={() => onPick(subject.id)}
+                className="group flex h-full w-full flex-col rounded-lg border border-border bg-card p-5 text-left transition-colors duration-fast ease-standard hover:border-primary/40 hover:bg-accent/30"
+              >
+                <span className="type-eyebrow">{subject.code}</span>
+                <span className="mt-1 break-words font-serif text-xl font-semibold text-foreground">
+                  {subject.name}
+                </span>
+
+                <span className="tabular mt-4 flex items-baseline gap-1.5">
+                  <span className="font-serif text-3xl font-semibold leading-none text-foreground">
+                    {subject.pool.total}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    question{subject.pool.total === 1 ? '' : 's'}
+                  </span>
+                </span>
+
+                <DifficultyMix pool={subject.pool} />
+
+                <span className="mt-4 flex items-center justify-between gap-2 text-sm text-muted-foreground">
+                  {subject.topics.length} topic{subject.topics.length === 1 ? '' : 's'}
+                  <span className="inline-flex items-center gap-1 font-medium text-primary">
+                    Open
+                    <ChevronRight
+                      className="size-4 transition-transform duration-fast ease-standard group-hover:translate-x-0.5"
+                      aria-hidden
+                    />
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </PageShell>
+  );
+}
+
+/** Easy / medium / hard as one proportional bar with a plain-text legend. */
+function DifficultyMix({ pool }: { pool: SubjectMeta['pool'] }) {
+  if (pool.total === 0) {
+    return <span className="mt-3 text-sm text-muted-foreground">Nothing added yet</span>;
+  }
+  const parts = [
+    { key: 'EASY', label: 'Easy', count: pool.EASY, className: 'bg-success' },
+    { key: 'MEDIUM', label: 'Medium', count: pool.MEDIUM, className: 'bg-primary' },
+    { key: 'HARD', label: 'Hard', count: pool.HARD, className: 'bg-warning' },
+  ] as const;
+  return (
+    <>
+      <span
+        aria-hidden
+        className="mt-3 flex h-1.5 w-full overflow-hidden rounded-full bg-muted"
+      >
+        {parts.map((part) => (
+          <span
+            key={part.key}
+            className={part.className}
+            style={{ width: `${(part.count / pool.total) * 100}%` }}
+          />
+        ))}
+      </span>
+      <span className="tabular mt-2 text-xs text-muted-foreground">
+        {parts.map((part) => `${part.count} ${part.label.toLowerCase()}`).join(' · ')}
+      </span>
+    </>
+  );
+}
+
+/** Step two: one subject's questions. */
+function SubjectBank({
+  subject,
+  subjects,
+  onBack,
+  onChanged,
+}: {
+  subject: SubjectMeta;
+  subjects: SubjectMeta[];
+  onBack: () => void;
+  onChanged: () => void;
+}) {
   const [search, setSearch] = React.useState('');
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
-  const [subjectId, setSubjectId] = React.useState(ALL);
   const [topicId, setTopicId] = React.useState(ALL);
   const [difficulty, setDifficulty] = React.useState(ALL);
   const [type, setType] = React.useState(ALL);
   const [page, setPage] = React.useState(1);
 
-  const [filtersOpen, setFiltersOpen] = React.useState(false);
-  const filtersButtonRef = React.useRef<HTMLButtonElement>(null);
-
   const [editorOpen, setEditorOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<QuestionRecord | null>(null);
   const [importOpen, setImportOpen] = React.useState(false);
-  const [importSubjectId, setImportSubjectId] = React.useState('');
   const [deleting, setDeleting] = React.useState<QuestionListItem | null>(null);
 
   // Debounce so typing does not fire a request per keystroke.
   React.useEffect(() => {
     const timer = window.setTimeout(() => {
-      setDebouncedSearch(search);
+      setDebouncedSearch(search.trim());
       setPage(1);
     }, 300);
     return () => window.clearTimeout(timer);
   }, [search]);
 
   const query = React.useMemo(() => {
-    const params = new URLSearchParams({ page: String(page), pageSize: '20' });
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: '20',
+      subjectId: subject.id,
+    });
     if (debouncedSearch) params.set('search', debouncedSearch);
-    if (subjectId !== ALL) params.set('subjectId', subjectId);
     if (topicId !== ALL) params.set('topicId', topicId);
     if (difficulty !== ALL) params.set('difficulty', difficulty);
     if (type !== ALL) params.set('type', type);
     return `/api/admin/questions?${params.toString()}`;
-  }, [page, debouncedSearch, subjectId, topicId, difficulty, type]);
+  }, [page, subject.id, debouncedSearch, topicId, difficulty, type]);
 
   const { data, error, initialLoading, loading, refetch } = useApi<QuestionsResponse>(query);
-
-  const subjects = meta?.subjects ?? [];
-  const selectedSubject = subjects.find((entry) => entry.id === subjectId);
   const questions = data?.questions ?? [];
+
+  // The editor starts a new question in the first subject it is given, so the
+  // open subject goes first. Memoised: the editor resets itself when this changes.
+  const editorSubjects = React.useMemo(
+    () => [subject, ...subjects.filter((entry) => entry.id !== subject.id)],
+    [subject, subjects],
+  );
+
+  const changed = () => {
+    void refetch();
+    onChanged();
+  };
 
   const remove = async (question: QuestionListItem) => {
     try {
       await apiFetch(`/api/admin/questions/${question.id}`, { method: 'DELETE' });
       toast.success('Question retired from the bank.');
-      await refetch();
+      changed();
     } catch (caught) {
       toast.error(
         caught instanceof ApiClientError ? caught.message : 'We could not remove that question.',
@@ -163,6 +345,33 @@ export function QuestionBank() {
     }
   };
 
+  const narrowed = debouncedSearch !== '' || difficulty !== ALL || type !== ALL;
+  const filtered = narrowed || topicId !== ALL;
+
+  const clearFilters = () => {
+    setSearch('');
+    setDebouncedSearch('');
+    setTopicId(ALL);
+    setDifficulty(ALL);
+    setType(ALL);
+    setPage(1);
+  };
+
+  const pickTopic = (value: string) => {
+    setTopicId(value);
+    setPage(1);
+  };
+
+  const openEditor = (question: QuestionListItem | null) => {
+    setEditing(question);
+    setEditorOpen(true);
+  };
+
+  const topicName =
+    topicId === NO_TOPIC
+      ? 'No topic'
+      : (subject.topics.find((topic) => topic.id === topicId)?.name ?? null);
+
   if (error && !data) {
     return (
       <PageShell>
@@ -171,104 +380,23 @@ export function QuestionBank() {
     );
   }
 
-  const filtered =
-    debouncedSearch !== '' ||
-    subjectId !== ALL ||
-    topicId !== ALL ||
-    difficulty !== ALL ||
-    type !== ALL;
-
-  // The search chip follows the applied query, so it matches the list below.
-  const chips = buildFilterChips([
-    {
-      key: 'search',
-      label: 'Search',
-      value: debouncedSearch,
-      display: `“${debouncedSearch}”`,
-    },
-    { key: 'subject', label: 'Subject', value: subjectId, display: selectedSubject?.name },
-    {
-      key: 'topic',
-      label: 'Topic',
-      value: topicId,
-      display: selectedSubject?.topics.find((topic) => topic.id === topicId)?.name,
-    },
-    {
-      key: 'difficulty',
-      label: 'Difficulty',
-      value: difficulty,
-      display: difficulty.charAt(0) + difficulty.slice(1).toLowerCase(),
-    },
-    {
-      key: 'type',
-      label: 'Type',
-      value: type,
-      display: QUESTION_TYPE_LABEL[type as QuestionTypeValue],
-    },
-  ]);
-  // Search sits outside the panel, so the button counts only what it reveals.
-  const panelFilterCount = chips.filter((chip) => chip.key !== 'search').length;
-
-  const clearFilters = () => {
-    setSearch('');
-    setDebouncedSearch('');
-    setSubjectId(ALL);
-    setTopicId(ALL);
-    setDifficulty(ALL);
-    setType(ALL);
-    setPage(1);
-    // The clicked chip or link is about to unmount; keep keyboard focus somewhere sensible.
-    filtersButtonRef.current?.focus();
-  };
-
-  const removeChip = (key: string) => {
-    if (key === 'search') {
-      setSearch('');
-      setDebouncedSearch('');
-    } else if (key === 'subject') {
-      setSubjectId(ALL);
-      setTopicId(ALL);
-    } else if (key === 'topic') {
-      setTopicId(ALL);
-    } else if (key === 'difficulty') {
-      setDifficulty(ALL);
-    } else if (key === 'type') {
-      setType(ALL);
-    }
-    setPage(1);
-    filtersButtonRef.current?.focus();
-  };
-
-  const openEditor = (question: QuestionListItem) => {
-    setEditing(question);
-    setEditorOpen(true);
-  };
-
   return (
     <PageShell>
+      <Button variant="ghost" size="sm" className="-ml-2 mb-3" onClick={onBack}>
+        <ArrowLeft />
+        All subjects
+      </Button>
+
       <PageHeader
-        title="Question bank"
-        description="Quizzes draw their papers from here at exam time. Correct answers never leave the server."
+        title={subject.name}
+        description={`${subject.code} · ${subject.pool.total} question${subject.pool.total === 1 ? '' : 's'} in the bank. Quizzes draw their papers from here at exam time.`}
         actions={
           <>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setImportSubjectId(subjectId !== ALL ? subjectId : (subjects[0]?.id ?? ''));
-                setImportOpen(true);
-              }}
-              disabled={subjects.length === 0}
-            >
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Upload />
               Import CSV
             </Button>
-            <Button
-              onClick={() => {
-                setEditing(null);
-                setEditorOpen(true);
-              }}
-              disabled={subjects.length === 0}
-            >
+            <Button onClick={() => openEditor(null)}>
               <Plus />
               Add question
             </Button>
@@ -276,77 +404,60 @@ export function QuestionBank() {
         }
       />
 
-      <div role="search" aria-label="Filter questions" className="mt-6">
-        <div className="flex items-center gap-3">
-          <div className="relative min-w-0 flex-1">
-            <Label htmlFor="question-search" className="sr-only">
-              Search
-            </Label>
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
+      <div className="mt-8 grid gap-8 lg:grid-cols-[14rem_minmax(0,1fr)]">
+        {/* Topics: a list down the side on wide screens, a row that scrolls on narrow ones. */}
+        <nav aria-label={`Topics in ${subject.name}`} className="min-w-0">
+          <p className="type-eyebrow hidden lg:block">Topics</p>
+          <ul className="scrollbar-slim -mx-1 flex gap-1 overflow-x-auto px-1 pb-2 lg:mx-0 lg:mt-2 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0">
+            <TopicItem
+              label="All topics"
+              count={subject.pool.total}
+              active={topicId === ALL}
+              onClick={() => pickTopic(ALL)}
             />
-            <Input
-              id="question-search"
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search question text"
-              className="pl-9"
-            />
-          </div>
+            {subject.topics.map((topic) => (
+              <TopicItem
+                key={topic.id}
+                label={topic.name}
+                count={topic.count}
+                active={topicId === topic.id}
+                onClick={() => pickTopic(topic.id)}
+              />
+            ))}
+            {subject.noTopic > 0 ? (
+              <TopicItem
+                label="No topic"
+                count={subject.noTopic}
+                active={topicId === NO_TOPIC}
+                onClick={() => pickTopic(NO_TOPIC)}
+              />
+            ) : null}
+          </ul>
+        </nav>
 
-          <Button
-            ref={filtersButtonRef}
-            variant="outline"
-            aria-expanded={filtersOpen}
-            aria-controls="question-filters"
-            aria-label={panelFilterCount > 0 ? `Filters, ${panelFilterCount} active` : 'Filters'}
-            onClick={() => setFiltersOpen((open) => !open)}
+        <div className="min-w-0">
+          <div
+            role="search"
+            aria-label="Filter questions"
+            className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.6fr)_repeat(2,minmax(0,1fr))] lg:items-end"
           >
-            <SlidersHorizontal />
-            Filters
-            {panelFilterCount > 0 ? <Badge className="tabular">{panelFilterCount}</Badge> : null}
-          </Button>
-        </div>
-
-        {/* Subject, topic, difficulty and type live behind one button. State stays
-            mounted while the panel is closed, so nothing resets when it toggles. */}
-        <div id="question-filters" hidden={!filtersOpen}>
-          <div className="mt-3 grid gap-4 rounded-lg border border-border bg-card p-4 sm:grid-cols-2 xl:grid-cols-4">
-            <FilterSelect
-              id="filter-subject"
-              label="Subject"
-              value={subjectId}
-              onChange={(value) => {
-                setSubjectId(value);
-                setTopicId(ALL);
-                setPage(1);
-              }}
-              options={[
-                { value: ALL, label: 'All subjects' },
-                ...subjects.map((entry) => ({ value: entry.id, label: entry.name })),
-              ]}
-            />
-
-            <FilterSelect
-              id="filter-topic"
-              label="Topic"
-              value={topicId}
-              onChange={(value) => {
-                setTopicId(value);
-                setPage(1);
-              }}
-              disabled={!selectedSubject}
-              hint={selectedSubject ? undefined : 'Choose a subject first.'}
-              options={[
-                { value: ALL, label: 'Any topic' },
-                ...(selectedSubject?.topics ?? []).map((topic) => ({
-                  value: topic.id,
-                  label: topic.name,
-                })),
-              ]}
-            />
+            <div className="space-y-2 sm:col-span-2 lg:col-span-1">
+              <Label htmlFor="question-search">Search</Label>
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden
+                />
+                <Input
+                  id="question-search"
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search question text"
+                  className="pl-9"
+                />
+              </div>
+            </div>
 
             <FilterSelect
               id="filter-difficulty"
@@ -381,240 +492,186 @@ export function QuestionBank() {
               ]}
             />
           </div>
-        </div>
 
-        {chips.length > 0 ? (
-          <ul aria-label="Active filters" className="mt-3 flex flex-wrap items-center gap-2">
-            {chips.map((chip) => (
-              <li key={chip.key} className="max-w-full">
-                <button
-                  type="button"
-                  aria-label={`Remove filter ${chip.text}`}
-                  onClick={() => removeChip(chip.key)}
-                  className={cn(
-                    badgeVariants({ variant: 'outline' }),
-                    'max-w-full cursor-pointer py-1 text-foreground hover:bg-accent [@media(pointer:coarse)]:min-h-11',
-                  )}
-                >
-                  <span className="truncate">{chip.text}</span>
-                  <X aria-hidden />
-                </button>
-              </li>
-            ))}
-            <li>
-              <Button variant="link" size="sm" className="h-auto px-1" onClick={clearFilters}>
-                Clear all
-              </Button>
-            </li>
-          </ul>
-        ) : null}
-      </div>
-
-      {initialLoading ? (
-        <SkeletonRows rows={6} className="mt-6" />
-      ) : questions.length === 0 ? (
-        <div className="mt-6">
-          <EmptyState
-            icon={FileQuestion}
-            title={filtered ? 'No matching questions' : 'The bank is empty'}
-            description={
-              filtered
-                ? 'No questions match your filters. Try a broader search.'
-                : 'Add questions manually or import a CSV. Quizzes cannot be published until the pool is large enough.'
-            }
-            action={
-              filtered ? (
-                <Button variant="outline" onClick={clearFilters}>
-                  Clear filters
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => {
-                    setEditing(null);
-                    setEditorOpen(true);
-                  }}
-                >
-                  <Plus />
-                  Add question
-                </Button>
-              )
-            }
-          />
-        </div>
-      ) : (
-        <div
-          aria-busy={loading || undefined}
-          className={loading ? 'opacity-60 transition-opacity duration-fast' : 'transition-opacity duration-fast'}
-        >
-          <div className="mt-6 border-b border-border pb-3">
-            <p className="tabular text-sm text-muted-foreground" aria-live="polite">
-              Showing {questions.length} of {data?.total ?? 0} questions
-            </p>
-          </div>
-
-          {/* Desktop: a ruled ledger. */}
-          <div className="mt-4 hidden rounded-lg border border-border bg-card md:block">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Question</TableHead>
-                  <TableHead className="hidden min-[1340px]:table-cell">Subject</TableHead>
-                  <TableHead>Difficulty</TableHead>
-                  <TableHead className="hidden min-[1340px]:table-cell">Type</TableHead>
-                  <TableHead className="text-right">Used</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {questions.map((question) => (
-                  <TableRow key={question.id}>
-                    <TableCell className="min-w-[18rem] max-w-xl">
-                      {/* Rendered rather than shown as source: a bank full of
-                          raw `$\text{…}$` is unreadable when scanning. */}
-                      <MathText
-                        as="p"
-                        text={question.text}
-                        className="line-clamp-2 break-words text-sm text-foreground"
-                      />
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        <QuestionFacts question={question} />
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground min-[1340px]:hidden">
-                        {question.subject} · {question.topic ?? 'No topic'} ·{' '}
-                        {QUESTION_TYPE_LABEL[question.type]}
-                      </p>
-                    </TableCell>
-                    <TableCell className="hidden max-w-[12rem] min-[1340px]:table-cell">
-                      <p className="truncate text-sm">{question.subject}</p>
-                      <p className="truncate text-xs text-muted-foreground">
-                        {question.topic ?? 'No topic'}
-                      </p>
-                    </TableCell>
-                    <TableCell>
-                      <DifficultyBadge difficulty={question.difficulty} />
-                    </TableCell>
-                    <TableCell className="hidden whitespace-nowrap text-sm text-muted-foreground min-[1340px]:table-cell">
-                      {QUESTION_TYPE_LABEL[question.type]}
-                    </TableCell>
-                    <TableCell className="tabular text-right text-sm">
-                      {question.usageCount}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <RowActions
-                        question={question}
-                        onEdit={() => openEditor(question)}
-                        onRetire={() => setDeleting(question)}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Mobile: the same facts as a list, nothing to scroll sideways. */}
-          <ul className="mt-4 divide-y divide-border rounded-lg border border-border bg-card md:hidden">
-            {questions.map((question) => (
-              <li key={question.id} className="p-4">
-                <MathText
-                  as="p"
-                  text={question.text}
-                  className="line-clamp-3 break-words text-sm text-foreground"
-                />
-                <p className="mt-1.5 truncate text-xs text-muted-foreground">
-                  {question.subject}
-                  {question.topic ? ` · ${question.topic}` : ''}
+          {initialLoading ? (
+            <SkeletonRows rows={6} className="mt-6" />
+          ) : questions.length === 0 ? (
+            <div className="mt-6">
+              <EmptyState
+                icon={filtered ? SearchX : FileQuestion}
+                title={filtered ? 'No matching questions' : `No ${subject.name} questions yet`}
+                description={
+                  filtered
+                    ? 'Nothing in this subject matches. Try a broader search, or another topic.'
+                    : 'Add questions one at a time or import a CSV. Quizzes cannot be published until the pool is large enough.'
+                }
+                action={
+                  filtered ? (
+                    <Button variant="outline" onClick={clearFilters}>
+                      <X />
+                      Clear filters
+                    </Button>
+                  ) : (
+                    <Button onClick={() => openEditor(null)}>
+                      <Plus />
+                      Add question
+                    </Button>
+                  )
+                }
+              />
+            </div>
+          ) : (
+            <div
+              aria-busy={loading || undefined}
+              className={cn('transition-opacity duration-fast', loading && 'opacity-60')}
+            >
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+                <p className="tabular text-sm text-muted-foreground" aria-live="polite">
+                  Showing {questions.length} of {data?.total ?? 0}
+                  {topicName ? ` in ${topicName}` : ''}
                 </p>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <DifficultyBadge difficulty={question.difficulty} />
-                  <Badge variant="outline">{QUESTION_TYPE_LABEL[question.type]}</Badge>
-                  <span className="tabular text-xs text-muted-foreground">
-                    <QuestionFacts question={question} /> · used {question.usageCount}×
-                  </span>
-                  <div className="ml-auto">
-                    <RowActions
-                      question={question}
-                      onEdit={() => openEditor(question)}
-                      onRetire={() => setDeleting(question)}
-                    />
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+                {filtered ? (
+                  <Button variant="link" size="sm" className="h-auto px-1" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                ) : null}
+              </div>
 
-          <nav
-            aria-label="Question bank pages"
-            className="mt-4 flex flex-wrap items-center justify-end gap-2"
-          >
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1 || loading}
-              onClick={() => setPage((value) => Math.max(1, value - 1))}
-            >
-              <ChevronLeft />
-              Previous
-            </Button>
-            <span className="tabular px-1 text-sm text-muted-foreground">
-              Page {data?.page ?? 1} of {data?.pageCount ?? 1}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= (data?.pageCount ?? 1) || loading}
-              onClick={() => setPage((value) => value + 1)}
-            >
-              Next
-              <ChevronRight />
-            </Button>
-          </nav>
+              {/* Desktop: a ruled ledger. */}
+              <div className="mt-4 hidden rounded-lg border border-border bg-card md:block">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Question</TableHead>
+                      <TableHead>Difficulty</TableHead>
+                      <TableHead className="hidden xl:table-cell">Type</TableHead>
+                      <TableHead className="text-right">Used</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {questions.map((question) => (
+                      <TableRow key={question.id}>
+                        <TableCell className="min-w-[18rem] max-w-xl">
+                          {/* Rendered rather than shown as source: a bank full of
+                              raw `$\text{…}$` is unreadable when scanning. */}
+                          <MathText
+                            as="p"
+                            text={question.text}
+                            className="line-clamp-2 break-words text-sm text-foreground"
+                          />
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            <QuestionFacts question={question} />
+                          </p>
+                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                            {question.topic ?? 'No topic'}
+                            <span className="xl:hidden"> · {QUESTION_TYPE_LABEL[question.type]}</span>
+                          </p>
+                        </TableCell>
+                        <TableCell>
+                          <DifficultyBadge difficulty={question.difficulty} />
+                        </TableCell>
+                        <TableCell className="hidden whitespace-nowrap text-sm text-muted-foreground xl:table-cell">
+                          {QUESTION_TYPE_LABEL[question.type]}
+                        </TableCell>
+                        <TableCell className="tabular text-right text-sm">
+                          {question.usageCount}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <RowActions
+                            question={question}
+                            onEdit={() => openEditor(question)}
+                            onRetire={() => setDeleting(question)}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Mobile: the same facts as a list, nothing to scroll sideways. */}
+              <ul className="stagger mt-4 divide-y divide-border rounded-lg border border-border bg-card md:hidden">
+                {questions.map((question) => (
+                  <li key={question.id} className="p-4">
+                    <MathText
+                      as="p"
+                      text={question.text}
+                      className="line-clamp-3 break-words text-sm text-foreground"
+                    />
+                    <p className="mt-1.5 truncate text-xs text-muted-foreground">
+                      {question.topic ?? 'No topic'}
+                    </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <DifficultyBadge difficulty={question.difficulty} />
+                      <Badge variant="outline">{QUESTION_TYPE_LABEL[question.type]}</Badge>
+                      <span className="tabular text-xs text-muted-foreground">
+                        <QuestionFacts question={question} /> · used {question.usageCount}×
+                      </span>
+                      <div className="ml-auto">
+                        <RowActions
+                          question={question}
+                          onEdit={() => openEditor(question)}
+                          onRetire={() => setDeleting(question)}
+                        />
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+
+              <nav
+                aria-label="Question bank pages"
+                className="mt-4 flex flex-wrap items-center justify-end gap-2"
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1 || loading}
+                  onClick={() => setPage((value) => Math.max(1, value - 1))}
+                >
+                  <ChevronLeft />
+                  Previous
+                </Button>
+                <span className="tabular px-1 text-sm text-muted-foreground">
+                  Page {data?.page ?? 1} of {data?.pageCount ?? 1}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= (data?.pageCount ?? 1) || loading}
+                  onClick={() => setPage((value) => value + 1)}
+                >
+                  Next
+                  <ChevronRight />
+                </Button>
+              </nav>
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       <QuestionEditor
         open={editorOpen}
         onOpenChange={setEditorOpen}
         question={editing}
-        subjects={subjects}
-        onSaved={() => void refetch()}
+        subjects={editorSubjects}
+        onSaved={changed}
       />
 
       <CsvImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
-        title="Import questions"
-        description="Valid rows are imported and problem rows are reported individually."
+        title={`Import ${subject.name} questions`}
+        description="Valid rows are imported and problem rows are reported individually. Topics named in the file are created automatically inside this subject."
         columns="question, optionA, optionB, optionC, optionD, correct, difficulty, topic, marks, explanation, type, assertion, reason — the last three are optional. Type accepts MCQ, MULTI, TF, AR, SHORT, LONG or IMAGE; for MULTI put every correct letter in the correct column (AC), and for SHORT list accepted answers separated by |."
         sample={`Which protocol guarantees ordered delivery?,TCP,UDP,ICMP,ARP,A,MEDIUM,Transport Layer,1,TCP is connection-oriented.,MCQ
 Which of these are connectionless?,UDP,TCP,ICMP,SCTP,AC,MEDIUM,Transport Layer,2,,MULTI
 Expand the acronym TCP.,,,,,Transmission Control Protocol|TCP protocol,EASY,Transport Layer,1,,SHORT`}
         endpoint="/api/admin/questions/import"
-        extraBody={{ subjectId: importSubjectId }}
-        disabled={!importSubjectId}
-        onImported={() => void refetch()}
-      >
-        <div className="space-y-2">
-          <Label htmlFor="import-subject" required>
-            Import into subject
-          </Label>
-          <Select value={importSubjectId} onValueChange={setImportSubjectId}>
-            <SelectTrigger id="import-subject">
-              <SelectValue placeholder="Select a subject" />
-            </SelectTrigger>
-            <SelectContent>
-              {subjects.map((entry) => (
-                <SelectItem key={entry.id} value={entry.id}>
-                  {entry.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            Topics named in the file are created automatically inside this subject.
-          </p>
-        </div>
-      </CsvImportDialog>
+        extraBody={{ subjectId: subject.id }}
+        onImported={changed}
+      />
 
       <AlertDialog open={deleting !== null} onOpenChange={(open) => !open && setDeleting(null)}>
         <AlertDialogContent>
@@ -637,40 +694,34 @@ Expand the acronym TCP.,,,,,Transmission Control Protocol|TCP protocol,EASY,Tran
   );
 }
 
-function FilterSelect({
-  id,
+function TopicItem({
   label,
-  value,
-  onChange,
-  options,
-  disabled,
-  hint,
+  count,
+  active,
+  onClick,
 }: {
-  id: string;
   label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
-  disabled?: boolean;
-  hint?: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
 }) {
   return (
-    <div className="min-w-0 space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      <Select value={value} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger id={id}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
-    </div>
+    <li className="shrink-0 lg:shrink">
+      <button
+        type="button"
+        aria-pressed={active}
+        onClick={onClick}
+        className={cn(
+          'flex min-h-10 w-full items-center justify-between gap-3 rounded-md border px-3 py-1.5 text-left text-sm transition-colors duration-fast ease-standard lg:border-transparent',
+          active
+            ? 'border-primary bg-accent font-medium text-accent-foreground lg:border-transparent'
+            : 'border-border bg-card text-muted-foreground hover:text-foreground lg:bg-transparent lg:hover:bg-accent/50',
+        )}
+      >
+        <span className="min-w-0 truncate">{label}</span>
+        <span className="tabular shrink-0 text-xs opacity-70">{count}</span>
+      </button>
+    </li>
   );
 }
 

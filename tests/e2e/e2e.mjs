@@ -503,6 +503,40 @@ check('(h) result candidate is the signed-in student', cand?.name === me.name &&
 const others = studentList.filter((s) => s.rollNumber !== me.rollNumber);
 check('(h) result carries no other student name/roll/email', !others.some((s) => r2.text.includes(`"${s.rollNumber}"`) || r2.text.includes(s.name) || r2.text.includes(s.email)), `others=${others.length}`);
 
+// (p) results and marking filters: section, subject, quiz, search; faculty scoping holds
+const resAll = (await fac('(p) results unfiltered', 'GET', '/api/admin/results', undefined, { expect: [200] })).data;
+check('(p) results describe their filter options', resAll.options.quizzes.some((q) => q.id === quizId) && resAll.options.subjects.length > 0 && resAll.options.sections.length > 0);
+const mySection = resAll.options.sections[0];
+const secQs = `department=${encodeURIComponent(mySection.department)}&section=${encodeURIComponent(mySection.section)}`;
+const resSec = (await fac('(p) results by section', 'GET', `/api/admin/results?${secQs}`, undefined, { expect: [200] })).data;
+check('(p) a section filter returns only that section', resSec.results.length > 0 && resSec.results.every((r) => r.section === mySection.section), JSON.stringify(resSec.results.map((r) => r.section)));
+const otherSection = resAll.options.sections.find((x) => x.section !== mySection.section);
+if (otherSection) {
+  const resOther = (await fac('(p) results by the other section', 'GET', `/api/admin/results?department=${encodeURIComponent(otherSection.department)}&section=${encodeURIComponent(otherSection.section)}`, undefined, { expect: [200] })).data;
+  check('(p) sections do not overlap', resOther.results.every((r) => r.section === otherSection.section));
+}
+const resQuiz = (await fac('(p) results by quiz', 'GET', `/api/admin/results?quizId=${quizId}`, undefined, { expect: [200] })).data;
+check('(p) a quiz filter returns only that quiz', resQuiz.results.length > 0 && resQuiz.results.every((r) => r.quizId === quizId));
+const resRoll = (await fac('(p) results search by roll number', 'GET', '/api/admin/results?q=23CSE001', undefined, { expect: [200] })).data;
+check('(p) search finds the student', resRoll.results.length > 0 && resRoll.results.every((r) => r.rollNumber === '23CSE001'));
+const resNone = (await fac('(p) results for an unknown subject', 'GET', '/api/admin/results?subjectId=cmzzzzzzzzzzzzzzzzzzzzzzz', undefined, { expect: [200] })).data;
+check('(p) an unknown subject leaves nothing', resNone.results.length === 0 && resNone.quizSummaries.length === 0);
+const resBadFilter = await fac('(p) a malformed filter is ignored, not an error', 'GET', '/api/admin/results?quizId=nope&flagged=maybe', undefined, { expect: [200] });
+check('(p) malformed filters fall back to unfiltered', resBadFilter.data.results.length === resAll.results.length);
+const resOther2 = (await fac2('(p) another faculty member sees none of it', 'GET', `/api/admin/results?quizId=${quizId}`, undefined, { expect: [200] })).data;
+check('(p) filters cannot widen faculty scope', resOther2.results.length === 0 && !resOther2.options.quizzes.some((q) => q.id === quizId));
+const gAll = (await fac('(p) marking queue options', 'GET', '/api/admin/grading?includeCompleted=true', undefined, { expect: [200] })).data;
+check('(p) the marking queue lists subjects and sections to filter by', Array.isArray(gAll.subjects) && Array.isArray(gAll.sections) && gAll.quizzes.every((q) => typeof q.subjectId === 'string'));
+const gNoSubject = (await fac('(p) marking queue for an unknown subject', 'GET', '/api/admin/grading?includeCompleted=true&subjectId=cmzzzzzzzzzzzzzzzzzzzzzzz', undefined, { expect: [200] })).data;
+check('(p) a subject filter narrows the marking queue', gNoSubject.total === 0);
+const gSec = await fac('(p) marking queue by section', 'GET', `/api/admin/grading?includeCompleted=true&${secQs}&q=23CSE`, undefined, { expect: [200] });
+check('(p) section and search combine in the marking queue', gSec.data.attempts.every((a) => a.student.section === mySection.section));
+const metaNow = (await fac('(p) meta carries topic counts', 'GET', '/api/admin/meta', undefined, { expect: [200] })).data;
+check('(p) subjects report topic counts and the no-topic count', metaNow.subjects.every((sub) => typeof sub.noTopic === 'number' && sub.topics.every((t) => typeof t.count === 'number')));
+const subjWithQs = metaNow.subjects.find((sub) => sub.pool.total > 0);
+const qsNoTopic = (await fac('(p) questions without a topic', 'GET', `/api/admin/questions?subjectId=${subjWithQs.id}&topicId=none&pageSize=100`, undefined, { expect: [200] })).data;
+check('(p) topic=none returns only topicless questions, matching the count', qsNoTopic.questions.every((qq) => qq.topic === null) && qsNoTopic.total === subjWithQs.noTopic, `${qsNoTopic.total} vs ${subjWithQs.noTopic}`);
+
 ids = { quizId, attemptId, quiz2, a2, a3, quiz3, a5, a6 };
 } catch (e) {
   log(`FAIL crash    ${e.stack ?? e}`);

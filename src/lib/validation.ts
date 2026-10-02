@@ -545,6 +545,7 @@ export const paginationSchema = z.object({
 export const questionFilterSchema = paginationSchema.extend({
   search: z.string().trim().max(200).optional(),
   subjectId: z.string().optional(),
+  /** A topic id, or `none` for questions without a topic. */
   topicId: z.string().optional(),
   difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
   type: questionTypeSchema.optional(),
@@ -556,12 +557,31 @@ export const gradingQueueSchema = paginationSchema.extend({
   quizId: cuid.optional().catch(undefined),
   /** Student name or roll number. Oversized input is rejected, not truncated. */
   q: z.string().trim().max(60).default(''),
+  subjectId: cuid.optional().catch(undefined),
+  /** A section is a department plus its letter; both or neither. */
+  department: z.string().trim().max(80).optional().catch(undefined),
+  section: z.string().trim().max(40).optional().catch(undefined),
   /** oldest = longest-waiting first. Unknown values fall back rather than 422. */
   sort: z.enum(['oldest', 'newest', 'student', 'quiz']).catch('oldest'),
   /** Include attempts whose outstanding answers have all been marked. */
   includeCompleted: z
     .enum(['true', 'false'])
     .default('false')
+    .transform((value) => value === 'true'),
+});
+
+/** Filters for the results page. Anything malformed is ignored, not rejected. */
+export const resultsFilterSchema = z.object({
+  quizId: cuid.optional().catch(undefined),
+  subjectId: cuid.optional().catch(undefined),
+  department: z.string().trim().max(80).optional().catch(undefined),
+  section: z.string().trim().max(40).optional().catch(undefined),
+  /** Student name, roll number or quiz title. */
+  q: z.string().trim().max(60).default('').catch(''),
+  flagged: z
+    .enum(['true', 'false'])
+    .default('false')
+    .catch('false')
     .transform((value) => value === 'true'),
 });
 

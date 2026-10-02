@@ -1,25 +1,63 @@
-import { ok, route } from '@/lib/api';
+import type { Prisma } from '@prisma/client';
+
+import { ok, parseQuery, route } from '@/lib/api';
 import { requireAdmin } from '@/lib/auth';
 import { bestPerStudent } from '@/lib/attempt-policy';
 import { prisma } from '@/lib/db';
-import { ownAttemptWhere } from '@/lib/ownership';
+import { ownAttemptWhere, ownQuizWhere } from '@/lib/ownership';
+import { resultsFilterSchema } from '@/lib/validation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** Graded attempts across all quizzes, with per-quiz aggregates. */
+/**
+ * Graded attempts across the caller's quizzes, with per-quiz aggregates.
+ * Filters narrow the set, and the summaries are worked out from what is left,
+ * so "Section A" shows Section A's average. `options` always describes the
+ * whole set, so choosing a filter never removes the others' choices.
+ */
 export const GET = route(async (request: Request) => {
   const session = await requireAdmin();
+  const filters = parseQuery(request, resultsFilterSchema);
+  const own = ownAttemptWhere(session.adminId);
+  const submitted = { status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] } } satisfies Prisma.QuizAttemptWhereInput;
 
-  const url = new URL(request.url);
-  const quizId = url.searchParams.get('quizId');
+  const where: Prisma.QuizAttemptWhereInput = {
+    ...own,
+    ...submitted,
+    ...(filters.quizId ? { quizId: filters.quizId } : {}),
+    ...(filters.subjectId ? { quiz: { ...own.quiz, subjectId: filters.subjectId } } : {}),
+    ...(filters.department && filters.section
+      ? { student: { department: filters.department, section: filters.section } }
+      : {}),
+    ...(filters.flagged ? { integrity: { status: { not: 'NORMAL' } } } : {}),
+    ...(filters.q
+      ? {
+          OR: [
+            { student: { rollNumber: { contains: filters.q, mode: 'insensitive' } } },
+            { student: { user: { name: { contains: filters.q, mode: 'insensitive' } } } },
+            { quiz: { title: { contains: filters.q, mode: 'insensitive' } } },
+          ],
+        }
+      : {}),
+  };
+
+  const [optionQuizzes, optionSections] = await Promise.all([
+    prisma.quiz.findMany({
+      where: { ...ownQuizWhere(session.adminId), attempts: { some: submitted } },
+      select: { id: true, title: true, subject: { select: { id: true, name: true } } },
+      orderBy: [{ title: 'asc' }, { id: 'asc' }],
+    }),
+    prisma.student.findMany({
+      where: { attempts: { some: { ...own, ...submitted } } },
+      distinct: ['department', 'section'],
+      select: { department: true, section: true },
+      orderBy: [{ department: 'asc' }, { section: 'asc' }],
+    }),
+  ]);
 
   const attempts = await prisma.quizAttempt.findMany({
-    where: {
-      ...ownAttemptWhere(session.adminId),
-      status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] },
-      ...(quizId ? { quizId } : {}),
-    },
+    where,
     include: {
       student: { include: { user: { select: { name: true } } } },
       quiz: { select: { id: true, title: true, subject: { select: { name: true } } } },
@@ -77,6 +115,17 @@ export const GET = route(async (request: Request) => {
   });
 
   return ok({
+    options: {
+      subjects: [
+        ...new Map(optionQuizzes.map((quiz) => [quiz.subject.id, quiz.subject.name])).entries(),
+      ].map(([id, name]) => ({ id, name })),
+      quizzes: optionQuizzes.map((quiz) => ({
+        id: quiz.id,
+        title: quiz.title,
+        subjectId: quiz.subject.id,
+      })),
+      sections: optionSections,
+    },
     quizSummaries,
     results: attempts.map((attempt) => ({
       attemptId: attempt.id,

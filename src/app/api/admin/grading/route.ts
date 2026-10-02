@@ -28,16 +28,26 @@ export const GET = route(async (request: Request) => {
   ];
 
   // `own` stays spread first: quizId and q can only narrow it, never widen it.
+  const bySection =
+    filters.department && filters.section
+      ? { department: filters.department, section: filters.section }
+      : {};
   const where: Prisma.QuizAttemptWhereInput = {
     ...own,
     ...(filters.quizId ? { quizId: filters.quizId } : {}),
-    ...(filters.q
+    ...(filters.subjectId ? { quiz: { ...own.quiz, subjectId: filters.subjectId } } : {}),
+    ...(filters.q || filters.department
       ? {
           student: {
-            OR: [
-              { rollNumber: { contains: filters.q, mode: 'insensitive' } },
-              { user: { name: { contains: filters.q, mode: 'insensitive' } } },
-            ],
+            ...bySection,
+            ...(filters.q
+              ? {
+                  OR: [
+                    { rollNumber: { contains: filters.q, mode: 'insensitive' as const } },
+                    { user: { name: { contains: filters.q, mode: 'insensitive' as const } } },
+                  ],
+                }
+              : {}),
           },
         }
       : {}),
@@ -53,7 +63,7 @@ export const GET = route(async (request: Request) => {
     quiz: [{ quiz: { title: 'asc' } }, { quizId: 'asc' }, { submittedAt: 'asc' }],
   };
 
-  const [total, attempts, answersPending, attemptsPending, quizzes] = await Promise.all([
+  const [total, attempts, answersPending, attemptsPending, quizzes, sections] = await Promise.all([
     prisma.quizAttempt.count({ where }),
     prisma.quizAttempt.findMany({
       where,
@@ -90,9 +100,18 @@ export const GET = route(async (request: Request) => {
       select: {
         id: true,
         title: true,
+        subjectId: true,
+        subject: { select: { id: true, name: true } },
         _count: { select: { attempts: { where: { pendingManualCount: { gt: 0 } } } } },
       },
       orderBy: [{ title: 'asc' }, { id: 'asc' }],
+    }),
+    // Options for the section filter: sections with someone in the queue.
+    prisma.student.findMany({
+      where: { attempts: { some: { ...own, OR: inQueue } } },
+      distinct: ['department', 'section'],
+      select: { department: true, section: true },
+      orderBy: [{ department: 'asc' }, { section: 'asc' }],
     }),
   ]);
 
@@ -105,8 +124,13 @@ export const GET = route(async (request: Request) => {
     quizzes: quizzes.map((quiz) => ({
       id: quiz.id,
       title: quiz.title,
+      subjectId: quiz.subjectId,
       pending: quiz._count.attempts,
     })),
+    subjects: [
+      ...new Map(quizzes.map((quiz) => [quiz.subject.id, quiz.subject.name])).entries(),
+    ].map(([id, name]) => ({ id, name })),
+    sections,
     attempts: attempts.map((attempt) => ({
       attemptId: attempt.id,
       submittedAt: attempt.submittedAt?.toISOString() ?? null,

@@ -15,6 +15,7 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
 
+import { FilterSelect } from '@/components/admin/filter-select';
 import { ErrorState } from '@/components/shared/error-state';
 import { PageHeader, PageShell } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -22,7 +23,6 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton, SkeletonRows } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -34,6 +34,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useApi } from '@/hooks/use-api';
+import { parseSectionLabel, sectionLabel } from '@/lib/section-label';
 import { cn, formatDateTime } from '@/lib/utils';
 
 interface QueueAttempt {
@@ -52,7 +53,9 @@ interface QueueResponse {
   page: number;
   pageCount: number;
   summary: { attemptsPending: number; answersPending: number };
-  quizzes: Array<{ id: string; title: string; pending: number }>;
+  quizzes: Array<{ id: string; title: string; subjectId: string; pending: number }>;
+  subjects: Array<{ id: string; name: string }>;
+  sections: Array<{ department: string; section: string }>;
   attempts: QueueAttempt[];
 }
 
@@ -108,6 +111,8 @@ function GradingQueueView() {
 
   const q = (searchParams.get('q') ?? '').slice(0, 60);
   const quizId = searchParams.get('quizId') ?? '';
+  const subjectId = searchParams.get('subjectId') ?? '';
+  const sectionParam = searchParams.get('section') ?? '';
   const sortParam = searchParams.get('sort');
   const sort: Sort = isSort(sortParam) ? sortParam : 'oldest';
   const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '', 10) || 1);
@@ -153,13 +158,22 @@ function GradingQueueView() {
     const params = new URLSearchParams({ page: String(page), pageSize: '20', sort });
     if (q) params.set('q', q);
     if (quizId) params.set('quizId', quizId);
+    if (subjectId) params.set('subjectId', subjectId);
+    const section = parseSectionLabel(sectionParam);
+    if (section) {
+      params.set('department', section.department);
+      params.set('section', section.section);
+    }
     if (includeCompleted) params.set('includeCompleted', 'true');
     return `/api/admin/grading?${params.toString()}`;
-  }, [page, sort, q, quizId, includeCompleted]);
+  }, [page, sort, q, quizId, subjectId, sectionParam, includeCompleted]);
 
   const { data, error, initialLoading, loading, refetch } = useApi<QueueResponse>(query);
   const attempts = data?.attempts ?? [];
-  const quizzes = data?.quizzes ?? [];
+  // Choosing a subject narrows the quiz list to that subject's quizzes.
+  const quizzes = (data?.quizzes ?? []).filter((entry) => !subjectId || entry.subjectId === subjectId);
+  const subjects = data?.subjects ?? [];
+  const sections = data?.sections ?? [];
 
   // A page that no longer exists (a stale link, or the last row was just marked).
   React.useEffect(() => {
@@ -182,7 +196,7 @@ function GradingQueueView() {
     return [...byQuiz.values()];
   }, [data, sort]);
 
-  const filtered = q !== '' || quizId !== '';
+  const filtered = q !== '' || quizId !== '' || subjectId !== '' || sectionParam !== '';
   const dirty = filtered || sort !== 'oldest' || includeCompleted;
 
   const clearFilters = () => {
@@ -261,9 +275,9 @@ function GradingQueueView() {
       <div
         role="search"
         aria-label="Filter the marking queue"
-        className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.6fr)_repeat(2,minmax(0,1fr))_6rem] lg:items-end"
+        className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end"
       >
-        <div className="space-y-2 sm:col-span-2 lg:col-span-1">
+        <div className="space-y-2 sm:col-span-2">
           <Label htmlFor="queue-search">Search</Label>
           <div className="relative">
             <Search
@@ -283,6 +297,20 @@ function GradingQueueView() {
         </div>
 
         <FilterSelect
+          id="queue-subject"
+          label="Subject"
+          value={subjectId || ALL}
+          onChange={(value) =>
+            // A quiz from another subject would leave the list empty.
+            setParams({ subjectId: value === ALL ? '' : value, quizId: '' })
+          }
+          options={[
+            { value: ALL, label: 'All subjects' },
+            ...subjects.map((entry) => ({ value: entry.id, label: entry.name })),
+          ]}
+        />
+
+        <FilterSelect
           id="queue-quiz"
           label="Quiz"
           value={quizId || ALL}
@@ -297,6 +325,17 @@ function GradingQueueView() {
         />
 
         <FilterSelect
+          id="queue-section"
+          label="Section"
+          value={sectionParam || ALL}
+          onChange={(value) => setParams({ section: value === ALL ? '' : value })}
+          options={[
+            { value: ALL, label: 'All sections' },
+            ...sections.map((entry) => ({ value: sectionLabel(entry), label: sectionLabel(entry) })),
+          ]}
+        />
+
+        <FilterSelect
           id="queue-sort"
           label="Sort by"
           value={sort}
@@ -307,7 +346,7 @@ function GradingQueueView() {
           }))}
         />
 
-        <div className={cn('sm:col-span-2 lg:col-span-1', !dirty && 'hidden lg:block')}>
+        <div className={cn('sm:col-span-2 lg:col-span-1', !dirty && 'hidden')}>
           {dirty ? (
             <Button variant="ghost" onClick={clearFilters}>
               <X />
@@ -416,38 +455,6 @@ function GradingQueueView() {
         </div>
       )}
     </PageShell>
-  );
-}
-
-function FilterSelect({
-  id,
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
-}) {
-  return (
-    <div className="min-w-0 space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id={id}>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
-              {option.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
   );
 }
 
