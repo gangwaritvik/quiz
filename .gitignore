@@ -1,0 +1,30 @@
+node_modules/
+.pnp
+.pnp.js
+
+.next/
+out/
+build/
+dist/
+next-env.d.ts
+
+.env
+.env.local
+.env*.local
+
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+.DS_Store
+Thumbs.db
+
+*.tsbuildinfo
+coverage/
+.vercel
+
+# Uploaded question diagrams and student answer sheets.
+var/
+
+# Local server logs
+*.log

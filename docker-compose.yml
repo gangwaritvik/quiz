@@ -1,0 +1,24 @@
+# Local PostgreSQL for development.
+#   docker compose up -d
+# Credentials match the DATABASE_URL in .env.example.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: securequiz-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: securequiz
+      POSTGRES_PASSWORD: securequiz
+      POSTGRES_DB: securequiz
+    ports:
+      - '5432:5432'
+    volumes:
+      - securequiz-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U securequiz -d securequiz']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  securequiz-pgdata:

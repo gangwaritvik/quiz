@@ -1,0 +1,295 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /*
+   * SecureQuiz design tokens — "Quiet Authority".
+   *
+   * Paper, not dashboard: a warm off-white page, white raised surfaces, and
+   * hairline borders doing the separation work. Oxford ink blue carries
+   * identity and action. Semantic colours are reserved: green means
+   * passed/secure, amber means review, red means alert — nothing decorative is
+   * allowed to borrow them.
+   *
+   * Contrast (WCAG 2.2, checked on the rounded values below):
+   *   foreground        16.1:1 page, 17.8:1 white
+   *   muted-foreground   6.1:1 page,  6.7:1 white, 5.7:1 on muted
+   *   success/warning/danger text  ≥5.6:1 on their -subtle fill, ≥5.7:1 page
+   *   input (control boundary)     3.4:1 white, 3.1:1 page
+   *   ring                         7.1:1 white, 6.5:1 page
+   *
+   * The platform is light-surface first. `.dark` is kept working because the
+   * admin console still offers a theme toggle.
+   */
+  :root {
+    --background: 48 22% 95%; /* #F5F4EF page */
+    --foreground: 223 13% 10%; /* #16181D ink */
+
+    --card: 0 0% 100%;
+    --card-foreground: 223 13% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 223 13% 10%;
+
+    --primary: 214 52% 25%; /* #1F3B61 Oxford */
+    --primary-hover: 214 54% 19%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 45 17% 91%;
+    --secondary-foreground: 223 13% 10%;
+
+    --muted: 43 18% 92%;
+    --muted-foreground: 222 5% 37%;
+
+    --accent: 214 44% 94%; /* light Oxford tint: hover, selected rows */
+    --accent-foreground: 214 52% 25%;
+
+    --destructive: 3 71% 41%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 148 57% 27%;
+    --success-foreground: 0 0% 100%;
+    --success-subtle: 140 32% 93%;
+
+    --warning: 36 100% 27%;
+    --warning-foreground: 0 0% 100%;
+    --warning-subtle: 40 80% 92%;
+
+    --danger: 3 71% 41%;
+    --danger-foreground: 0 0% 100%;
+    --danger-subtle: 9 71% 95%;
+
+    /* Hairline for separating surfaces; `input` is the ≥3:1 boundary for
+       form controls, which must be identifiable without colour. */
+    --border: 44 15% 86%;
+    --input: 220 4% 55%;
+    --ring: 213 55% 37%;
+
+    --radius: 0.375rem;
+
+    /* Chart marks (see chart-theme.ts): ≥3:1 against the card. */
+    --chart-series: #2d5a95;
+    --chart-accent: #b85a1e;
+    --chart-critical: #b3261e;
+    --chart-ordinal-1: #6990c4;
+    --chart-ordinal-2: #2d5a95;
+    --chart-ordinal-3: #172e4c;
+  }
+
+  .dark {
+    color-scheme: dark;
+    --background: 216 12% 8%;
+    --foreground: 45 17% 91%;
+    --card: 218 13% 12%;
+    --card-foreground: 45 17% 91%;
+    --popover: 220 13% 14%;
+    --popover-foreground: 45 17% 91%;
+    --primary: 214 55% 71%;
+    --primary-hover: 214 57% 78%;
+    --primary-foreground: 216 53% 12%;
+    --secondary: 218 13% 17%;
+    --secondary-foreground: 45 17% 91%;
+    --muted: 216 13% 15%;
+    --muted-foreground: 220 7% 66%;
+    --accent: 214 31% 18%;
+    --accent-foreground: 213 56% 85%;
+    --destructive: 4 81% 69%;
+    --destructive-foreground: 4 56% 11%;
+    --success: 147 43% 56%;
+    --success-foreground: 147 52% 9%;
+    --success-subtle: 151 35% 14%;
+    --warning: 37 73% 59%;
+    --warning-foreground: 37 79% 9%;
+    --warning-subtle: 40 55% 13%;
+    --danger: 4 81% 69%;
+    --danger-foreground: 4 56% 11%;
+    --danger-subtle: 4 40% 16%;
+    --border: 216 10% 20%;
+    --input: 219 6% 44%;
+    --ring: 214 55% 71%;
+
+    --chart-series: #7ea6dc;
+    --chart-accent: #e39256;
+    --chart-critical: #ef7d73;
+    --chart-ordinal-1: #4d7bb8;
+    --chart-ordinal-2: #7ea6dc;
+    --chart-ordinal-3: #c2d5ee;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    /* Inter: open 4/6/9 and open digits, for unambiguous numbers in answers. */
+    font-feature-settings:
+      'cv02' on,
+      'cv03' on,
+      'cv04' on,
+      'ss01' on;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Kept for the admin shell; now a flat page rather than a gradient. */
+  .console-canvas {
+    background: hsl(var(--background));
+  }
+
+  /*
+   * A single, unmistakable focus treatment everywhere — required for
+   * keyboard-only navigation during a timed exam. An outline (not a
+   * box-shadow ring) so it survives Windows High Contrast / forced colours and
+   * never fights a component's own shadow. Components should not add their
+   * own focus styles; composite widgets (menu items, list options) opt out
+   * with `outline-none` and show a highlighted background instead.
+   */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.15);
+    color: hsl(var(--foreground));
+  }
+
+  /* Page and section titles are set in the serif; UI-level headings stay sans. */
+  h1,
+  h2 {
+    @apply font-serif font-semibold text-foreground;
+    letter-spacing: -0.01em;
+  }
+
+  h3,
+  h4 {
+    @apply font-semibold text-foreground;
+  }
+}
+
+@layer components {
+  /*
+   * Semantic type styles. Prefixed `type-` (not `text-`) so tailwind-merge
+   * never mistakes them for colours. Pair with any text colour utility.
+   */
+  .type-display {
+    @apply font-serif text-4xl font-semibold;
+  }
+
+  .type-title {
+    @apply font-serif text-2xl font-semibold sm:text-3xl;
+  }
+
+  .type-heading {
+    @apply font-serif text-xl font-semibold;
+  }
+
+  .type-subheading {
+    @apply font-sans text-base font-semibold;
+  }
+
+  .type-eyebrow {
+    @apply font-sans text-2xs font-semibold uppercase tracking-[0.08em] text-muted-foreground;
+  }
+
+  /* Applied to the exam shell when the quiz forbids copy/paste. Purely a
+     deterrent — the server-side record of the attempt is what counts. */
+  .exam-no-select {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .exam-no-select input,
+  .exam-no-select textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  .skeleton-shimmer {
+    @apply relative overflow-hidden bg-muted;
+  }
+
+  .skeleton-shimmer::after {
+    @apply absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r from-transparent via-white/60 to-transparent;
+    content: '';
+  }
+
+  .dark .skeleton-shimmer::after {
+    @apply bg-gradient-to-r from-transparent via-white/10 to-transparent;
+  }
+
+  /* Numeric readouts (timers, scores, IDs) sit on tabular figures so digits
+     do not jitter as they count down. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  .scrollbar-slim {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  .scrollbar-slim::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-slim::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-border;
+  }
+
+  .scrollbar-slim::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@media print {
+  /* Exam content must not be printable to PDF as a workaround. */
+  .no-print,
+  .exam-shell {
+    display: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Stop looping/decorative motion only. Colour, border and opacity
+     transitions stay (they carry state feedback and are not vestibular
+     triggers). */
+  html {
+    scroll-behavior: auto;
+  }
+
+  .animate-spin,
+  .animate-pulse,
+  .animate-pulse-ring,
+  .animate-shimmer,
+  .skeleton-shimmer::after {
+    animation: none !important;
+  }
+
+  /* Skeleton falls back to the static muted block (bg-muted) it already has. */
+  .skeleton-shimmer::after {
+    display: none;
+  }
+
+  /* tailwindcss-animate entrances/exits: drop slide/zoom/rotate, keep the fade. */
+  [class*='animate-in'],
+  [class*='animate-out'] {
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-enter-scale: 1 !important;
+    --tw-enter-rotate: 0 !important;
+    --tw-exit-translate-x: 0 !important;
+    --tw-exit-translate-y: 0 !important;
+    --tw-exit-scale: 1 !important;
+    --tw-exit-rotate: 0 !important;
+    animation-duration: 120ms !important;
+  }
+}

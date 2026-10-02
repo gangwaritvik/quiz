@@ -1,0 +1,38 @@
+{
+  "name": "SecureQuiz — College Examinations",
+  "short_name": "SecureQuiz",
+  "description": "Secure, fair and intelligent examinations for colleges.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7f8fb",
+  "theme_color": "#2e4179",
+  "categories": ["education", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "My quizzes",
+      "url": "/quizzes",
+      "description": "Quizzes assigned to you"
+    },
+    {
+      "name": "Results",
+      "url": "/results",
+      "description": "Released examination results"
+    }
+  ]
+}

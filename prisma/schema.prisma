@@ -1,0 +1,707 @@
+// SecureQuiz — data model
+//
+// Conventions:
+//  * Every timestamp is stored as `timestamptz` (Prisma DateTime on PostgreSQL)
+//    and written from the server clock in UTC. The client clock is never trusted.
+//  * Correct answers live only on Option.isCorrect / Question.explanation and are
+//    never selected into any payload that reaches a student session.
+//  * Foreign keys used in hot query paths carry explicit indexes.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+enum Role {
+  STUDENT
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+  PENDING
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  name         String
+  role         Role
+  status       UserStatus @default(ACTIVE)
+  avatarColor  String     @default("indigo")
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  student        Student?
+  admin          Admin?
+  otpChallenges  OtpChallenge[]
+  deviceSessions DeviceSession[]
+  auditLogs      AuditLog[]
+  mediaAssets    MediaAsset[]
+
+  @@index([role, status])
+  @@map("users")
+}
+
+model Student {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  rollNumber    String   @unique // e.g. 23CSE041
+  department    String
+  section       String
+  semester      Int      @default(1)
+  enrollmentYear Int     @default(2023)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attempts    QuizAttempt[]
+  assignments QuizAssignment[]
+
+  @@index([department, section])
+  @@map("students")
+}
+
+model Admin {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  employeeId String   @unique
+  department String
+  title      String   @default("Faculty")
+  createdAt  DateTime @default(now())
+
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  authoredQuizzes Quiz[]           @relation("QuizAuthor")
+  authoredQuestions Question[]     @relation("QuestionAuthor")
+  reviews         IntegrityReview[]
+  gradedAnswers   Answer[]         @relation("AnswerGrader")
+
+  @@map("admins")
+}
+
+// ---------------------------------------------------------------------------
+// Authentication — passwordless OTP + server-side sessions
+// ---------------------------------------------------------------------------
+
+model OtpChallenge {
+  id           String    @id @default(cuid())
+  userId       String
+  codeHash     String // scrypt hash — the plaintext code is never persisted
+  purpose      String    @default("login")
+  attempts     Int       @default(0)
+  maxAttempts  Int       @default(5)
+  consumedAt   DateTime?
+  expiresAt    DateTime
+  requestIpHash String?
+  createdAt    DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consumedAt])
+  @@index([expiresAt])
+  @@map("otp_challenges")
+}
+
+/// One row per authenticated browser. `deviceHash` binds the session to a
+/// device fingerprint so a stolen cookie replayed elsewhere is detectable.
+model DeviceSession {
+  id           String    @id @default(cuid())
+  userId       String
+  tokenHash    String    @unique // SHA-256 of the opaque session token
+  deviceHash   String
+  deviceLabel  String    @default("Unknown device")
+  userAgent    String?
+  ipHash       String?
+  trusted      Boolean   @default(false) // "remember this device"
+  revokedAt    DateTime?
+  revokedReason String?
+  lastSeenAt   DateTime  @default(now())
+  expiresAt    DateTime
+  createdAt    DateTime  @default(now())
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attempts QuizAttempt[]
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("device_sessions")
+}
+
+// ---------------------------------------------------------------------------
+// Question bank
+// ---------------------------------------------------------------------------
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+/// How a question is answered, and therefore how it is graded.
+///
+/// The first four are option-based and graded against `Option.isCorrect`.
+/// SHORT_ANSWER is graded against `Question.acceptedAnswers`. The last two
+/// produce work only a human can mark, so they route into the grading queue
+/// and leave the attempt's score provisional until faculty has marked them.
+enum QuestionType {
+  MCQ_SINGLE // exactly one correct option
+  MCQ_MULTI // several correct options, optionally with partial credit
+  TRUE_FALSE // MCQ_SINGLE over a fixed two-option set
+  ASSERTION_REASON // assertion + reason, answered with the standard option set
+  SHORT_ANSWER // a word, phrase or number matched against accepted answers
+  LONG_ANSWER // descriptive prose — manually graded
+  IMAGE_ANSWER // photographed written work — manually graded
+}
+
+/// Where an uploaded file is used. Access rules differ per kind, so the
+/// discriminator is stored rather than inferred from the back-relations.
+enum MediaKind {
+  QUESTION_IMAGE
+  OPTION_IMAGE
+  ANSWER_IMAGE
+}
+
+model Subject {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  code      String   @unique
+  createdAt DateTime @default(now())
+
+  questions Question[]
+  quizzes   Quiz[]
+  topics    Topic[]
+
+  @@map("subjects")
+}
+
+model Topic {
+  id        String   @id @default(cuid())
+  name      String
+  subjectId String
+  createdAt DateTime @default(now())
+
+  subject   Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  questions Question[]
+
+  @@unique([subjectId, name])
+  @@index([subjectId])
+  @@map("topics")
+}
+
+model Question {
+  id          String       @id @default(cuid())
+  /// May contain LaTeX between $…$ (inline) or $$…$$ (display). Stored raw and
+  /// rendered by KaTeX at display time; never interpolated as HTML.
+  text        String
+  type        QuestionType @default(MCQ_SINGLE)
+  difficulty  Difficulty   @default(MEDIUM)
+  marks       Int          @default(1)
+  negativeMarks Float      @default(0)
+  explanation String?
+  subjectId   String
+  topicId     String?
+  authorId    String?
+  usageCount  Int          @default(0)
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // --- ASSERTION_REASON ---------------------------------------------------
+  /// The two statements. The standard five-option answer set is generated as
+  /// ordinary Options, so grading needs no special case.
+  assertionText String?
+  reasonText    String?
+
+  // --- MCQ_MULTI ----------------------------------------------------------
+  /// When true, selecting a subset of the correct options with no incorrect
+  /// option scores proportionally. Selecting any incorrect option never does.
+  partialCredit Boolean @default(true)
+
+  // --- SHORT_ANSWER -------------------------------------------------------
+  /// Any one of these matching (after normalisation) scores full marks.
+  acceptedAnswers  String[] @default([])
+  caseSensitive    Boolean  @default(false)
+  /// When set, the response is compared numerically within ±tolerance instead
+  /// of by string equality — so 3.14159 can accept 3.14.
+  numericTolerance Float?
+
+  // --- LONG_ANSWER / IMAGE_ANSWER -----------------------------------------
+  /// Guidance shown to the student as a word counter; not enforced as a cutoff.
+  maxWords       Int?
+  maxAttachments Int     @default(3)
+  /// Rubric for whoever marks this. Faculty-only — never sent to a student,
+  /// not even when answers are released.
+  modelAnswer    String?
+
+  imageAssetId String?
+
+  /// Written inline for one specific quiz rather than added to the shared bank.
+  /// Excluded from bank browsing and from pool selection, so composing a quick
+  /// quiz never pollutes the reusable question bank.
+  adHoc Boolean @default(false)
+
+  subject          Subject           @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  topic            Topic?            @relation(fields: [topicId], references: [id], onDelete: SetNull)
+  author           Admin?            @relation("QuestionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  imageAsset       MediaAsset?       @relation("QuestionImage", fields: [imageAssetId], references: [id], onDelete: SetNull)
+  options          Option[]
+  attemptQuestions AttemptQuestion[]
+  quizLinks        QuizQuestion[]
+
+  @@index([subjectId, difficulty, active])
+  @@index([topicId])
+  @@index([type])
+  @@index([adHoc])
+  @@map("questions")
+}
+
+model Option {
+  id         String   @id @default(cuid())
+  questionId String
+  /// May contain LaTeX, like Question.text.
+  text       String
+  isCorrect  Boolean  @default(false) // server-side only, never serialised to students
+  position   Int      @default(0)
+  /// Lets a choice be a diagram rather than prose. Optional — an option may
+  /// carry text, an image, or both.
+  imageAssetId String?
+
+  question   Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  imageAsset MediaAsset? @relation("OptionImage", fields: [imageAssetId], references: [id], onDelete: SetNull)
+  answers    Answer[]
+  selections AnswerOption[]
+
+  @@index([questionId])
+  @@map("options")
+}
+
+// ---------------------------------------------------------------------------
+// Quizzes
+// ---------------------------------------------------------------------------
+
+enum QuizStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+/// Where a paper's questions come from.
+enum QuizSourceMode {
+  /// Drawn from the question bank at exam time, so every student gets a
+  /// different valid paper.
+  POOL
+  /// A fixed list, written for this quiz and served to everyone.
+  FIXED
+}
+
+model Quiz {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  subjectId   String
+  authorId    String?
+  status      QuizStatus @default(DRAFT)
+
+  durationMinutes Int
+  questionCount   Int
+  totalMarks      Int @default(0)
+
+  sourceMode QuizSourceMode @default(POOL)
+
+  // Pool + difficulty mix used by the server-side question selector.
+  // Ignored entirely when sourceMode is FIXED.
+  poolTopicIds String[] @default([])
+  easyPct      Int      @default(30)
+  mediumPct    Int      @default(50)
+  hardPct      Int      @default(20)
+
+  startsAt DateTime
+  endsAt   DateTime
+
+  // Security policy — every flag is enforced server-side, not just in the UI.
+  randomizeQuestions    Boolean @default(true)
+  randomizeOptions      Boolean @default(true)
+  singleAttempt         Boolean @default(true)
+  requireFullscreen     Boolean @default(true)
+  detectTabSwitch       Boolean @default(true)
+  blockCopyPaste        Boolean @default(true)
+  bindDeviceSession     Boolean @default(true)
+  cameraMonitoring      Boolean @default(false)
+  microphoneMonitoring  Boolean @default(false)
+  maxFullscreenExits    Int     @default(3)
+  /// When true students must answer questions in the order they are presented.
+  /// They cannot jump ahead or return to a previous question.
+  lockQuestionNavigation Boolean @default(false)
+  /// Blocks the student from taking the exam if a secondary monitor or extended display is detected.
+  blockMultipleDisplays Boolean @default(false)
+  /// Requires continuous entire-screen sharing with the proctor.
+  requireScreenShare    Boolean @default(false)
+
+  // Result release policy
+  releaseResults Boolean @default(true)
+  releaseAnswers Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subject     Subject          @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  author      Admin?           @relation("QuizAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  attempts    QuizAttempt[]
+  assignments QuizAssignment[]
+  questions   QuizQuestion[]
+
+  @@index([status, startsAt])
+  @@index([subjectId])
+  @@map("quizzes")
+}
+
+/// The fixed paper for a FIXED-mode quiz, in the order it was written.
+/// Empty for POOL-mode quizzes, which select their questions at exam time.
+model QuizQuestion {
+  id         String @id @default(cuid())
+  quizId     String
+  questionId String
+  position   Int    @default(0)
+
+  quiz     Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([quizId, questionId])
+  @@index([quizId, position])
+  @@map("quiz_questions")
+}
+
+/// Explicit allow-list: a student may only reach a quiz they are assigned to.
+model QuizAssignment {
+  id         String   @id @default(cuid())
+  quizId     String
+  studentId  String
+  assignedAt DateTime @default(now())
+
+  quiz    Quiz    @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([quizId, studentId])
+  @@index([studentId])
+  @@map("quiz_assignments")
+}
+
+// ---------------------------------------------------------------------------
+// Attempts
+// ---------------------------------------------------------------------------
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  AUTO_SUBMITTED
+  EXPIRED
+  TERMINATED
+}
+
+model QuizAttempt {
+  id        String        @id @default(cuid())
+  quizId    String
+  studentId String
+  sessionId String?
+  status    AttemptStatus @default(IN_PROGRESS)
+
+  attemptNumber Int @default(1)
+
+  // Authoritative exam clock. `expiresAt` is computed once, server-side.
+  startedAt   DateTime  @default(now())
+  expiresAt   DateTime
+  submittedAt DateTime?
+  lastSeenAt  DateTime  @default(now())
+
+  deviceHash String?
+  ipHash     String?
+
+  // Populated at grading time by the server only.
+  score          Float?
+  maxScore       Float?
+  percentage     Float?
+  correctCount   Int?
+  incorrectCount Int?
+  unansweredCount Int?
+
+  /// Answers still awaiting a human marker. While this is above zero the score
+  /// above is provisional, and the student is told so rather than being shown
+  /// a total that will later move.
+  pendingManualCount Int       @default(0)
+  manualGradedAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  quiz      Quiz              @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  student   Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  session   DeviceSession?    @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  questions AttemptQuestion[]
+  answers   Answer[]
+  events    ExamEvent[]
+  integrity IntegrityScore?
+  reviews   IntegrityReview[]
+
+  @@unique([quizId, studentId, attemptNumber])
+  @@index([quizId, status])
+  @@index([studentId, status])
+  @@index([status, expiresAt])
+  @@map("quiz_attempts")
+}
+
+/// The frozen, per-attempt question paper: which questions, in which order,
+/// with which option order. Generated server-side at attempt creation.
+model AttemptQuestion {
+  id         String @id @default(cuid())
+  attemptId  String
+  questionId String
+  position   Int
+  /// Option ids in the shuffled order this student sees them.
+  optionOrder String[] @default([])
+  marks      Int    @default(1)
+
+  attempt  QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question Question    @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  answers  Answer[]
+
+  @@unique([attemptId, position])
+  @@unique([attemptId, questionId])
+  @@index([attemptId])
+  @@map("attempt_questions")
+}
+
+/// One row per answered question. Which column holds the response depends on
+/// the question type: `selectedOptionId` for single-choice, `selectedOptions`
+/// for multi-choice, `textResponse` for written answers, `attachments` for
+/// uploaded work. The others stay null.
+model Answer {
+  id                String   @id @default(cuid())
+  attemptId         String
+  attemptQuestionId String
+  selectedOptionId  String?
+  /// Free-text response for SHORT_ANSWER and LONG_ANSWER.
+  textResponse      String?
+  markedForReview   Boolean  @default(false)
+  /// Graded server-side at submission. Null while the exam is in progress, and
+  /// for manually-graded questions until faculty has marked them.
+  isCorrect         Boolean?
+  awardedMarks      Float?
+  answeredAt        DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // --- Manual grading -----------------------------------------------------
+  /// Set at submission for answers the server cannot mark on its own.
+  requiresManualGrading Boolean   @default(false)
+  gradedById            String?
+  gradedAt              DateTime?
+  /// Feedback from the marker, shown to the student with released answers.
+  graderNote            String?
+
+  attempt         QuizAttempt        @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  attemptQuestion AttemptQuestion    @relation(fields: [attemptQuestionId], references: [id], onDelete: Cascade)
+  selectedOption  Option?            @relation(fields: [selectedOptionId], references: [id], onDelete: SetNull)
+  gradedBy        Admin?             @relation("AnswerGrader", fields: [gradedById], references: [id], onDelete: SetNull)
+  selectedOptions AnswerOption[]
+  attachments     AnswerAttachment[]
+
+  @@unique([attemptQuestionId])
+  @@index([attemptId])
+  @@index([requiresManualGrading, gradedAt])
+  @@map("answers")
+}
+
+/// Multi-select choices. A join table rather than an array column so the
+/// foreign key still guarantees every stored choice is a real option.
+model AnswerOption {
+  id       String @id @default(cuid())
+  answerId String
+  optionId String
+
+  answer Answer @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  option Option @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@unique([answerId, optionId])
+  @@index([answerId])
+  @@map("answer_options")
+}
+
+model AnswerAttachment {
+  id        String   @id @default(cuid())
+  answerId  String
+  assetId   String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  answer Answer     @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  asset  MediaAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([answerId, assetId])
+  @@index([answerId])
+  @@map("answer_attachments")
+}
+
+/// An uploaded file. Bytes live on disk under UPLOAD_DIR, outside `public/`,
+/// under a random `storageKey`; every read goes through an authorised route so
+/// an image is never served by guessable URL.
+model MediaAsset {
+  id           String    @id @default(cuid())
+  kind         MediaKind
+  storageKey   String    @unique
+  originalName String
+  mimeType     String
+  byteSize     Int
+  width        Int?
+  height       Int?
+  /// SHA-256 of the bytes, for de-duplication and tamper evidence.
+  checksum     String
+  uploadedById String?
+  createdAt    DateTime  @default(now())
+
+  uploadedBy        User?              @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  questionImages    Question[]         @relation("QuestionImage")
+  optionImages      Option[]           @relation("OptionImage")
+  answerAttachments AnswerAttachment[]
+
+  @@index([kind, createdAt])
+  @@index([checksum])
+  @@map("media_assets")
+}
+
+// ---------------------------------------------------------------------------
+// Integrity
+// ---------------------------------------------------------------------------
+
+enum ExamEventType {
+  ATTEMPT_STARTED
+  TAB_SWITCH
+  WINDOW_BLUR
+  WINDOW_FOCUS
+  FULLSCREEN_ENTER
+  FULLSCREEN_EXIT
+  COPY_ATTEMPT
+  PASTE_ATTEMPT
+  CUT_ATTEMPT
+  CONTEXT_MENU
+  PRINT_ATTEMPT
+  SHORTCUT_BLOCKED
+  NETWORK_OFFLINE
+  NETWORK_ONLINE
+  MULTIPLE_SESSION
+  DEVICE_MISMATCH
+  CAMERA_PERMISSION_LOST
+  CAMERA_STREAM_STOPPED
+  FACE_NOT_DETECTED
+  MULTIPLE_FACES
+  MICROPHONE_LOST
+  RESIZE_SUSPICIOUS
+  IDLE_TIMEOUT
+  ANSWER_SAVED
+  HEARTBEAT_MISSED
+  ATTEMPT_SUBMITTED
+  AUTO_SUBMITTED
+  /// A student attached a file to an image answer. Recorded as INFO so the
+  /// timeline explains the window blur that a file picker necessarily causes.
+  ATTACHMENT_UPLOADED
+  /// Faculty marked a manually-graded answer. Kept on the attempt timeline so
+  /// a later score change is always traceable to a person and a time.
+  ANSWER_GRADED
+  MULTIPLE_DISPLAYS_DETECTED
+  SCREEN_SHARE_STOPPED
+  SCREEN_SHARE_PERMISSION_LOST
+}
+
+enum EventSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model ExamEvent {
+  id        String        @id @default(cuid())
+  attemptId String
+  type      ExamEventType
+  severity  EventSeverity @default(INFO)
+  /// Server-assigned timestamp. A client-supplied time is stored separately
+  /// in `metadata.clientTs` for forensics but never used for scoring.
+  occurredAt DateTime     @default(now())
+  durationMs Int?
+  metadata   Json?
+  createdAt  DateTime     @default(now())
+
+  attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId, occurredAt])
+  @@index([type])
+  @@map("exam_events")
+}
+
+enum IntegrityStatus {
+  NORMAL
+  REVIEW_RECOMMENDED
+  HIGH_RISK
+}
+
+model IntegrityScore {
+  id        String          @id @default(cuid())
+  attemptId String          @unique
+  score     Int             @default(100)
+  status    IntegrityStatus @default(NORMAL)
+  /// Per-signal breakdown, e.g. { "FULLSCREEN_EXIT": { count: 1, penalty: 6 } }
+  breakdown Json?
+  reviewed  Boolean         @default(false)
+  computedAt DateTime       @default(now())
+  updatedAt DateTime        @updatedAt
+
+  attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([status, score])
+  @@map("integrity_scores")
+}
+
+model IntegrityReview {
+  id        String   @id @default(cuid())
+  attemptId String
+  adminId   String
+  note      String?
+  outcome   String   @default("REVIEWED") // REVIEWED | DISMISSED | ESCALATED
+  createdAt DateTime @default(now())
+
+  attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  admin   Admin       @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId])
+  @@map("integrity_reviews")
+}
+
+// ---------------------------------------------------------------------------
+// Audit
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  entityType String?
+  entityId   String?
+  ipHash     String?
+  userAgent  String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+}

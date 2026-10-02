@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SecureQuiz">
+  <rect width="512" height="512" rx="112" fill="#2e4179"/>
+  <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M256 96 137 143.6v99.3c0 71.6 47.6 138.4 119 160.9 71.4-22.5 119-89.3 119-160.9v-99.3L256 96Z" stroke-width="28"/>
+    <path d="m205 250.5 34.4 35.3L307 217" stroke-width="32"/>
+  </g>
+</svg>
