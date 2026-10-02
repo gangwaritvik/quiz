@@ -105,6 +105,9 @@ export const examEventTypeSchema = z.enum([
   'MICROPHONE_LOST',
   'RESIZE_SUSPICIOUS',
   'IDLE_TIMEOUT',
+  'MULTIPLE_DISPLAYS_DETECTED',
+  'SCREEN_SHARE_STOPPED',
+  'SCREEN_SHARE_PERMISSION_LOST',
 ]);
 
 /** Clients may report only the event types above; server-authored types
@@ -483,7 +486,10 @@ export const questionFilterSchema = paginationSchema.extend({
 export const gradingQueueSchema = paginationSchema.extend({
   quizId: z.string().optional(),
   /** Include attempts whose outstanding answers have all been marked. */
-  includeCompleted: z.coerce.boolean().default(false),
+  includeCompleted: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 });
 
 export const studentFilterSchema = paginationSchema.extend({

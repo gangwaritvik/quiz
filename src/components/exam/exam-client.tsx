@@ -717,7 +717,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [phase, questions.length, currentIndex, goToQuestion]);
+  }, [phase, questions.length, currentIndex, goToQuestion, security?.lockQuestionNavigation]);
 
   // Timers hold references to in-flight answers; clear them if the exam
   // unmounts so nothing fires against a torn-down component.
