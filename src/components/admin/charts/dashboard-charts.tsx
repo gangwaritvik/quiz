@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 
 export interface DashboardCharts {
   averageScoreByQuiz: Array<{ quiz: string; average: number; attempts: number }>;
-  participation: Array<{ quiz: string; assigned: number; attempted: number }>;
+  participation: Array<{ quiz: string; assigned: number; attempted: number; closed?: boolean }>;
   scoreDistribution: Array<{ band: string; count: number; failing: boolean }>;
   difficultyDistribution: Array<{ difficulty: 'EASY' | 'MEDIUM' | 'HARD'; count: number }>;
   integrityEvents: Array<{ type: string; count: number }>;

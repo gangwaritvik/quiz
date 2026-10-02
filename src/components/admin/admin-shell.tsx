@@ -15,6 +15,7 @@ import {
   Sun,
   Users,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -37,19 +38,38 @@ import {
 import { useApi } from '@/hooks/use-api';
 import { cn } from '@/lib/utils';
 
-const NAV = [
-  { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true },
-  { href: '/admin/quizzes', label: 'Quizzes', icon: BookOpen },
-  { href: '/admin/questions', label: 'Question Bank', icon: FileQuestion },
-  { href: '/admin/students', label: 'Students', icon: Users },
-  { href: '/admin/live', label: 'Live Exams', icon: MonitorPlay, badge: 'live' as const },
-  { href: '/admin/grading', label: 'Marking', icon: PenLine, badge: 'grading' as const },
-  { href: '/admin/results', label: 'Results', icon: BarChart3 },
+interface NavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  exact?: boolean;
+  badge?: 'live' | 'flagged' | 'grading';
+}
+
+/** Three groups answer "what am I doing": set things up, run an exam, look back. */
+const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   {
-    href: '/admin/integrity',
-    label: 'Integrity Reports',
-    icon: ShieldAlert,
-    badge: 'flagged' as const,
+    label: 'Teach',
+    items: [
+      { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+      { href: '/admin/quizzes', label: 'Quizzes', icon: BookOpen },
+      { href: '/admin/questions', label: 'Question Bank', icon: FileQuestion },
+      { href: '/admin/students', label: 'Students', icon: Users },
+    ],
+  },
+  {
+    label: 'Run',
+    items: [
+      { href: '/admin/live', label: 'Live Exams', icon: MonitorPlay, badge: 'live' },
+      { href: '/admin/grading', label: 'Marking', icon: PenLine, badge: 'grading' },
+    ],
+  },
+  {
+    label: 'Review',
+    items: [
+      { href: '/admin/results', label: 'Results', icon: BarChart3 },
+      { href: '/admin/integrity', label: 'Integrity Reports', icon: ShieldAlert, badge: 'flagged' },
+    ],
   },
 ];
 
@@ -115,34 +135,51 @@ export function AdminShell({ user, children }: AdminShellProps) {
     return null;
   };
 
-  const navList = (
-    <ul className="space-y-0.5">
-      {NAV.map((item) => {
-        const active = isActive(item.href, item.exact);
+  // The sidebar and the drawer both render this, so heading ids carry a
+  // per-instance prefix: aria-labelledby needs ids that are unique in the page.
+  const navList = (idPrefix: string) => (
+    <div className="space-y-5">
+      {NAV_GROUPS.map((group) => {
+        const headingId = `${idPrefix}-${group.label.toLowerCase()}`;
         return (
-          <li key={item.href}>
-            <Link
-              href={item.href}
-              aria-current={active ? 'page' : undefined}
-              className={cn(
-                'relative flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-fast ease-standard',
-                active
-                  ? // Tint, weight and a marker bar: the active item does not rely on colour alone.
-                    'bg-accent font-semibold text-accent-foreground before:absolute before:inset-y-2 before:-left-3 before:w-0.5 before:rounded-full before:bg-primary'
-                  : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
-              )}
-            >
-              <item.icon
-                className={cn('size-4 shrink-0', active ? 'text-primary' : 'text-muted-foreground')}
-                aria-hidden
-              />
-              <span className="min-w-0 truncate">{item.label}</span>
-              {badgeFor(item.badge)}
-            </Link>
-          </li>
+          <div key={group.label}>
+            <p id={headingId} className="type-eyebrow mb-1.5 px-3">
+              {group.label}
+            </p>
+            <ul aria-labelledby={headingId} className="space-y-0.5">
+              {group.items.map((item) => {
+                const active = isActive(item.href, item.exact);
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      aria-current={active ? 'page' : undefined}
+                      className={cn(
+                        'relative flex min-h-10 items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-fast ease-standard [@media(pointer:coarse)]:min-h-11',
+                        active
+                          ? // Tint, weight and a marker bar: the active item does not rely on colour alone.
+                            'bg-accent font-semibold text-accent-foreground before:absolute before:inset-y-2 before:-left-3 before:w-0.5 before:rounded-full before:bg-primary'
+                          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                      )}
+                    >
+                      <item.icon
+                        className={cn(
+                          'size-4 shrink-0',
+                          active ? 'text-primary' : 'text-muted-foreground',
+                        )}
+                        aria-hidden
+                      />
+                      <span className="min-w-0 truncate">{item.label}</span>
+                      {badgeFor(item.badge)}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         );
       })}
-    </ul>
+    </div>
   );
 
   return (
@@ -154,9 +191,10 @@ export function AdminShell({ user, children }: AdminShellProps) {
           </Link>
         </div>
 
-        <nav aria-label="Admin" className="scrollbar-slim flex-1 overflow-y-auto px-3 py-5">
-          <p className="type-eyebrow mb-2 px-3">Faculty console</p>
-          {navList}
+        {/* "Faculty console" now names the landmark instead of stacking a
+            second eyebrow above the first group label. */}
+        <nav aria-label="Faculty console" className="scrollbar-slim flex-1 overflow-y-auto px-3 py-5">
+          {navList('nav-side')}
         </nav>
       </aside>
 
@@ -220,14 +258,14 @@ export function AdminShell({ user, children }: AdminShellProps) {
 
           <nav
             id="admin-mobile-nav"
-            aria-label="Admin"
+            aria-label="Faculty console"
             hidden={!mobileOpen}
             className="scrollbar-slim max-h-[calc(100dvh-4rem)] overflow-y-auto border-t border-border bg-card px-3 pb-4 pt-3 lg:hidden"
           >
             <div className="mb-3 md:hidden">
               <ConsoleSearch />
             </div>
-            <div className="pl-3">{navList}</div>
+            <div className="pl-3">{navList('nav-drawer')}</div>
           </nav>
         </header>
 

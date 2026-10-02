@@ -10,8 +10,10 @@ import {
   SignalHigh,
   SignalLow,
   SignalMedium,
+  SlidersHorizontal,
   Trash2,
   Upload,
+  X,
 } from 'lucide-react';
 import * as React from 'react';
 import { toast } from 'sonner';
@@ -31,7 +33,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
+import { Badge, badgeVariants } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
@@ -54,12 +56,15 @@ import {
 } from '@/components/ui/table';
 import { useApi } from '@/hooks/use-api';
 import { ApiClientError, apiFetch } from '@/lib/client/api';
+import { buildFilterChips } from '@/lib/filter-chips';
 import {
   QUESTION_TYPE_LABEL,
   QUESTION_TYPE_ORDER,
+  type QuestionTypeValue,
   isManuallyMarked,
   isOptionBased,
 } from '@/lib/question-types';
+import { cn } from '@/lib/utils';
 
 interface QuestionListItem extends QuestionRecord {
   subject: string;
@@ -109,6 +114,9 @@ export function QuestionBank() {
   const [difficulty, setDifficulty] = React.useState(ALL);
   const [type, setType] = React.useState(ALL);
   const [page, setPage] = React.useState(1);
+
+  const [filtersOpen, setFiltersOpen] = React.useState(false);
+  const filtersButtonRef = React.useRef<HTMLButtonElement>(null);
 
   const [editorOpen, setEditorOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<QuestionRecord | null>(null);
@@ -170,12 +178,65 @@ export function QuestionBank() {
     difficulty !== ALL ||
     type !== ALL;
 
+  // The search chip follows the applied query, so it matches the list below.
+  const chips = buildFilterChips([
+    {
+      key: 'search',
+      label: 'Search',
+      value: debouncedSearch,
+      display: `“${debouncedSearch}”`,
+    },
+    { key: 'subject', label: 'Subject', value: subjectId, display: selectedSubject?.name },
+    {
+      key: 'topic',
+      label: 'Topic',
+      value: topicId,
+      display: selectedSubject?.topics.find((topic) => topic.id === topicId)?.name,
+    },
+    {
+      key: 'difficulty',
+      label: 'Difficulty',
+      value: difficulty,
+      display: difficulty.charAt(0) + difficulty.slice(1).toLowerCase(),
+    },
+    {
+      key: 'type',
+      label: 'Type',
+      value: type,
+      display: QUESTION_TYPE_LABEL[type as QuestionTypeValue],
+    },
+  ]);
+  // Search sits outside the panel, so the button counts only what it reveals.
+  const panelFilterCount = chips.filter((chip) => chip.key !== 'search').length;
+
   const clearFilters = () => {
     setSearch('');
+    setDebouncedSearch('');
     setSubjectId(ALL);
     setTopicId(ALL);
     setDifficulty(ALL);
     setType(ALL);
+    setPage(1);
+    // The clicked chip or link is about to unmount; keep keyboard focus somewhere sensible.
+    filtersButtonRef.current?.focus();
+  };
+
+  const removeChip = (key: string) => {
+    if (key === 'search') {
+      setSearch('');
+      setDebouncedSearch('');
+    } else if (key === 'subject') {
+      setSubjectId(ALL);
+      setTopicId(ALL);
+    } else if (key === 'topic') {
+      setTopicId(ALL);
+    } else if (key === 'difficulty') {
+      setDifficulty(ALL);
+    } else if (key === 'type') {
+      setType(ALL);
+    }
+    setPage(1);
+    filtersButtonRef.current?.focus();
   };
 
   const openEditor = (question: QuestionListItem) => {
@@ -215,14 +276,12 @@ export function QuestionBank() {
         }
       />
 
-      <div
-        role="search"
-        aria-label="Filter questions"
-        className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.6fr)_repeat(4,minmax(0,1fr))]"
-      >
-        <div className="space-y-2 sm:col-span-2 lg:col-span-1">
-          <Label htmlFor="question-search">Search</Label>
-          <div className="relative">
+      <div role="search" aria-label="Filter questions" className="mt-6">
+        <div className="flex items-center gap-3">
+          <div className="relative min-w-0 flex-1">
+            <Label htmlFor="question-search" className="sr-only">
+              Search
+            </Label>
             <Search
               className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
               aria-hidden
@@ -236,73 +295,119 @@ export function QuestionBank() {
               className="pl-9"
             />
           </div>
+
+          <Button
+            ref={filtersButtonRef}
+            variant="outline"
+            aria-expanded={filtersOpen}
+            aria-controls="question-filters"
+            aria-label={panelFilterCount > 0 ? `Filters, ${panelFilterCount} active` : 'Filters'}
+            onClick={() => setFiltersOpen((open) => !open)}
+          >
+            <SlidersHorizontal />
+            Filters
+            {panelFilterCount > 0 ? <Badge className="tabular">{panelFilterCount}</Badge> : null}
+          </Button>
         </div>
 
-        <FilterSelect
-          id="filter-subject"
-          label="Subject"
-          value={subjectId}
-          onChange={(value) => {
-            setSubjectId(value);
-            setTopicId(ALL);
-            setPage(1);
-          }}
-          options={[
-            { value: ALL, label: 'All subjects' },
-            ...subjects.map((entry) => ({ value: entry.id, label: entry.name })),
-          ]}
-        />
+        {/* Subject, topic, difficulty and type live behind one button. State stays
+            mounted while the panel is closed, so nothing resets when it toggles. */}
+        <div id="question-filters" hidden={!filtersOpen}>
+          <div className="mt-3 grid gap-4 rounded-lg border border-border bg-card p-4 sm:grid-cols-2 xl:grid-cols-4">
+            <FilterSelect
+              id="filter-subject"
+              label="Subject"
+              value={subjectId}
+              onChange={(value) => {
+                setSubjectId(value);
+                setTopicId(ALL);
+                setPage(1);
+              }}
+              options={[
+                { value: ALL, label: 'All subjects' },
+                ...subjects.map((entry) => ({ value: entry.id, label: entry.name })),
+              ]}
+            />
 
-        <FilterSelect
-          id="filter-topic"
-          label="Topic"
-          value={topicId}
-          onChange={(value) => {
-            setTopicId(value);
-            setPage(1);
-          }}
-          disabled={!selectedSubject}
-          options={[
-            { value: ALL, label: selectedSubject ? 'All topics' : 'Select a subject' },
-            ...(selectedSubject?.topics ?? []).map((topic) => ({
-              value: topic.id,
-              label: topic.name,
-            })),
-          ]}
-        />
+            <FilterSelect
+              id="filter-topic"
+              label="Topic"
+              value={topicId}
+              onChange={(value) => {
+                setTopicId(value);
+                setPage(1);
+              }}
+              disabled={!selectedSubject}
+              hint={selectedSubject ? undefined : 'Choose a subject first.'}
+              options={[
+                { value: ALL, label: 'Any topic' },
+                ...(selectedSubject?.topics ?? []).map((topic) => ({
+                  value: topic.id,
+                  label: topic.name,
+                })),
+              ]}
+            />
 
-        <FilterSelect
-          id="filter-difficulty"
-          label="Difficulty"
-          value={difficulty}
-          onChange={(value) => {
-            setDifficulty(value);
-            setPage(1);
-          }}
-          options={[
-            { value: ALL, label: 'All levels' },
-            { value: 'EASY', label: 'Easy' },
-            { value: 'MEDIUM', label: 'Medium' },
-            { value: 'HARD', label: 'Hard' },
-          ]}
-        />
+            <FilterSelect
+              id="filter-difficulty"
+              label="Difficulty"
+              value={difficulty}
+              onChange={(value) => {
+                setDifficulty(value);
+                setPage(1);
+              }}
+              options={[
+                { value: ALL, label: 'All levels' },
+                { value: 'EASY', label: 'Easy' },
+                { value: 'MEDIUM', label: 'Medium' },
+                { value: 'HARD', label: 'Hard' },
+              ]}
+            />
 
-        <FilterSelect
-          id="filter-type"
-          label="Type"
-          value={type}
-          onChange={(value) => {
-            setType(value);
-            setPage(1);
-          }}
-          options={[
-            { value: ALL, label: 'All types' },
-            ...QUESTION_TYPE_ORDER.map((value) => ({
-              value,
-              label: QUESTION_TYPE_LABEL[value],
-            })),
-          ]}
-        />
+            <FilterSelect
+              id="filter-type"
+              label="Type"
+              value={type}
+              onChange={(value) => {
+                setType(value);
+                setPage(1);
+              }}
+              options={[
+                { value: ALL, label: 'All types' },
+                ...QUESTION_TYPE_ORDER.map((value) => ({
+                  value,
+                  label: QUESTION_TYPE_LABEL[value],
+                })),
+              ]}
+            />
+          </div>
+        </div>
+
+        {chips.length > 0 ? (
+          <ul aria-label="Active filters" className="mt-3 flex flex-wrap items-center gap-2">
+            {chips.map((chip) => (
+              <li key={chip.key} className="max-w-full">
+                <button
+                  type="button"
+                  aria-label={`Remove filter ${chip.text}`}
+                  onClick={() => removeChip(chip.key)}
+                  className={cn(
+                    badgeVariants({ variant: 'outline' }),
+                    'max-w-full cursor-pointer py-1 text-foreground hover:bg-accent [@media(pointer:coarse)]:min-h-11',
+                  )}
+                >
+                  <span className="truncate">{chip.text}</span>
+                  <X aria-hidden />
+                </button>
+              </li>
+            ))}
+            <li>
+              <Button variant="link" size="sm" className="h-auto px-1" onClick={clearFilters}>
+                Clear all
+              </Button>
+            </li>
+          </ul>
+        ) : null}
       </div>
 
       {initialLoading ? (
@@ -341,15 +446,10 @@ export function QuestionBank() {
           aria-busy={loading || undefined}
           className={loading ? 'opacity-60 transition-opacity duration-fast' : 'transition-opacity duration-fast'}
         >
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-border pb-3">
+          <div className="mt-6 border-b border-border pb-3">
             <p className="tabular text-sm text-muted-foreground" aria-live="polite">
               Showing {questions.length} of {data?.total ?? 0} questions
             </p>
-            {filtered ? (
-              <Button variant="link" size="sm" className="h-auto px-0" onClick={clearFilters}>
-                Clear filters
-              </Button>
-            ) : null}
           </div>
 
           {/* Desktop: a ruled ledger. */}
@@ -544,6 +644,7 @@ function FilterSelect({
   onChange,
   options,
   disabled,
+  hint,
 }: {
   id: string;
   label: string;
@@ -551,6 +652,7 @@ function FilterSelect({
   onChange: (value: string) => void;
   options: Array<{ value: string; label: string }>;
   disabled?: boolean;
+  hint?: string;
 }) {
   return (
     <div className="min-w-0 space-y-2">
@@ -567,6 +669,7 @@ function FilterSelect({
           ))}
         </SelectContent>
       </Select>
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }

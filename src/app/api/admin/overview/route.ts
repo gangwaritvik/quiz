@@ -1,12 +1,32 @@
 import { ok, route } from '@/lib/api';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import {
+  buildAttention,
+  quizStatusWord,
+  sortQuizzesByRelevance,
+} from '@/lib/dashboard-attention';
 import { sweepExpiredAttempts } from '@/lib/exam';
 import { ownAttemptWhere, ownQuizWhere } from '@/lib/ownership';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/** Rows in "Your quizzes", and the most any one status can contribute to it. */
+const QUIZ_LIST_LIMIT = 6;
+
+/** Marking groups shown in the attention list, longest wait first. */
+const MARKING_ROWS = 6;
+
+const listedQuiz = {
+  id: true,
+  title: true,
+  status: true,
+  startsAt: true,
+  endsAt: true,
+  _count: { select: { attempts: true, assignments: true } },
+} as const;
 
 export const GET = route(async () => {
   const session = await requireAdmin();
@@ -20,24 +40,31 @@ export const GET = route(async () => {
 
   const [
     activeExams,
-    liveAttempts,
+    liveGroups,
     completedAttempts,
     flagged,
     awaitingMarking,
     recentAttempts,
     quizzes,
-    pendingAttempts,
-    recentSubmissions,
-    recentlyPublished,
-    recentFlags,
-    students,
+    markingGroups,
     questionDifficulty,
     integrityEventCounts,
+    ownedQuizCount,
+    liveQuizzes,
+    upcomingQuizzes,
+    draftQuizzes,
+    closedQuizzes,
   ] = await Promise.all([
       prisma.quiz.count({
         where: { ...ownQuiz, status: 'PUBLISHED', startsAt: { lte: now }, endsAt: { gte: now } },
       }),
-      prisma.quizAttempt.count({ where: { ...ownAttempt, status: 'IN_PROGRESS' } }),
+      // Attempts in progress, per quiz: the total feeds the sidebar badge and
+      // the group count says how many exams those students are spread over.
+      prisma.quizAttempt.groupBy({
+        by: ['quizId'],
+        where: { ...ownAttempt, status: 'IN_PROGRESS' },
+        _count: { _all: true },
+      }),
       prisma.quizAttempt.count({
         where: { ...ownAttempt, status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] } },
       }),
@@ -67,82 +94,25 @@ export const GET = route(async () => {
       prisma.quiz.findMany({
         where: { ...ownQuiz, status: { not: 'DRAFT' } },
         select: {
-          id: true,
           title: true,
-          status: true,
           startsAt: true,
           endsAt: true,
-          questionCount: true,
-          subject: { select: { name: true } },
           _count: { select: { attempts: true, assignments: true } },
         },
         orderBy: { startsAt: 'desc' },
         take: 6,
       }),
-      // Papers still with a marker, oldest first — the queue a person works.
-      prisma.quizAttempt.findMany({
+      // Papers still with a marker, one row per quiz, longest wait first. An
+      // aggregate rather than a capped list of attempts, so the answer counts
+      // stay exact however large the backlog.
+      prisma.quizAttempt.groupBy({
+        by: ['quizId'],
         where: { ...ownAttempt, pendingManualCount: { gt: 0 } },
-        select: {
-          id: true,
-          submittedAt: true,
-          pendingManualCount: true,
-          quiz: { select: { id: true, title: true } },
-        },
-        orderBy: { submittedAt: 'asc' },
-        take: 200,
-      }),
-      // The activity feed is built from real domain rows rather than the audit
-      // log: each one already carries the names and the timestamp needed to
-      // write a sentence, where an audit row would need a lookup per entry.
-      prisma.quizAttempt.findMany({
-        where: { ...ownAttempt, submittedAt: { not: null } },
-        select: {
-          id: true,
-          submittedAt: true,
-          quiz: { select: { title: true } },
-          student: { select: { user: { select: { name: true } } } },
-        },
-        orderBy: { submittedAt: 'desc' },
-        take: 5,
-      }),
-      prisma.quiz.findMany({
-        where: { ...ownQuiz, status: { not: 'DRAFT' } },
-        select: { id: true, title: true, createdAt: true },
-        orderBy: { createdAt: 'desc' },
-        take: 4,
-      }),
-      prisma.integrityScore.findMany({
-        where: {
-          status: { in: ['REVIEW_RECOMMENDED', 'HIGH_RISK'] },
-          reviewed: false,
-          attempt: ownAttempt,
-        },
-        select: {
-          id: true,
-          computedAt: true,
-          attempt: { select: { id: true, quiz: { select: { title: true } } } },
-        },
-        orderBy: { computedAt: 'desc' },
-        take: 4,
-      }),
-      prisma.student.findMany({
-        where: { user: { status: 'ACTIVE' } },
-        select: {
-          id: true,
-          rollNumber: true,
-          section: true,
-          user: { select: { name: true } },
-          attempts: {
-            where: { ...ownAttempt, status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] } },
-            select: { quizId: true, percentage: true, pendingManualCount: true },
-          },
-          // Only exams that have closed can be counted as missed — an open one
-          // is simply not sat yet.
-          assignments: {
-            where: { quiz: { ...ownQuiz, status: { not: 'DRAFT' }, endsAt: { lt: now } } },
-            select: { quizId: true },
-          },
-        },
+        _sum: { pendingManualCount: true },
+        _min: { submittedAt: true },
+        _count: { _all: true },
+        orderBy: { _min: { submittedAt: 'asc' } },
+        take: MARKING_ROWS,
       }),
       prisma.question.groupBy({
         by: ['difficulty'],
@@ -156,7 +126,48 @@ export const GET = route(async () => {
         orderBy: { _count: { type: 'desc' } },
         take: 7,
       }),
+      prisma.quiz.count({ where: ownQuiz }),
+      // "Your quizzes": a few of each status, merged by relevance below. Each
+      // is bounded, so a faculty member with hundreds of quizzes costs the same.
+      prisma.quiz.findMany({
+        where: { ...ownQuiz, status: 'PUBLISHED', startsAt: { lte: now }, endsAt: { gte: now } },
+        select: listedQuiz,
+        orderBy: { endsAt: 'asc' },
+        take: QUIZ_LIST_LIMIT,
+      }),
+      prisma.quiz.findMany({
+        where: { ...ownQuiz, status: 'PUBLISHED', startsAt: { gt: now } },
+        select: listedQuiz,
+        orderBy: { startsAt: 'asc' },
+        take: QUIZ_LIST_LIMIT,
+      }),
+      prisma.quiz.findMany({
+        where: { ...ownQuiz, status: 'DRAFT' },
+        select: listedQuiz,
+        orderBy: { updatedAt: 'desc' },
+        take: QUIZ_LIST_LIMIT,
+      }),
+      prisma.quiz.findMany({
+        where: { ...ownQuiz, status: 'PUBLISHED', endsAt: { lt: now } },
+        select: listedQuiz,
+        orderBy: { endsAt: 'desc' },
+        take: QUIZ_LIST_LIMIT,
+      }),
     ]);
+
+  // Titles for the marking groups: one lookup for all of them, still scoped to
+  // this faculty member's quizzes.
+  const markingTitles = new Map(
+    (markingGroups.length > 0
+      ? await prisma.quiz.findMany({
+          where: { ...ownQuiz, id: { in: markingGroups.map((group) => group.quizId) } },
+          select: { id: true, title: true },
+        })
+      : []
+    ).map((quiz) => [quiz.id, quiz.title]),
+  );
+
+  const liveStudents = liveGroups.reduce((sum, group) => sum + group._count._all, 0);
 
   // Average score per quiz, for the bar chart.
   const scoreByQuiz = new Map<string, { title: string; total: number; count: number }>();
@@ -192,6 +203,7 @@ export const GET = route(async () => {
       quiz: quiz.title,
       assigned: quiz._count.assignments,
       attempted: quiz._count.attempts,
+      closed: quiz.endsAt < now,
     }));
 
   // Grade bands. Attempts still carrying unmarked answers are left out: their
@@ -216,115 +228,49 @@ export const GET = route(async () => {
     ).length,
   }));
 
-  // The marking queue, grouped by paper.
-  const queueByQuiz = new Map<
-    string,
-    { quizId: string; title: string; papers: number; answers: number; oldest: Date | null }
-  >();
-  for (const attempt of pendingAttempts) {
-    const entry = queueByQuiz.get(attempt.quiz.id) ?? {
-      quizId: attempt.quiz.id,
-      title: attempt.quiz.title,
-      papers: 0,
-      answers: 0,
-      oldest: null,
-    };
-    entry.papers += 1;
-    entry.answers += attempt.pendingManualCount;
-    if (attempt.submittedAt && (!entry.oldest || attempt.submittedAt < entry.oldest)) {
-      entry.oldest = attempt.submittedAt;
-    }
-    queueByQuiz.set(attempt.quiz.id, entry);
-  }
+  // What wants this faculty member now. Built here, from the aggregates above,
+  // so the page renders rows rather than working them out.
+  const liveQuizTitle =
+    liveGroups.length === 1
+      ? (liveQuizzes.find((quiz) => quiz.id === liveGroups[0].quizId)?.title ?? null)
+      : null;
 
-  const markingQueue = [...queueByQuiz.values()]
-    .sort((a, b) => (a.oldest?.getTime() ?? 0) - (b.oldest?.getTime() ?? 0))
-    .slice(0, 6)
-    .map((entry) => ({
-      quizId: entry.quizId,
-      title: entry.title,
-      papers: entry.papers,
-      answers: entry.answers,
-      waitingSince: entry.oldest?.toISOString() ?? null,
+  const attention = buildAttention({
+    now,
+    marking: markingGroups.map((group) => ({
+      quizId: group.quizId,
+      title: markingTitles.get(group.quizId) ?? 'a quiz',
+      papers: group._count._all,
+      answers: group._sum.pendingManualCount ?? 0,
+      waitingSince: group._min.submittedAt,
+    })),
+    flagged,
+    live: { students: liveStudents, exams: liveGroups.length, title: liveQuizTitle },
+    upcoming: upcomingQuizzes.map((quiz) => ({
+      id: quiz.id,
+      title: quiz.title,
+      startsAt: quiz.startsAt,
+      assigned: quiz._count.assignments,
+    })),
+  });
+
+  // Soonest scheduled quiz, for the "nothing needs you" line.
+  const next = upcomingQuizzes[0];
+
+  const yourQuizzes = sortQuizzesByRelevance(
+    [...liveQuizzes, ...upcomingQuizzes, ...draftQuizzes, ...closedQuizzes],
+    now,
+  )
+    .slice(0, QUIZ_LIST_LIMIT)
+    .map((quiz) => ({
+      id: quiz.id,
+      title: quiz.title,
+      state: quizStatusWord(quiz, now),
+      assigned: quiz._count.assignments,
+      attempts: quiz._count.attempts,
+      startsAt: quiz.startsAt.toISOString(),
+      endsAt: quiz.endsAt.toISOString(),
     }));
-
-  // Students worth a look: a failing average, or closed exams they never sat.
-  // Both are flagged rather than scored — this is a prompt to check on someone,
-  // not a judgement about them.
-  const FAIL_UNDER = 40;
-  const atRiskStudents = students
-    .map((student) => {
-      const marked = student.attempts.filter(
-        (attempt) => attempt.percentage !== null && attempt.pendingManualCount === 0,
-      );
-      const average =
-        marked.length > 0
-          ? Math.round(
-              (marked.reduce((sum, a) => sum + (a.percentage ?? 0), 0) / marked.length) * 10,
-            ) / 10
-          : null;
-
-      const satQuizIds = new Set(student.attempts.map((attempt) => attempt.quizId));
-      const missed = student.assignments.filter(
-        (assignment) => !satQuizIds.has(assignment.quizId),
-      ).length;
-
-      return {
-        studentId: student.id,
-        name: student.user.name,
-        rollNumber: student.rollNumber,
-        section: student.section,
-        average,
-        attempts: marked.length,
-        missed,
-      };
-    })
-    .filter((student) => (student.average !== null && student.average < FAIL_UNDER) || student.missed > 0)
-    .sort((a, b) => {
-      if (b.missed !== a.missed) return b.missed - a.missed;
-      return (a.average ?? 101) - (b.average ?? 101);
-    })
-    .slice(0, 6);
-
-  // One merged, time-ordered feed. Every entry is a real row with a real
-  // timestamp — nothing here is generated to fill the panel out.
-  type Activity = {
-    id: string;
-    kind: 'SUBMISSION' | 'PUBLISHED' | 'FLAGGED' | 'MARKING';
-    text: string;
-    detail: string | null;
-    href: string;
-    at: string;
-  };
-
-  const activity: Activity[] = [
-    ...recentSubmissions.map((attempt) => ({
-      id: `submission-${attempt.id}`,
-      kind: 'SUBMISSION' as const,
-      text: `${attempt.student.user.name} submitted`,
-      detail: attempt.quiz.title,
-      href: `/admin/results`,
-      at: attempt.submittedAt!.toISOString(),
-    })),
-    ...recentlyPublished.map((quiz) => ({
-      id: `quiz-${quiz.id}`,
-      kind: 'PUBLISHED' as const,
-      text: 'Quiz published',
-      detail: quiz.title,
-      href: `/admin/quizzes/${quiz.id}`,
-      at: quiz.createdAt.toISOString(),
-    })),
-    ...recentFlags.map((flag) => ({
-      id: `flag-${flag.id}`,
-      kind: 'FLAGGED' as const,
-      text: 'Attempt flagged for review',
-      detail: flag.attempt.quiz.title,
-      href: `/admin/integrity/${flag.attempt.id}`,
-      at: flag.computedAt.toISOString(),
-    })),
-  ]
-    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
-    .slice(0, 6);
 
   // Change in average score against the previous week, so the headline figure
   // carries direction rather than sitting on its own. Null unless both weeks
@@ -347,27 +293,35 @@ export const GET = route(async () => {
       ? Math.round(((thisWeek - lastWeek) / lastWeek) * 100)
       : null;
 
+  // Mean over attempts that actually carry a score, so an unscored attempt is
+  // not counted as zero.
+  const scored = recentAttempts.filter((attempt) => attempt.percentage !== null);
   const overallAverage =
-    recentAttempts.length > 0
-      ? Math.round(
-          (recentAttempts.reduce((sum, a) => sum + (a.percentage ?? 0), 0) /
-            recentAttempts.length) *
-            10,
-        ) / 10
+    scored.length > 0
+      ? Math.round((scored.reduce((sum, a) => sum + (a.percentage ?? 0), 0) / scored.length) * 10) /
+        10
       : null;
 
   return ok({
     faculty: { name: session.name },
     stats: {
       activeExams,
-      studentsTakingExams: liveAttempts,
+      studentsTakingExams: liveStudents,
       completedAttempts,
       flaggedAttempts: flagged,
       answersAwaitingMarking: awaitingMarking,
       averageScore: overallAverage,
+      scoredAttempts: scored.length,
       scoreTrend,
     },
-    activity,
+    /** Rows for "Needs your attention", most time-critical first. */
+    attention,
+    nextScheduled: next
+      ? { id: next.id, title: next.title, startsAt: next.startsAt.toISOString() }
+      : null,
+    /** Every quiz this faculty member owns, so a first-time user can be told. */
+    ownedQuizCount,
+    yourQuizzes,
     charts: {
       averageScoreByQuiz,
       participation,
@@ -383,26 +337,5 @@ export const GET = route(async () => {
       /** Attempts left out of the distribution because marking is unfinished. */
       provisionalAttempts: recentAttempts.length - finalAttempts.length,
     },
-    markingQueue,
-    atRiskStudents,
-    // Already queried for the charts above, so surfacing it costs nothing.
-    recentQuizzes: quizzes.map((quiz) => {
-      const live = quiz.status === 'PUBLISHED' && quiz.startsAt <= now && quiz.endsAt >= now;
-      return {
-        id: quiz.id,
-        title: quiz.title,
-        subject: quiz.subject.name,
-        questionCount: quiz.questionCount,
-        assigned: quiz._count.assignments,
-        attempts: quiz._count.attempts,
-        startsAt: quiz.startsAt.toISOString(),
-        endsAt: quiz.endsAt.toISOString(),
-        state: live
-          ? ('LIVE' as const)
-          : quiz.startsAt > now
-            ? ('SCHEDULED' as const)
-            : ('CLOSED' as const),
-      };
-    }),
   });
 });

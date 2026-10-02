@@ -1,98 +1,42 @@
 'use client';
 
-import {
-  ArrowRight,
-  BookOpen,
-  CheckCircle2,
-  ChevronRight,
-  FilePlus2,
-  MonitorPlay,
-  PenLine,
-  ShieldAlert,
-  Users,
-} from 'lucide-react';
+import { ArrowRight, ChevronRight, FilePlus2, MonitorPlay } from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
 
-import { ChartFrame } from '@/components/admin/charts/chart-frame';
 import {
   AverageScoreChart,
   ParticipationChart,
   type DashboardCharts,
 } from '@/components/admin/charts/dashboard-charts';
-import { ErrorState } from '@/components/shared/error-state';
+import { ErrorState, InlineError } from '@/components/shared/error-state';
 import { PageHeader, PageShell } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Progress } from '@/components/ui/progress';
-import { Skeleton } from '@/components/ui/skeleton';
-import { StatCard } from '@/components/ui/stat-card';
+import { Skeleton, SkeletonRows } from '@/components/ui/skeleton';
 import { useApi } from '@/hooks/use-api';
-import { cn, formatDateTime, greeting, longDate, relativeTime } from '@/lib/utils';
+import { insightsSummary, type AttentionItem, type QuizWord } from '@/lib/dashboard-attention';
+import { cn, formatDateTime, greeting, longDate } from '@/lib/utils';
 
-interface RecentQuiz {
+interface ListedQuiz {
   id: string;
   title: string;
-  subject: string;
-  questionCount: number;
+  state: QuizWord;
   assigned: number;
   attempts: number;
   startsAt: string;
-  endsAt: string;
-  state: 'LIVE' | 'SCHEDULED' | 'CLOSED';
-}
-
-interface MarkingQueueItem {
-  quizId: string;
-  title: string;
-  papers: number;
-  answers: number;
-  waitingSince: string | null;
-}
-
-interface AtRiskStudent {
-  studentId: string;
-  name: string;
-  rollNumber: string | null;
-  section: string | null;
-  average: number | null;
-  attempts: number;
-  missed: number;
-}
-
-interface ActivityItem {
-  id: string;
-  kind: 'SUBMISSION' | 'PUBLISHED' | 'FLAGGED' | 'MARKING';
-  text: string;
-  detail: string | null;
-  href: string;
-  at: string;
 }
 
 interface OverviewData {
   faculty: { name: string };
-  activity: ActivityItem[];
-  stats: {
-    activeExams: number;
-    studentsTakingExams: number;
-    completedAttempts: number;
-    flaggedAttempts: number;
-    answersAwaitingMarking: number;
-    averageScore: number | null;
-    scoreTrend: number | null;
-  };
+  stats: { averageScore: number | null; scoredAttempts: number };
+  attention: AttentionItem[];
+  nextScheduled: { id: string; title: string; startsAt: string } | null;
+  ownedQuizCount: number;
+  yourQuizzes: ListedQuiz[];
   charts: DashboardCharts;
-  recentQuizzes: RecentQuiz[];
-  markingQueue: MarkingQueueItem[];
-  atRiskStudents: AtRiskStudent[];
 }
-
-const QUIZ_STATE: Record<RecentQuiz['state'], { label: string; variant: 'success' | 'secondary' | 'muted' }> = {
-  LIVE: { label: 'Live', variant: 'success' },
-  SCHEDULED: { label: 'Scheduled', variant: 'secondary' },
-  CLOSED: { label: 'Closed', variant: 'muted' },
-};
 
 export function AdminOverview() {
   const { data, error, initialLoading, refetch } = useApi<OverviewData>('/api/admin/overview', {
@@ -113,8 +57,10 @@ export function AdminOverview() {
     );
   }
 
-  const stats = data?.stats;
   const firstName = data?.faculty.name ?? 'there';
+  // Someone with no quizzes at all has nothing to be told about yet; they get
+  // the way in instead.
+  const firstRun = data !== null && data.ownedQuizCount === 0;
 
   return (
     <PageShell>
@@ -133,313 +79,287 @@ export function AdminOverview() {
                 {longDate(today)}.{' '}
               </time>
             ) : null}
-            Here&apos;s what&apos;s happening with your exams today.
+            {firstRun
+              ? 'Three steps to your first exam.'
+              : 'Here’s what needs you today.'}
           </>
         }
         actions={
-          <>
-            <Button asChild variant="outline">
-              <Link href="/admin/live">
-                <MonitorPlay />
-                Live exams
-              </Link>
-            </Button>
-            <Button asChild>
-              <Link href="/admin/quizzes/new">
-                <FilePlus2 />
-                Create quiz
-              </Link>
-            </Button>
-          </>
+          firstRun ? undefined : (
+            <>
+              <Button asChild variant="outline">
+                <Link href="/admin/live">
+                  <MonitorPlay />
+                  Live exams
+                </Link>
+              </Button>
+              <Button asChild>
+                <Link href="/admin/quizzes/new">
+                  <FilePlus2 />
+                  Create quiz
+                </Link>
+              </Button>
+            </>
+          )
         }
       />
 
-      <section
-        aria-label="Summary"
-        className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
-      >
-        <StatCard
-          index={0}
-          label="Answers to mark"
-          value={stats?.answersAwaitingMarking ?? 0}
-          hint={stats?.answersAwaitingMarking ? 'Students are waiting' : 'Nothing outstanding'}
-          icon={PenLine}
-          tone={stats?.answersAwaitingMarking ? 'warning' : 'default'}
-          href="/admin/grading"
-          loading={initialLoading}
+      {/* A failed refresh keeps the last good figures on screen. */}
+      {error && data ? (
+        <InlineError
+          message="We could not refresh this page. Showing what loaded last."
+          className="mt-6"
         />
-        <StatCard
-          index={1}
-          label="Flagged attempts"
-          value={stats?.flaggedAttempts ?? 0}
-          hint={stats?.flaggedAttempts ? 'Awaiting review' : 'Nothing awaiting review'}
-          icon={ShieldAlert}
-          href="/admin/integrity"
-          tone={stats?.flaggedAttempts ? 'warning' : 'default'}
-          loading={initialLoading}
-        />
-        <StatCard
-          index={2}
-          label="Active exams"
-          value={stats?.activeExams ?? 0}
-          hint="Published and inside their window"
-          icon={MonitorPlay}
-          href="/admin/quizzes"
-          loading={initialLoading}
-        />
-        <StatCard
-          index={3}
-          label="Sitting now"
-          value={stats?.studentsTakingExams ?? 0}
-          hint={
-            stats?.studentsTakingExams ? 'Open live monitoring' : 'No attempts in progress'
-          }
-          icon={Users}
-          tone={stats?.studentsTakingExams ? 'success' : 'default'}
-          href="/admin/live"
-          loading={initialLoading}
-        />
-      </section>
+      ) : null}
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2">
-        <AverageScoreChart
-          data={data?.charts.averageScoreByQuiz ?? []}
-          loading={initialLoading}
-        />
-        <ParticipationChart
-          data={data?.charts.participation ?? []}
-          closed={data?.recentQuizzes.filter((quiz) => quiz.state === 'CLOSED').map((quiz) => quiz.title)}
-          loading={initialLoading}
-        />
-        <MarkingQueue items={data?.markingQueue ?? []} loading={initialLoading} />
-        <RecentActivity items={data?.activity ?? []} loading={initialLoading} />
-        <RecentQuizzes
-          quizzes={data?.recentQuizzes ?? []}
-          loading={initialLoading}
-          className="lg:col-span-2"
-        />
-      </div>
+      {firstRun ? (
+        <FirstRun />
+      ) : (
+        <div className="mt-8 space-y-10">
+          <Attention
+            items={data?.attention ?? []}
+            next={data?.nextScheduled ?? null}
+            loading={initialLoading}
+          />
+          <YourQuizzes quizzes={data?.yourQuizzes ?? []} loading={initialLoading} />
+          <Insights data={data} loading={initialLoading} />
+        </div>
+      )}
     </PageShell>
   );
 }
 
-/** Rows inside a panel: full-width hit area, hairline between, ≥44px tall. */
-const ROW_LINK =
-  '-mx-2 flex min-h-11 items-center gap-3 rounded-md px-2 py-2.5 transition-colors duration-fast ease-standard hover:bg-accent/60';
+/** Hairline-ruled list: rules above, between and below, no boxes. */
+const RULED = 'mt-3 divide-y divide-border border-y border-border';
 
-const ACTIVITY_STYLE: Record<ActivityItem['kind'], { icon: typeof PenLine; tone: string }> = {
-  SUBMISSION: { icon: CheckCircle2, tone: 'text-muted-foreground' },
-  PUBLISHED: { icon: BookOpen, tone: 'text-muted-foreground' },
-  FLAGGED: { icon: ShieldAlert, tone: 'text-warning' },
-  MARKING: { icon: PenLine, tone: 'text-warning' },
-};
-
-/**
- * What has happened lately, newest first.
- *
- * Assembled from real rows — submissions, publications, integrity flags — each
- * with its own timestamp, so nothing here is invented to fill the panel.
- */
-function RecentActivity({ items, loading }: { items: ActivityItem[]; loading: boolean }) {
-  return (
-    <ChartFrame
-      title="Recent activity"
-      description="Submissions, publications and flags, newest first"
-      height="auto"
-      loading={loading}
-      isEmpty={items.length === 0}
-      emptyState={
-        <p className="py-8 text-center text-sm text-muted-foreground">
-          Nothing has happened yet. Submissions and publications appear here.
-        </p>
-      }
-      toolbar={
-        <Button asChild variant="ghost" size="sm">
-          <Link href="/admin/results">
-            View results
-            <ArrowRight />
-          </Link>
-        </Button>
-      }
-    >
-      <ul className="divide-y divide-border">
-        {items.map((item) => {
-          const style = ACTIVITY_STYLE[item.kind];
-          return (
-            <li key={item.id}>
-              <Link href={item.href} className={cn(ROW_LINK, 'items-start')}>
-                <style.icon className={cn('mt-0.5 size-4 shrink-0', style.tone)} aria-hidden />
-                <span className="min-w-0 flex-1 text-sm">
-                  <span className="block font-medium text-foreground">{item.text}</span>
-                  {item.detail ? (
-                    <span className="block truncate text-muted-foreground">{item.detail}</span>
-                  ) : null}
-                </span>
-                <span className="mt-0.5 shrink-0 whitespace-nowrap text-xs text-muted-foreground">
-                  {relativeTime(item.at)}
-                </span>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </ChartFrame>
-  );
-}
-
-/**
- * Papers waiting on a person, oldest first.
- *
- * A bar chart of backlog counts would be decoration — what a marker needs is
- * which paper, how many answers, how long someone has been waiting, and a way
- * in. So this is a list with a link, not a plot.
- */
-function MarkingQueue({ items, loading }: { items: MarkingQueueItem[]; loading: boolean }) {
-  const answers = items.reduce((sum, item) => sum + item.answers, 0);
-
-  return (
-    <ChartFrame
-      title="Waiting to be marked"
-      description="Papers with answers only a person can mark, longest wait first"
-      height="auto"
-      loading={loading}
-      isEmpty={items.length === 0}
-      emptyState={
-        <EmptyState
-          icon={CheckCircle2}
-          tone="success"
-          title="Nothing to mark"
-          description="Every descriptive and uploaded answer has been marked. Students are seeing final scores."
-          className="border-0 py-8"
-        />
-      }
-      toolbar={
-        items.length > 0 ? (
-          <Button asChild variant="outline" size="sm">
-            <Link href="/admin/grading">
-              Start marking
-              <ArrowRight />
-            </Link>
-          </Button>
-        ) : null
-      }
-      footer={
-        <p className="text-xs text-muted-foreground">
-          <span className="tabular font-medium text-foreground">{answers}</span> answer
-          {answers === 1 ? '' : 's'} across{' '}
-          <span className="tabular font-medium text-foreground">{items.length}</span> quiz
-          {items.length === 1 ? '' : 'zes'}. Those students see a provisional score until you
-          finish.
-        </p>
-      }
-    >
-      <ul className="divide-y divide-border">
-        {items.map((item) => (
-          <li key={item.quizId}>
-            <Link href="/admin/grading" className={ROW_LINK}>
-              <span className="min-w-0 flex-1">
-                <span className="line-clamp-2 break-words text-sm font-medium">{item.title}</span>
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  {item.papers} paper{item.papers === 1 ? '' : 's'}
-                  {item.waitingSince ? ` · waiting since ${formatDateTime(item.waitingSince)}` : ''}
-                </span>
-              </span>
-              <span className="tabular shrink-0 text-sm text-foreground">
-                <span className="font-semibold">{item.answers}</span>
-                <span className="text-muted-foreground">
-                  {' '}
-                  answer{item.answers === 1 ? '' : 's'}
-                </span>
-              </span>
-              <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </ChartFrame>
-  );
-}
-
-/**
- * The most recent published quizzes and how far through them the cohort is.
- *
- * The underlying query already ran for the participation chart, so this panel
- * costs nothing extra — it just gives the page a floor instead of ending on a
- * row of charts.
- */
-function RecentQuizzes({
-  quizzes,
+function Attention({
+  items,
+  next,
   loading,
-  className,
 }: {
-  quizzes: RecentQuiz[];
+  items: AttentionItem[];
+  next: OverviewData['nextScheduled'];
   loading: boolean;
-  className?: string;
 }) {
   return (
-    <ChartFrame
-      title="Recent quizzes"
-      description="Published papers, newest first, with how much of the cohort has sat them"
-      height="auto"
-      loading={loading}
-      isEmpty={quizzes.length === 0}
-      className={className}
-      emptyState={
-        <p className="py-8 text-center text-sm text-muted-foreground">
-          No published quizzes yet. Create one to see it here.
-        </p>
-      }
-      toolbar={
-        <Button asChild variant="ghost" size="sm">
+    <section aria-labelledby="attention-heading">
+      <h2 id="attention-heading" className="type-subheading">
+        Needs your attention
+      </h2>
+
+      {loading ? (
+        <SkeletonRows rows={3} className="mt-3" />
+      ) : items.length === 0 ? (
+        <div className="mt-3 border-y border-border py-6">
+          <p className="text-sm font-medium text-foreground">Nothing needs you right now.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {next ? (
+              <>
+                Next up:{' '}
+                <Link
+                  href={`/admin/quizzes/${next.id}`}
+                  className="font-medium text-foreground underline-offset-4 hover:underline"
+                >
+                  {next.title}
+                </Link>
+                , opens {formatDateTime(next.startsAt, { year: undefined })}.
+              </>
+            ) : (
+              'No quizzes are scheduled.'
+            )}
+          </p>
+        </div>
+      ) : (
+        <ul className={RULED}>
+          {items.map((item) => (
+            // Count, sentence, link. On a phone the link drops under the
+            // sentence rather than squeezing it.
+            <li
+              key={item.id}
+              className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-x-4 gap-y-3 py-4 sm:grid-cols-[3.5rem_minmax(0,1fr)_auto] sm:items-center"
+            >
+              <span className="tabular font-serif text-2xl font-semibold leading-none text-foreground">
+                {item.count}
+              </span>
+              <div className="min-w-0">
+                <p className="break-words text-sm font-medium text-foreground">{item.text}</p>
+                {item.detail ? (
+                  <p className="mt-0.5 break-words text-sm text-muted-foreground">{item.detail}</p>
+                ) : null}
+              </div>
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="col-start-2 justify-self-start sm:col-start-auto sm:justify-self-end"
+              >
+                <Link href={item.href} aria-label={`${item.action}: ${item.count} ${item.text}`}>
+                  {item.action}
+                  <ArrowRight />
+                </Link>
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+const QUIZ_BADGE: Record<QuizWord, 'success' | 'default' | 'muted'> = {
+  Live: 'success',
+  Scheduled: 'default',
+  Draft: 'muted',
+  Closed: 'muted',
+};
+
+function quizFigure(quiz: ListedQuiz) {
+  if (quiz.state === 'Scheduled') {
+    return `Starts ${formatDateTime(quiz.startsAt, { year: undefined })} · ${quiz.assigned} assigned`;
+  }
+  if (quiz.state === 'Draft') return `${quiz.assigned} assigned`;
+  return `${quiz.attempts} of ${quiz.assigned} attempted`;
+}
+
+/** Live and upcoming first, then drafts, then what closed most recently. */
+function YourQuizzes({ quizzes, loading }: { quizzes: ListedQuiz[]; loading: boolean }) {
+  return (
+    <section aria-labelledby="quizzes-heading">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <h2 id="quizzes-heading" className="type-subheading">
+          Your quizzes
+        </h2>
+        <Button asChild variant="ghost" size="sm" className="-mr-3">
           <Link href="/admin/quizzes">
-            All quizzes
+            View all quizzes
             <ArrowRight />
           </Link>
         </Button>
-      }
-    >
-      <ul className="divide-y divide-border">
-        {quizzes.map((quiz) => {
-          const state = QUIZ_STATE[quiz.state];
-          const rate =
-            quiz.assigned > 0 ? Math.round((quiz.attempts / quiz.assigned) * 100) : 0;
+      </div>
 
-          return (
-            // Stacked on narrow screens; three aligned columns once there is room.
+      {loading ? (
+        <SkeletonRows rows={4} className="mt-3" />
+      ) : quizzes.length === 0 ? (
+        <EmptyState
+          icon={FilePlus2}
+          title="No quizzes to show"
+          description="Your quizzes are archived. Create a new one, or open the full list."
+          className="mt-3 py-8"
+        />
+      ) : (
+        <ul className={RULED}>
+          {quizzes.map((quiz) => (
             <li key={quiz.id}>
+              {/* Stacked on a phone; title, status and figure in columns from md up. */}
               <Link
                 href={`/admin/quizzes/${quiz.id}`}
-                className={cn(
-                  ROW_LINK,
-                  'grid gap-x-6 gap-y-2 md:grid-cols-[minmax(0,1fr)_7rem_minmax(10rem,14rem)]',
-                )}
+                className="-mx-2 grid min-h-11 gap-x-6 gap-y-1.5 px-2 py-3 transition-colors duration-fast ease-standard hover:bg-accent/60 md:grid-cols-[minmax(0,1fr)_6rem_minmax(11rem,16rem)] md:items-center"
               >
-                <span className="min-w-0">
-                  <span className="line-clamp-2 break-words text-sm font-medium">{quiz.title}</span>
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                    {quiz.subject} · {quiz.questionCount} questions
-                  </span>
+                <span className="line-clamp-2 break-words text-sm font-medium text-foreground">
+                  {quiz.title}
                 </span>
-
-                <span>
-                  <Badge variant={state.variant}>{state.label}</Badge>
-                </span>
-
-                <span className="flex items-center gap-3">
-                  <Progress
-                    value={rate}
-                    className="h-1.5 flex-1"
-                    aria-label={`${quiz.title}: ${quiz.attempts} of ${quiz.assigned} students have sat it`}
-                  />
-                  <span className="tabular shrink-0 text-xs text-muted-foreground">
-                    {quiz.attempts} / {quiz.assigned} sat
+                <span className="flex flex-wrap items-center gap-x-3 gap-y-1 md:contents">
+                  <span>
+                    <Badge variant={QUIZ_BADGE[quiz.state]}>{quiz.state}</Badge>
                   </span>
+                  <span className="tabular text-sm text-muted-foreground">{quizFigure(quiz)}</span>
                 </span>
               </Link>
             </li>
-          );
-        })}
-      </ul>
-    </ChartFrame>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** Analytics, out of the way until asked for. */
+function Insights({ data, loading }: { data: OverviewData | null; loading: boolean }) {
+  const closed = data?.charts.participation.filter((row) => row.closed).map((row) => row.quiz);
+
+  return (
+    <details className="group border-y border-border">
+      <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 py-3 [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          className="size-4 shrink-0 text-muted-foreground group-open:rotate-90"
+          aria-hidden
+        />
+        <h2 className="type-subheading">Insights</h2>
+        {loading || !data ? (
+          <Skeleton className="h-4 w-56 max-w-full" />
+        ) : (
+          <span className="text-sm text-muted-foreground">
+            {insightsSummary({
+              averageScore: data.stats.averageScore,
+              scoredAttempts: data.stats.scoredAttempts,
+              participation: data.charts.participation,
+            })}
+          </span>
+        )}
+      </summary>
+
+      <div className="grid gap-6 pb-6 pt-2 lg:grid-cols-2">
+        <AverageScoreChart data={data?.charts.averageScoreByQuiz ?? []} loading={loading} />
+        <ParticipationChart
+          data={data?.charts.participation ?? []}
+          closed={closed}
+          loading={loading}
+        />
+      </div>
+    </details>
+  );
+}
+
+const STEP_LINK =
+  'inline-flex min-h-11 items-center text-sm font-medium text-foreground underline-offset-4 hover:underline';
+
+/** Shown instead of everything above when there are no quizzes at all. */
+function FirstRun() {
+  return (
+    <section aria-labelledby="first-run-heading" className="mt-8">
+      <h2 id="first-run-heading" className="type-subheading">
+        Set up your first quiz
+      </h2>
+
+      <ol className={cn(RULED, 'max-w-2xl')}>
+        <li className="flex items-center gap-4 py-3">
+          <span aria-hidden className="tabular w-5 shrink-0 text-sm text-muted-foreground">
+            1.
+          </span>
+          <Button asChild>
+            <Link href="/admin/quizzes/new">
+              <FilePlus2 />
+              Create a quiz
+            </Link>
+          </Button>
+        </li>
+        <li className="flex items-center gap-4 py-1">
+          <span aria-hidden className="tabular w-5 shrink-0 text-sm text-muted-foreground">
+            2.
+          </span>
+          <Link href="/admin/questions" className={STEP_LINK}>
+            Add questions (or import from the question bank)
+          </Link>
+        </li>
+        <li className="flex items-center gap-4 py-1">
+          <span aria-hidden className="tabular w-5 shrink-0 text-sm text-muted-foreground">
+            3.
+          </span>
+          <Link href="/admin/quizzes" className={STEP_LINK}>
+            Assign students and publish
+          </Link>
+        </li>
+      </ol>
+
+      <p className="mt-4 text-sm text-muted-foreground">
+        Need students first?{' '}
+        <Link
+          href="/admin/students"
+          className="font-medium text-foreground underline-offset-4 hover:underline"
+        >
+          Import them from the Students page
+        </Link>
+      </p>
+    </section>
   );
 }
