@@ -54,6 +54,14 @@ npm run dev
 
 Open `http://localhost:3000`. The development seed prints the demo accounts. Development OTP mode also displays the code in the login flow. Never enable that mode in production.
 
+### Day-to-day development loop
+
+- Work with `npm run dev` (login codes show on the login screen when `OTP_DEV_MODE="true"`; this only works outside production builds).
+- Before committing: `npm run typecheck && npm run lint && npm test`.
+- After changing anything under `src/app/api`, `src/lib` or auth: `npm run test:e2e` (needs a fresh `npm run build`; it uses its own database and never touches the one in `.env`).
+- `npm run build` + `npm start` is only for checking a production build. Do not run `npm run build` while a `npm start` server is using the same `.next` folder; stop it first.
+- The deployment runbook (`docs/DEPLOYMENT.md`) is parked until you decide to go live.
+
 ## 4. Useful commands
 
 | Command | Purpose |
@@ -62,7 +70,10 @@ Open `http://localhost:3000`. The development seed prints the demo accounts. Dev
 | `npm run build` | Generate Prisma Client and build the production app |
 | `npm start` | Serve the production build |
 | `npm run typecheck` | Run TypeScript without emitting files |
-| `npm run lint` | Run the configured Next.js lint command |
+| `npm run lint` | Run ESLint (Next.js core-web-vitals + TypeScript rules) |
+| `npm test` | Unit tests (Node's built-in runner, no database needed), in `tests/unit/` |
+| `npm run test:e2e` | End-to-end and abuse-case tests against a throwaway database and a second server on port 3001; see `tests/e2e/README.md` |
+| `npm run db:create-faculty` | Create one faculty account without loading demo data |
 | `npm run db:generate` | Generate Prisma Client |
 | `npm run db:push` | Apply the schema directly, suitable for local development |
 | `npm run db:migrate` | Create/apply a development migration |

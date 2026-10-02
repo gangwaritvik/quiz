@@ -1,5 +1,6 @@
-// Staging E2E (re-verification of the security/scalability fixes) against :3001.
-// Run: DATABASE_URL=$(node scripts/loadtest/staging-url.cjs) node scripts/loadtest/e2e.mjs
+// E2E + abuse cases against a running server (default :3001) backed by the throwaway
+// securequiz_e2e DB. Run via `npm run test:e2e` (tests/e2e/run.mjs sets everything up).
+// Exits 1 if any check FAILs. Needs DATABASE_URL (the test DB) for direct DB assertions.
 import { PrismaClient } from '@prisma/client';
 
 const BASE = process.env.BASE ?? 'http://localhost:3001';
@@ -49,8 +50,10 @@ async function login(call, identifier) {
 }
 
 const prisma = new PrismaClient();
+let ids = {};
+try {
 const [{ db }] = await prisma.$queryRaw`select current_database() as db`;
-if (db !== 'securequiz_staging') throw new Error('refusing: not the staging DB');
+if (!db.endsWith('_e2e')) throw new Error(`refusing: ${db} is not a *_e2e DB`);
 
 const fac = client('faculty', 'e2e-fac-device-0001');
 const fac2 = client('faculty2', 'e2e-fac-device-0002');
@@ -181,7 +184,10 @@ await fac('(a) PATCH endsAt = now-1s', 'PATCH', `/api/admin/quizzes/${quizId}`, 
 const r2 = await stu('(a) result after window closed', 'GET', `/api/results/${attemptId}`, undefined, { expect: [200] });
 const d = r2.data ?? {};
 check('(a) result released after window', d.released !== false, `score=${d.score ?? d.attempt?.score} max=${d.maxScore ?? d.attempt?.maxScore} provisional=${d.provisional}`);
-check('(a) no modelAnswer / answer key (releaseAnswers=false)', !r2.text.includes('SYN-ACK') && !r2.text.includes('isCorrect'));
+const keyFields = new Set(['isCorrect', 'modelAnswer', 'acceptedAnswers', 'explanation']);
+const leaked = (v) =>
+  Array.isArray(v) ? v.some(leaked) : v && typeof v === 'object' ? Object.entries(v).some(([k, x]) => keyFields.has(k) || leaked(x)) : false;
+check('(a) no answer-key fields in result (releaseAnswers=false)', !leaked(r2.data));
 
 // ---------------- (c) release-device, (f) parallel start, (g) parallel submit ----------------
 const quiz2 = await mkQuiz('E2E device', ['23CSE002', '23CSE003']);
@@ -222,6 +228,16 @@ const late = await stu('(e) events 2 min after submit', 'POST', `/api/exam/${att
 const after = await prisma.examEvent.count({ where: { attemptId } });
 check('(e) late events not stored', after === before, `status=${late.status} body=${late.text.slice(0, 120)}`);
 
-console.log(rows.join('\n'));
-console.log(JSON.stringify({ quizId, attemptId, quiz2, a2, a3 }));
-await prisma.$disconnect();
+ids = { quizId, attemptId, quiz2, a2, a3 };
+} catch (e) {
+  log(`FAIL crash    ${e.stack ?? e}`);
+} finally {
+  console.log(rows.join('\n'));
+  console.log(JSON.stringify(ids));
+  await prisma.$disconnect();
+  const fails = rows.filter((r) => r.startsWith('FAIL'));
+  const passes = rows.filter((r) => r.startsWith('PASS')).length;
+  console.log(`\n===== E2E SUMMARY: ${passes} PASS, ${fails.length} FAIL =====`);
+  fails.forEach((f) => console.log(f));
+  process.exitCode = fails.length ? 1 : 0;
+}
