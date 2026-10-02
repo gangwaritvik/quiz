@@ -34,6 +34,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useExamSecurity } from '@/hooks/use-exam-security';
 import { useExamTimer, type ExamTimer, type TimerSync } from '@/hooks/use-exam-timer';
 import { ApiClientError, apiFetch, apiUpload } from '@/lib/client/api';
+import {
+  ackDraft,
+  clearDrafts,
+  getDraft,
+  loadDrafts,
+  saveDraft,
+  type KV,
+} from '@/lib/offline-queue';
 import { extensionAdded, extensionMessage, readExtraMinutes } from '@/lib/timer-sync';
 import { cn, formatDateTime } from '@/lib/utils';
 
@@ -120,6 +128,15 @@ const AUTO_SUBMIT_RETRY_MS = 10_000;
 /** Spreads the buzzer so a whole room does not submit in the same second. */
 const AUTO_SUBMIT_JITTER_MS = 3_000;
 
+/** Where unsynced answers are kept across a reload or crash; null if the browser forbids storage. */
+function draftStore(): KV | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
 export function ExamClient({ attemptId }: { attemptId: string }) {
@@ -162,6 +179,9 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
    * nothing a student wrote can be lost at the buzzer.
    */
   const pendingSaves = React.useRef<Map<string, AnswerPayload>>(new Map());
+  const flushing = React.useRef(false);
+  /** Lets the heartbeat (declared earlier) trigger a flush without a forward reference. */
+  const flushQueueRef = React.useRef<() => void>(() => undefined);
   const debounceTimers = React.useRef<Map<string, number>>(new Map());
   const submitLock = React.useRef(false);
   const unmounted = React.useRef(false);
@@ -214,6 +234,28 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
     return result.timer.remainingMs;
   }, [attemptId, noteExtension]);
 
+  /**
+   * Sends one answer with its draft sequence number, then acknowledges it. The
+   * draft and the in-memory entry are removed only if they are still the ones
+   * that were sent, so an edit made while this request was in flight survives.
+   */
+  const postAnswer = React.useCallback(
+    async (attemptQuestionId: string, payload: AnswerPayload) => {
+      const kv = draftStore();
+      const clientSeq = getDraft<AnswerPayload>(kv, attemptId, attemptQuestionId)?.seq;
+      const result = await apiFetch<{ timer: { remainingMs: number; serverNow: string } }>(
+        `/api/exam/${attemptId}/answer`,
+        { method: 'POST', body: { attemptQuestionId, ...payload, clientSeq } },
+      );
+      ackDraft(kv, attemptId, attemptQuestionId, clientSeq);
+      if (pendingSaves.current.get(attemptQuestionId) === payload) {
+        pendingSaves.current.delete(attemptQuestionId);
+      }
+      return result;
+    },
+    [attemptId],
+  );
+
   // --- Submission ---------------------------------------------------------
   const submit = React.useCallback(
     async (auto = false) => {
@@ -233,16 +275,27 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
           debounceTimers.current.clear();
 
           // Flush anything still queued so no answer is lost at the buzzer.
-          for (const [attemptQuestionId, payload] of pendingSaves.current) {
+          // An answer that could not be sent holds the submission back (it is
+          // retried), unless the server says the attempt is already over, in
+          // which case it can never be saved and is dropped.
+          let unsent = false;
+          for (const [attemptQuestionId, payload] of [...pendingSaves.current]) {
             try {
-              await apiFetch(`/api/exam/${attemptId}/answer`, {
-                method: 'POST',
-                body: { attemptQuestionId, ...payload },
-              });
-              pendingSaves.current.delete(attemptQuestionId);
-            } catch {
-              // Best effort — submission itself must still proceed.
+              await postAnswer(attemptQuestionId, payload);
+            } catch (caught) {
+              if (caught instanceof ApiClientError && caught.code === 'ATTEMPT_EXPIRED') {
+                pendingSaves.current.delete(attemptQuestionId);
+              } else {
+                unsent = true;
+              }
             }
+          }
+          if (unsent) {
+            throw new ApiClientError(
+              'NETWORK',
+              'Some of your latest answers have not reached the server yet. Check your connection; they are kept on this device, and you can submit again once they are sent.',
+              0,
+            );
           }
 
           // Idempotent server-side: an already-submitted attempt returns its receipt.
@@ -251,6 +304,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
             body: { confirm: true },
           });
 
+          clearDrafts(draftStore(), attemptId);
           setSubmitResult(result);
           setPhase('submitted');
           setSubmitOpen(false);
@@ -295,7 +349,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
         }
       }
     },
-    [attemptId],
+    [attemptId, postAnswer],
   );
 
   /**
@@ -480,8 +534,20 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
   const load = React.useCallback(async () => {
     try {
       const result = await apiFetch<ExamState>(`/api/exam/${attemptId}/state`);
+
+      // Answers typed in an earlier session that never reached the server
+      // (closed laptop, crashed tab) come back from this device's drafts, and
+      // are sent once the paper is up. The server drops any that are stale.
+      const drafts = loadDrafts<AnswerPayload>(draftStore(), attemptId);
+      const questionsWithDrafts = result.questions.map((question) => {
+        const draft = drafts[question.attemptQuestionId];
+        if (!draft) return question;
+        pendingSaves.current.set(question.attemptQuestionId, draft.payload);
+        return { ...question, ...draft.payload };
+      });
+
       setState(result);
-      setQuestions(result.questions);
+      setQuestions(questionsWithDrafts);
       setPhase('active');
       noteExtension(result, result.timer.remainingMs);
 
@@ -525,6 +591,8 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
       try {
         await pingServer();
         setConnectionLost(false);
+        // The server is reachable: send anything that was waiting.
+        flushQueueRef.current();
       } catch (caught) {
         if (caught instanceof ApiClientError && caught.code === 'ATTEMPT_EXPIRED') {
           void submit(true);
@@ -555,11 +623,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
       setSavingIds((current) => new Set(current).add(attemptQuestionId));
 
       try {
-        const result = await apiFetch<{ timer: { remainingMs: number; serverNow: string } }>(
-          `/api/exam/${attemptId}/answer`,
-          { method: 'POST', body: { attemptQuestionId, ...payload } },
-        );
-        pendingSaves.current.delete(attemptQuestionId);
+        const result = await postAnswer(attemptQuestionId, payload);
         setSavedAtById((current) => ({ ...current, [attemptQuestionId]: Date.now() }));
         setConnectionLost(false);
         timerRef.current?.sync({
@@ -576,7 +640,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
           return;
         }
 
-        if (error && !error.isTransient) {
+        if (error && !error.isTransient && error.code !== 'RATE_LIMITED') {
           setBlockedError(error);
           setPhase('blocked');
           return;
@@ -596,20 +660,31 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
     },
     // No `timer` here: it changes every tick, which re-fired the retry effect
     // below (re-sending queued answers) four times a second.
-    [attemptId, submit],
+    [submit, postAnswer],
   );
 
-  // Retry queued answers as soon as connectivity returns.
-  React.useEffect(() => {
-    if (!online || phase !== 'active' || pendingSaves.current.size === 0) return;
-
-    const retry = async () => {
+  /** Sends every queued answer, one at a time; a second call while one runs does nothing. */
+  const flushQueue = React.useCallback(async () => {
+    if (flushing.current) return;
+    flushing.current = true;
+    try {
       for (const [attemptQuestionId, payload] of [...pendingSaves.current]) {
+        // A debounce still running will send its own, newer payload.
+        if (debounceTimers.current.has(attemptQuestionId)) continue;
         await persistAnswer(attemptQuestionId, payload);
       }
-    };
-    void retry();
-  }, [online, phase, persistAnswer]);
+    } finally {
+      flushing.current = false;
+    }
+  }, [persistAnswer]);
+  flushQueueRef.current = () => void flushQueue();
+
+  // Retry queued answers as soon as connectivity returns, and once the paper
+  // has loaded (answers recovered from a previous session wait in the queue).
+  React.useEffect(() => {
+    if (!online || phase !== 'active' || pendingSaves.current.size === 0) return;
+    void flushQueue();
+  }, [online, phase, flushQueue]);
 
   /**
    * Applies a change optimistically, then saves it.
@@ -643,6 +718,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
         current.map((q, index) => (index === currentIndex ? { ...q, ...patch } : q)),
       );
       pendingSaves.current.set(id, payload);
+      saveDraft(draftStore(), attemptId, id, payload);
 
       const existingTimer = debounceTimers.current.get(id);
       if (existingTimer) window.clearTimeout(existingTimer);
@@ -657,7 +733,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
         void persistAnswer(id, payload);
       }
     },
-    [currentIndex, questions, persistAnswer],
+    [attemptId, currentIndex, questions, persistAnswer],
   );
 
   /** Saves any debounced text immediately — used when leaving a question. */

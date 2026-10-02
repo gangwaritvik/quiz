@@ -502,6 +502,9 @@ model Answer {
   /// Free-text response for SHORT_ANSWER and LONG_ANSWER.
   textResponse      String?
   markedForReview   Boolean  @default(false)
+  /// Highest client sequence applied, so a delayed or replayed save from an
+  /// offline queue cannot overwrite a newer edit.
+  clientSeq         BigInt?
   /// Graded server-side at submission. Null while the exam is in progress, and
   /// for manually-graded questions until faculty has marked them.
   isCorrect         Boolean?

@@ -286,6 +286,19 @@ check('(i) 2 file-picker exits are not scored', rep2.data?.integrity?.score === 
 await pick(4);
 const rep6 = await fac('(i) integrity report after 6 tagged exits', 'GET', `/api/admin/integrity/${a6}`, undefined, { expect: [200] });
 check('(i) tagged exits past the allowance are scored', rep6.data?.integrity?.score < 100, JSON.stringify(rep6.data?.integrity ?? '').slice(0, 160));
+// offline queue: a delayed replay (older clientSeq) must not overwrite a newer edit
+const st6state = (await s6('(j) state for the seq test', 'GET', `/api/exam/${a6}/state`, undefined, { expect: [200] })).data;
+const short6 = st6state.questions.find((q) => q.type === 'SHORT_ANSWER').attemptQuestionId;
+const put6 = (text, clientSeq) => s6(`(j) save "${text}" seq ${clientSeq ?? 'none'}`, 'POST', `/api/exam/${a6}/answer`, { attemptQuestionId: short6, textResponse: text, ...(clientSeq ? { clientSeq } : {}) }, { expect: [200] });
+check('(j) first save applies', (await put6('80', 100)).data?.textResponse === '80');
+check('(j) older seq is acknowledged but not applied', (await put6('99', 50)).data?.textResponse === '80');
+check('(j) equal seq is not applied', (await put6('77', 100)).data?.textResponse === '80');
+check('(j) newer seq applies', (await put6('81', 101)).data?.textResponse === '81');
+check('(j) a save without a seq still applies', (await put6('82')).data?.textResponse === '82');
+await s6('(j) clientSeq must be a positive integer', 'POST', `/api/exam/${a6}/answer`, { attemptQuestionId: short6, textResponse: 'x', clientSeq: 0 }, { expect: [422] });
+await s6('(j) flag a question in progress', 'POST', `/api/exam/${a6}/flag`, { attemptQuestionId: short6, markedForReview: true }, { expect: [200] });
+check('(j) flag did not disturb the answer', (await prisma.answer.findFirst({ where: { attemptQuestionId: short6 }, select: { textResponse: true, markedForReview: true } }))?.textResponse === '82');
+
 const q3 = await prisma.quiz.findUnique({ where: { id: quiz3 }, select: { maxExtensionMinutes: true } });
 check('(i) quiz release horizon is the largest extension (180)', q3.maxExtensionMinutes === 180, String(q3.maxExtensionMinutes));
 const audits = await prisma.auditLog.count({ where: { action: 'admin.time_extended' } });
@@ -308,6 +321,8 @@ await s5('(i) submit', 'POST', `/api/exam/${a5}/submit`, { confirm: true }, { ex
 const r5 = await s5('(i) result held while an extension may still run', 'GET', `/api/results/${a5}`, undefined, { expect: [200] });
 check('(i) released:false until end + 180 min', r5.data?.released === false && Math.abs(Date.parse(r5.data.releasesAt) - (Date.parse(closeEnd3) + 180 * 60_000)) < 1000, JSON.stringify({ released: r5.data?.released, releasesAt: r5.data?.releasesAt }));
 await fac('(i) add time after submit refused', 'POST', extendUrl(a5), { minutes: 5 }, { expect: [409] });
+const q5 = (await prisma.attemptQuestion.findFirst({ where: { attemptId: a5 }, select: { id: true } })).id;
+await s5('(j) flag after submit refused', 'POST', `/api/exam/${a5}/flag`, { attemptQuestionId: q5, markedForReview: true }, abuse);
 
 // (e) events after the 60 s post-submit window
 const wait = Math.max(0, submittedAt + 120_000 - Date.now());

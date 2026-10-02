@@ -33,6 +33,7 @@ export const POST = route(async (request: Request, { params }: Params) => {
     selectedOptionIds: body.selectedOptionIds,
     textResponse: body.textResponse,
     markedForReview: body.markedForReview,
+    clientSeq: body.clientSeq,
   });
 
   // The response carries no grading information — `isCorrect` is only written

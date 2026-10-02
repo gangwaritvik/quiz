@@ -15,6 +15,7 @@ import {
   type GradableQuestion,
 } from '@/lib/grading';
 import { recomputeIntegrityScore } from '@/lib/integrity';
+import { shouldApply } from '@/lib/offline-queue';
 import { computeExpiresAt, effectiveEndsAt } from '@/lib/time-extension';
 
 /**
@@ -492,6 +493,8 @@ export interface SaveAnswerInput {
   /** Written types. */
   textResponse?: string | null;
   markedForReview?: boolean;
+  /** Offline-queue sequence; a write no newer than the stored one is ignored. */
+  clientSeq?: number;
 }
 
 /**
@@ -623,6 +626,24 @@ export async function saveAnswer(params: SaveAnswerInput) {
   const answer = await prisma.$transaction(async (tx) => {
     await lockWritableAttempt(tx, attempt.id);
 
+    const select = {
+      id: true,
+      selectedOptionId: true,
+      textResponse: true,
+      markedForReview: true,
+    } as const;
+
+    // A queued save replayed after a newer edit already landed is acknowledged
+    // but not applied. The attempt row lock above serialises this check.
+    const existing = await tx.answer.findUnique({
+      where: { attemptQuestionId: attemptQuestion.id },
+      select: { ...select, clientSeq: true },
+    });
+    if (existing && !shouldApply(existing.clientSeq, params.clientSeq)) {
+      selectedOptionIds = undefined;
+      return existing;
+    }
+
     const saved = await tx.answer.upsert({
       where: { attemptQuestionId: attemptQuestion.id },
       create: {
@@ -631,6 +652,7 @@ export async function saveAnswer(params: SaveAnswerInput) {
         selectedOptionId: selectedOptionId ?? null,
         textResponse: textResponse ?? null,
         markedForReview: params.markedForReview ?? false,
+        ...(params.clientSeq === undefined ? {} : { clientSeq: BigInt(params.clientSeq) }),
       },
       update: {
         ...(selectedOptionId === undefined ? {} : { selectedOptionId }),
@@ -638,8 +660,9 @@ export async function saveAnswer(params: SaveAnswerInput) {
         ...(params.markedForReview === undefined
           ? {}
           : { markedForReview: params.markedForReview }),
+        ...(params.clientSeq === undefined ? {} : { clientSeq: BigInt(params.clientSeq) }),
       },
-      select: { id: true, selectedOptionId: true, textResponse: true, markedForReview: true },
+      select,
     });
 
     if (selectedOptionIds !== undefined) {

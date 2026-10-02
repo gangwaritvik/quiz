@@ -1,6 +1,6 @@
-import { ApiError, assertSameOrigin, ok, parseBody, route } from '@/lib/api';
+import { assertSameOrigin, ok, parseBody, route } from '@/lib/api';
 import { requireStudent } from '@/lib/auth';
-import { prisma } from '@/lib/db';
+import { saveAnswer } from '@/lib/exam';
 import { loadLiveAttempt } from '@/lib/exam-guard';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 import { getRequestContext } from '@/lib/session';
@@ -26,24 +26,14 @@ export const POST = route(async (request: Request, { params }: Params) => {
 
   const body = await parseBody(request, flagQuestionSchema);
 
-  const attemptQuestion = await prisma.attemptQuestion.findUnique({
-    where: { id: body.attemptQuestionId },
-    select: { id: true, attemptId: true },
-  });
-  if (!attemptQuestion || attemptQuestion.attemptId !== attemptId) {
-    throw new ApiError('FORBIDDEN', 'That question is not part of this attempt.');
-  }
-
-  const answer = await prisma.answer.upsert({
-    where: { attemptQuestionId: attemptQuestion.id },
-    create: {
-      attemptId,
-      attemptQuestionId: attemptQuestion.id,
-      selectedOptionId: null,
-      markedForReview: body.markedForReview,
-    },
-    update: { markedForReview: body.markedForReview },
-    select: { markedForReview: true, selectedOptionId: true },
+  // Goes through saveAnswer so the flag gets the same checks as an answer: the
+  // question must be on this paper, and nothing is written once the attempt is
+  // finalised.
+  const answer = await saveAnswer({
+    attemptId,
+    studentId: session.studentId,
+    attemptQuestionId: body.attemptQuestionId,
+    markedForReview: body.markedForReview,
   });
 
   return ok({

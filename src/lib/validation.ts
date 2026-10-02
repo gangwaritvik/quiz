@@ -67,6 +67,8 @@ export const saveAnswerSchema = z
     selectedOptionIds: z.array(cuid).max(10).optional(),
     textResponse: z.string().max(20_000).nullable().optional(),
     markedForReview: z.boolean().optional(),
+    /** Grows with every edit on this question; lets the server drop stale replays. */
+    clientSeq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional(),
   })
   .refine(
     (data) =>
