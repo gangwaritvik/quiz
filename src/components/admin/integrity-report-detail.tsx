@@ -5,6 +5,9 @@ import {
   ArrowLeft,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Info,
   Laptop,
   MessageSquarePlus,
@@ -45,6 +48,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApi } from '@/hooks/use-api';
 import { ApiClientError, apiFetch } from '@/lib/client/api';
+import { groupIncidents } from '@/lib/event-incidents';
 import { SEVERITY_STYLES, type EventSeverity } from '@/lib/event-labels';
 import { cn, formatDateTime, formatDuration, formatTime } from '@/lib/utils';
 
@@ -106,10 +110,28 @@ const OUTCOME_LABEL: Record<string, string> = {
   ESCALATED: 'Escalated to the examination committee',
 };
 
+const SEVERITY_RANK: Record<EventSeverity, number> = { INFO: 0, LOW: 1, MEDIUM: 2, HIGH: 3 };
+
+/** `key: value · key: value`, or null when there is nothing worth showing. */
+function describeMetadata(metadata: unknown): string | null {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+  const parts = Object.entries(metadata).map(
+    ([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : String(value)}`,
+  );
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
 export function IntegrityReportDetail({ attemptId }: { attemptId: string }) {
   const { data, error, initialLoading, refetch } = useApi<ReportDetail>(
     `/api/admin/integrity/${attemptId}`,
   );
+
+  // Raw events fold into incidents; every raw event stays reachable in its incident.
+  const incidents = React.useMemo(
+    () => (data ? groupIncidents(data.timeline, data.integrity.breakdown) : []),
+    [data],
+  );
+  const [openIncidents, setOpenIncidents] = React.useState<ReadonlySet<string>>(new Set());
 
   const [reviewOpen, setReviewOpen] = React.useState(false);
   const [outcome, setOutcome] = React.useState('REVIEWED');
@@ -157,7 +179,10 @@ export function IntegrityReportDetail({ attemptId }: { attemptId: string }) {
   const { attempt, student, quiz, integrity, timeline, reviews } = data;
   const deduction = integrity.breakdown.reduce((sum, signal) => sum + signal.penalty, 0);
   const startedAt = new Date(attempt.startedAt).getTime();
-  const signalCount = timeline.filter((event) => event.severity !== 'INFO').length;
+  const incidentCount = incidents.filter((incident) => !incident.routine).length;
+  const allOpen = incidents.length > 0 && incidents.every((i) => openIncidents.has(i.id));
+  const offset = (iso: string) =>
+    `+${formatDuration(Math.max(0, (new Date(iso).getTime() - startedAt) / 1000))}`;
 
   return (
     <PageShell>
@@ -369,13 +394,16 @@ export function IntegrityReportDetail({ attemptId }: { attemptId: string }) {
                 Event timeline
               </h2>
               <p className="tabular text-sm text-muted-foreground">
-                {timeline.length} event{timeline.length === 1 ? '' : 's'} · {signalCount} scored
-                signal{signalCount === 1 ? '' : 's'}
+                {incidentCount} incident{incidentCount === 1 ? '' : 's'} from {timeline.length}{' '}
+                recorded event{timeline.length === 1 ? '' : 's'}
               </p>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              Every recorded event, in order. Times are recorded by the server, not the
-              student&apos;s browser; the second column is time since the exam started.
+              Events that belong together are grouped, because one tab switch records several.
+              Nothing is left out: open an incident to see every event in it. Exam start, submission
+              and uploads are listed as routine entries and are not counted as incidents. Times are
+              recorded by the server, not the student&apos;s browser; the + figure is time since
+              the exam started.
             </p>
 
             {timeline.length === 0 ? (
@@ -383,66 +411,169 @@ export function IntegrityReportDetail({ attemptId }: { attemptId: string }) {
                 No events were recorded for this attempt.
               </p>
             ) : (
-              <ol className="mt-6">
-                {timeline.map((event, index) => {
-                  const severity = SEVERITY_STYLES[event.severity];
-                  const info = event.severity === 'INFO';
-                  const elapsed = (new Date(event.occurredAt).getTime() - startedAt) / 1000;
-                  return (
-                    <li
-                      key={event.id}
-                      className="grid grid-cols-[auto_1rem_minmax(0,1fr)] gap-x-3 sm:grid-cols-[auto_auto_1rem_minmax(0,1fr)]"
-                    >
-                      <time
-                        className="tabular w-[5.75rem] pt-px font-mono text-xs text-muted-foreground"
-                        dateTime={event.occurredAt}
+              <>
+                <div className="mt-4 flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      setOpenIncidents(allOpen ? new Set() : new Set(incidents.map((i) => i.id)))
+                    }
+                  >
+                    {allOpen ? <ChevronsDownUp /> : <ChevronsUpDown />}
+                    {allOpen ? 'Collapse all' : 'Expand all'}
+                  </Button>
+                </div>
+
+                <ol className="mt-4">
+                  {incidents.map((incident, index) => {
+                    const top = incident.events.reduce<EventSeverity>(
+                      (max, event) =>
+                        SEVERITY_RANK[event.severity] > SEVERITY_RANK[max] ? event.severity : max,
+                      'INFO',
+                    );
+                    const severity = SEVERITY_STYLES[top];
+                    const info = top === 'INFO';
+                    const count = incident.events.length;
+                    return (
+                      <li
+                        key={incident.id}
+                        className="grid grid-cols-[1rem_minmax(0,1fr)] gap-x-3 sm:grid-cols-[auto_auto_1rem_minmax(0,1fr)]"
                       >
-                        {formatTime(event.occurredAt)}
-                      </time>
-                      <span className="tabular hidden w-14 pt-px font-mono text-xs text-muted-foreground sm:block">
-                        +{formatDuration(Math.max(0, elapsed))}
-                      </span>
-                      <span className="relative flex justify-center" aria-hidden>
-                        {index < timeline.length - 1 ? (
-                          <span className="absolute top-3 h-full w-px bg-border" />
-                        ) : null}
-                        <span
-                          className={cn(
-                            'relative mt-1 rounded-full ring-4 ring-card',
-                            info ? 'size-2 opacity-60' : 'size-2.5',
-                            severity.dot,
-                          )}
-                        />
-                      </span>
-                      <div className="min-w-0 pb-5">
-                        <p className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 text-sm">
-                          <span
-                            className={info ? 'text-muted-foreground' : 'font-medium text-foreground'}
-                          >
-                            {event.label}
-                          </span>
-                          {!info ? (
-                            <span
-                              className={cn(
-                                'text-2xs font-semibold uppercase tracking-wide',
-                                severity.text,
-                              )}
-                            >
-                              <span className="sr-only">Severity: </span>
-                              {severity.label}
-                            </span>
+                        <time
+                          className="tabular hidden w-[5.75rem] pt-px font-mono text-xs text-muted-foreground sm:block"
+                          dateTime={incident.startedAt}
+                        >
+                          {formatTime(incident.startedAt)}
+                        </time>
+                        <span className="tabular hidden w-14 pt-px font-mono text-xs text-muted-foreground sm:block">
+                          {offset(incident.startedAt)}
+                        </span>
+                        <span className="relative flex justify-center" aria-hidden>
+                          {index < incidents.length - 1 ? (
+                            <span className="absolute top-3 h-full w-px bg-border" />
                           ) : null}
-                        </p>
-                        {event.durationMs ? (
-                          <p className="mt-0.5 text-xs text-muted-foreground">
-                            Duration: {(event.durationMs / 1000).toFixed(1)} seconds
+                          <span
+                            className={cn(
+                              'relative mt-1 rounded-full ring-4 ring-card',
+                              info ? 'size-2 opacity-60' : 'size-2.5',
+                              severity.dot,
+                            )}
+                          />
+                        </span>
+                        <div className="min-w-0 pb-5">
+                          <p className="tabular font-mono text-xs text-muted-foreground sm:hidden">
+                            {formatTime(incident.startedAt)} · {offset(incident.startedAt)}
                           </p>
-                        ) : null}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
+                          <details
+                            className="group"
+                            open={openIncidents.has(incident.id)}
+                            onToggle={(event) => {
+                              const isOpen = event.currentTarget.open;
+                              setOpenIncidents((current) => {
+                                if (current.has(incident.id) === isOpen) return current;
+                                const next = new Set(current);
+                                if (isOpen) next.add(incident.id);
+                                else next.delete(incident.id);
+                                return next;
+                              });
+                            }}
+                          >
+                            <summary className="flex cursor-pointer list-none flex-wrap items-baseline gap-x-2.5 gap-y-0.5 text-sm [@media(pointer:coarse)]:py-2 [&::-webkit-details-marker]:hidden">
+                              <span
+                                className={cn(
+                                  'min-w-0',
+                                  info ? 'text-muted-foreground' : 'font-medium text-foreground',
+                                )}
+                              >
+                                {incident.title}
+                              </span>
+                              {!info ? (
+                                <span
+                                  className={cn(
+                                    'text-2xs font-semibold uppercase tracking-wide',
+                                    severity.text,
+                                  )}
+                                >
+                                  <span className="sr-only">Severity: </span>
+                                  {severity.label}
+                                </span>
+                              ) : null}
+                              <span className="inline-flex items-center gap-1 text-xs text-primary">
+                                <span className="group-open:hidden">Show details</span>
+                                <span className="hidden group-open:inline">Hide details</span>
+                                <span className="text-muted-foreground">
+                                  ({count} event{count === 1 ? '' : 's'})
+                                </span>
+                                <ChevronDown className="size-3.5 group-open:rotate-180" aria-hidden />
+                              </span>
+                            </summary>
+
+                            <div className="mt-2 rounded-md border border-border bg-background">
+                              {incident.scored !== undefined ? (
+                                <p className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
+                                  {incident.scored
+                                    ? 'This type of event counts toward the integrity score.'
+                                    : 'Not scored. Shown for context.'}
+                                </p>
+                              ) : null}
+                              <ul className="divide-y divide-border">
+                                {incident.events.map((raw) => {
+                                  const rawInfo = raw.severity === 'INFO';
+                                  const rawSeverity = SEVERITY_STYLES[raw.severity];
+                                  const metadata = describeMetadata(raw.metadata);
+                                  return (
+                                    <li key={raw.id} className="px-3 py-2">
+                                      <p className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5 text-sm">
+                                        <time
+                                          className="tabular font-mono text-xs text-muted-foreground"
+                                          dateTime={raw.occurredAt}
+                                          title={raw.occurredAt}
+                                        >
+                                          {formatTime(raw.occurredAt)}
+                                        </time>
+                                        <span className="tabular font-mono text-xs text-muted-foreground">
+                                          {offset(raw.occurredAt)}
+                                        </span>
+                                        <span
+                                          className={rawInfo ? 'text-muted-foreground' : 'text-foreground'}
+                                        >
+                                          {raw.label}
+                                        </span>
+                                        {!rawInfo ? (
+                                          <span
+                                            className={cn(
+                                              'text-2xs font-semibold uppercase tracking-wide',
+                                              rawSeverity.text,
+                                            )}
+                                          >
+                                            <span className="sr-only">Severity: </span>
+                                            {rawSeverity.label}
+                                          </span>
+                                        ) : null}
+                                      </p>
+                                      {raw.durationMs ? (
+                                        <p className="mt-0.5 text-xs text-muted-foreground">
+                                          Duration: {(raw.durationMs / 1000).toFixed(1)} seconds
+                                        </p>
+                                      ) : null}
+                                      {metadata ? (
+                                        <p className="mt-0.5 break-words font-mono text-xs text-muted-foreground">
+                                          {metadata}
+                                        </p>
+                                      ) : null}
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          </details>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </>
             )}
           </section>
 
