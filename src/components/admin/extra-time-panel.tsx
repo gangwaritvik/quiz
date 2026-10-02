@@ -258,7 +258,7 @@ function SetExtraTimeDialog({
 
   return (
     <Dialog open={student !== null} onOpenChange={busy ? undefined : onOpenChange}>
-      <DialogContent hideClose={busy} className="max-h-[90dvh] overflow-y-auto">
+      <DialogContent hideClose={busy} className="max-w-2xl">
         {shown ? (
           <SetExtraTimeForm
             key={shown.studentId}

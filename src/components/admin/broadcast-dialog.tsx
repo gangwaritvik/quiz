@@ -89,7 +89,7 @@ export function BroadcastDialog({
 
   return (
     <Dialog open={open} onOpenChange={busy ? undefined : onOpenChange}>
-      <DialogContent hideClose={busy} className="max-w-lg">
+      <DialogContent hideClose={busy} className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Message students</DialogTitle>
           <DialogDescription>

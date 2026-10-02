@@ -118,8 +118,11 @@ const overlayClasses = cn(
 // counts as "inside" — a click anywhere on the backdrop dismisses.
 const modalClasses = 'contents';
 
+// A flex column, not a grid: a sticky footer cannot move inside a grid item's
+// own row, so with a grid the Save button scrolled away with the content.
+// The panel scrolls itself once it reaches the screen height.
 const panelBase =
-  'relative grid w-full max-w-lg gap-5 rounded-lg border border-border bg-card p-6 text-card-foreground shadow-overlay outline-none sm:p-7';
+  'relative flex max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col gap-5 overflow-y-auto rounded-lg border border-border bg-card p-6 text-card-foreground shadow-overlay outline-none sm:p-7';
 const panelClasses = cn(
   panelBase,
   // Rides the overlay's enter animation: a small rise while the backdrop fades in.
@@ -201,8 +204,13 @@ const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
 DialogHeader.displayName = 'DialogHeader';
 
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+  // Pinned to the bottom edge of the panel, so the actions stay in reach however
+  // long the content is. Negative margins undo the panel's padding.
   <div
-    className={cn('flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end', className)}
+    className={cn(
+      'sticky -bottom-6 z-10 sm:-bottom-7 -mx-6 -mb-6 flex flex-col-reverse gap-2 border-t border-border bg-card px-6 py-4 sm:-mx-7 sm:-mb-7 sm:flex-row sm:justify-end sm:px-7',
+      className,
+    )}
     {...props}
   />
 );

@@ -194,7 +194,7 @@ function AnswerDialog({
 
   return (
     <Dialog open={appeal !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-w-3xl">
         {shown ? <AnswerForm key={shown.id} appeal={shown} onCancel={() => onOpenChange(false)} onDone={onDone} /> : null}
       </DialogContent>
     </Dialog>

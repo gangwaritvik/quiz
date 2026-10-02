@@ -176,7 +176,7 @@ export function AddTimeDialog({
     // No onOpenChange while the request is in flight, so Escape and outside
     // clicks cannot dismiss it half way.
     <Dialog open={target !== null} onOpenChange={busy ? undefined : onOpenChange}>
-      <DialogContent hideClose={busy} className="max-h-[90dvh] overflow-y-auto">
+      <DialogContent hideClose={busy} className="max-w-2xl">
         {shown ? (
           <AddTimeForm
             // A different student starts from a fresh selection.

@@ -24,7 +24,16 @@ import { cn } from '@/lib/utils';
 const AlertDialog = Dialog;
 const AlertDialogTrigger = DialogTrigger;
 const AlertDialogHeader = DialogHeader;
-const AlertDialogFooter = DialogFooter;
+/** Confirmations are short, so their buttons stay in the flow rather than pinned. */
+const AlertDialogFooter = ({ className, ...props }: React.ComponentProps<typeof DialogFooter>) => (
+  <DialogFooter
+    className={cn(
+      'static mx-0 mb-0 border-0 bg-transparent px-0 py-0 pt-1 sm:mx-0 sm:mb-0 sm:px-0',
+      className,
+    )}
+    {...props}
+  />
+);
 const AlertDialogTitle = DialogTitle;
 const AlertDialogDescription = DialogDescription;
 

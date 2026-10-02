@@ -135,7 +135,7 @@ export function AppealSection({
       )}
 
       <Dialog open={open} onOpenChange={busy ? undefined : setOpen}>
-        <DialogContent hideClose={busy} className="max-w-lg">
+        <DialogContent hideClose={busy} className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Ask for a re-check</DialogTitle>
             <DialogDescription>

@@ -74,7 +74,7 @@ export function StudentDetailDialog({
   return (
     <Dialog open={studentId !== null} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-h-[90dvh] max-w-3xl overflow-y-auto"
+        className="max-w-4xl"
         aria-label={data ? undefined : 'Student details'}
       >
         {error && !data ? (

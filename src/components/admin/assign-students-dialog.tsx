@@ -171,7 +171,7 @@ export function AssignStudentsDialog({
 
   return (
     <Dialog open={open} onOpenChange={saving ? undefined : onOpenChange}>
-      <DialogContent hideClose={saving} className="max-h-[90dvh] max-w-2xl overflow-y-auto">
+      <DialogContent hideClose={saving} className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>Assigned students</DialogTitle>
           <DialogDescription>

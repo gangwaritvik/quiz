@@ -110,7 +110,7 @@ export function CsvImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={importing ? undefined : onOpenChange}>
-      <DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>

@@ -316,7 +316,7 @@ export function QuestionEditor({
 
   return (
     <Dialog open={open} onOpenChange={saving ? undefined : onOpenChange}>
-      <DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-w-4xl">
         <DialogHeader>
           <DialogTitle>{question ? 'Edit question' : 'Add question'}</DialogTitle>
           <DialogDescription>
@@ -726,7 +726,7 @@ export function QuestionEditor({
         </div>
 
         {/* Pinned to the bottom of the scrolling dialog so Save is always in reach. */}
-        <DialogFooter className="sticky bottom-0 z-10 -mx-6 -mb-6 border-t border-border bg-card px-6 py-4 sm:-mx-7 sm:-mb-7 sm:px-7">
+        <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
             Cancel
           </Button>
