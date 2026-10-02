@@ -27,7 +27,6 @@ interface OtpRequestResponse {
   sent: boolean;
   expiresInSeconds: number;
   resendInSeconds: number;
-  maskedDestination: string | null;
   devCode: string | null;
 }
 
@@ -122,7 +121,10 @@ export function LoginPanel() {
       toast.success('Signed in successfully.');
       // Only same-site paths are honoured, mirroring the server-side guard.
       const destination =
-        nextPath && nextPath.startsWith('/') && !nextPath.startsWith('//')
+        nextPath &&
+        nextPath.startsWith('/') &&
+        !nextPath.includes('\\') &&
+        new URL(nextPath, window.location.origin).origin === window.location.origin
           ? nextPath
           : result.redirectTo;
       router.replace(destination);
@@ -245,8 +247,8 @@ export function LoginPanel() {
                     </span>
                   </p>
                   <p className="mt-1 text-xs leading-relaxed text-warning">
-                    Codes are shown on screen because no delivery provider is configured. This is
-                    disabled automatically in production.
+                    Codes are shown on screen because OTP_DEV_MODE is on. Anyone can sign in as
+                    anyone; never use this mode with real students.
                   </p>
                 </div>
               ) : null}

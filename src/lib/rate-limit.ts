@@ -34,8 +34,13 @@ export interface RateLimitRule {
 }
 
 export const RATE_LIMITS = {
+  // OTP limits are keyed per account/identifier: a whole campus can share one
+  // NAT address, so a tight per-IP limit would lock out an exam hall.
   otpRequest: { name: 'otp:request', limit: 5, windowMs: 15 * 60_000 },
   otpVerify: { name: 'otp:verify', limit: 10, windowMs: 15 * 60_000 },
+  // Coarse per-IP abuse guards, sized for a few hundred students behind one IP.
+  otpRequestPerIp: { name: 'otp:request:ip', limit: 1000, windowMs: 15 * 60_000 },
+  otpVerifyPerIp: { name: 'otp:verify:ip', limit: 2000, windowMs: 15 * 60_000 },
   examEvent: { name: 'exam:event', limit: 240, windowMs: 60_000 },
   answerSave: { name: 'exam:answer', limit: 300, windowMs: 60_000 },
   examStart: { name: 'exam:start', limit: 10, windowMs: 10 * 60_000 },

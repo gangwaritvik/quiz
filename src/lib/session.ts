@@ -34,12 +34,16 @@ export interface RequestContext {
   deviceLabel: string;
 }
 
-/** Best-effort client IP behind the usual proxy headers. */
+/**
+ * Client IP as reported by the reverse proxy (Caddy sets X-Real-IP).
+ * The app must only be reachable through that proxy, or these headers are client-controlled.
+ */
 async function clientIp(): Promise<string> {
   const h = await headers();
-  const forwarded = h.get('x-forwarded-for');
-  if (forwarded) return forwarded.split(',')[0]!.trim();
-  return h.get('x-real-ip') ?? '0.0.0.0';
+  const realIp = h.get('x-real-ip')?.trim();
+  if (realIp) return realIp;
+  // The last hop is the one appended by the nearest proxy; earlier entries are spoofable.
+  return h.get('x-forwarded-for')?.split(',').pop()?.trim() || 'unknown';
 }
 
 function describeDevice(userAgent: string): string {
@@ -227,6 +231,16 @@ export async function createSession({ userId, role, context }: CreateSessionInpu
   const session = await loadSession(userId, record.id);
   if (session) await issueAccessCookie(session);
   return { session, sessionId: record.id };
+}
+
+/** The session behind the refresh cookie, found even after the access token expired. */
+export async function findSessionByRefreshCookie() {
+  const refreshToken = (await cookies()).get(REFRESH_COOKIE)?.value;
+  if (!refreshToken) return null;
+  return prisma.deviceSession.findUnique({
+    where: { tokenHash: sha256(refreshToken) },
+    select: { id: true, userId: true },
+  });
 }
 
 export async function revokeSession(sessionId: string, reason: string) {

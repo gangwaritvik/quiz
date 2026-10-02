@@ -14,16 +14,69 @@ export const OTP_TTL_SECONDS = 300; // 5 minutes
 export const OTP_RESEND_COOLDOWN_SECONDS = 30;
 export const OTP_MAX_ATTEMPTS = 5;
 
+const isProd = process.env.NODE_ENV === 'production';
+const PROD_DEV_MODE_ACK = 'i-understand-this-is-insecure';
+let warnedDevModeInProd = false;
+
 /**
- * Development OTP mode.
- *
- * When enabled, the generated code is returned to the caller so the login
- * screen can display it. This is an explicit environment opt-in because it is
- * useful for local production-build smoke tests with `npm start`, but it must
- * be disabled before a real deployment.
+ * Development OTP mode: the generated code is returned to the caller so the
+ * login screen can display it, which lets anyone sign in as anyone. It is an
+ * explicit opt-in (`OTP_DEV_MODE=true`) and stays OFF in production unless
+ * `OTP_DEV_MODE_ALLOW_IN_PRODUCTION=i-understand-this-is-insecure` is also set:
+ * an escape hatch for local production-build smoke tests and staging only,
+ * never for a deployment with real students on it.
  */
 export function isDevOtpMode(): boolean {
-  return process.env.OTP_DEV_MODE !== 'false';
+  if (process.env.OTP_DEV_MODE !== 'true') return false;
+  if (!isProd) return true;
+  if (process.env.OTP_DEV_MODE_ALLOW_IN_PRODUCTION !== PROD_DEV_MODE_ACK) return false;
+  if (!warnedDevModeInProd) {
+    warnedDevModeInProd = true;
+    console.warn(
+      '[securequiz] WARNING: development OTP mode is ENABLED in production ' +
+        '(OTP_DEV_MODE_ALLOW_IN_PRODUCTION is set). Login codes are returned to the browser, ' +
+        'so anyone can sign in as any account. Never run this with real users.',
+    );
+  }
+  return true;
+}
+
+/** Thrown when an OTP cannot be delivered; the request route maps it to a 503. */
+export class OtpDeliveryError extends Error {}
+
+let loggedDeliveryConfigProblem = false;
+
+/**
+ * In production (outside dev mode) refuse to issue codes that cannot reach the
+ * student instead of silently dropping them. Checked before the account lookup
+ * so the failure looks the same for known and unknown identifiers.
+ */
+function assertDeliveryConfigured() {
+  if (!isProd || isDevOtpMode()) return;
+  const from = process.env.OTP_FROM_EMAIL;
+  const problem = !resend
+    ? 'RESEND_API_KEY is not set'
+    : !from
+      ? 'OTP_FROM_EMAIL is not set'
+      : /@resend\.dev\b/i.test(from)
+        ? 'OTP_FROM_EMAIL uses the resend.dev sandbox sender, which only delivers to the Resend account owner'
+        : null;
+  if (!problem) return;
+  if (!loggedDeliveryConfigProblem) {
+    loggedDeliveryConfigProblem = true;
+    console.error(`[securequiz] OTP email delivery is misconfigured: ${problem}. No codes can be sent.`);
+  }
+  throw new OtpDeliveryError(problem);
+}
+
+/**
+ * Rate-limit key for an identifier: the user id when the account exists, so a
+ * student's roll number and email share one bucket; otherwise the normalised
+ * string, so unknown identifiers are limited exactly like real ones.
+ */
+export async function identifierRateLimitKey(identifier: string) {
+  const user = await findUserByIdentifier(identifier);
+  return user ? `user:${user.id}` : `id:${identifier.trim().toLowerCase()}`;
 }
 
 /** Looks a user up by college email or roll number, case-insensitively. */
@@ -53,15 +106,6 @@ export interface OtpIssueResult {
   resendInSeconds: number;
   /** Only ever populated in development OTP mode. */
   devCode?: string;
-  /** Masked destination, e.g. `r••••@college.edu`, for the "code sent to" line. */
-  maskedDestination?: string;
-}
-
-function maskEmail(email: string) {
-  const [local, domain] = email.split('@');
-  if (!local || !domain) return '•••';
-  const visible = local.slice(0, 2);
-  return `${visible}${'•'.repeat(Math.max(3, local.length - 2))}@${domain}`;
 }
 
 /**
@@ -80,6 +124,8 @@ export async function issueOtp(
     resendInSeconds: OTP_RESEND_COOLDOWN_SECONDS,
   };
 
+  assertDeliveryConfigured();
+
   const user = await findUserByIdentifier(identifier);
   if (!user || user.status === 'DISABLED') {
     await audit({
@@ -95,22 +141,16 @@ export async function issueOtp(
     where: { userId: user.id, consumedAt: null, expiresAt: { gt: new Date() } },
     orderBy: { createdAt: 'desc' },
   });
-  if (recent) {
-    const elapsedMs = Date.now() - recent.createdAt.getTime();
-    if (elapsedMs < OTP_RESEND_COOLDOWN_SECONDS * 1000) {
-      throw new ApiError(
-        'RATE_LIMITED',
-        `Please wait ${Math.ceil(
-          (OTP_RESEND_COOLDOWN_SECONDS * 1000 - elapsedMs) / 1000,
-        )} seconds before requesting another code.`,
-      );
-    }
+  // Inside the cooldown, answer exactly as for an unknown account (no new code):
+  // a distinct error here would reveal that the account exists.
+  if (recent && Date.now() - recent.createdAt.getTime() < OTP_RESEND_COOLDOWN_SECONDS * 1000) {
+    return baseResult;
   }
 
   const code = generateOtpCode();
   const codeHash = await hashSecret(code);
 
-  await prisma.$transaction([
+  const [, challenge] = await prisma.$transaction([
     // A new code invalidates every outstanding one for this account.
     prisma.otpChallenge.updateMany({
       where: { userId: user.id, consumedAt: null },
@@ -135,26 +175,34 @@ export async function issueOtp(
   });
 
   if (isDevOtpMode()) {
-    console.info(`[securequiz] development OTP for ${user.email}: ${code}`);
+    // Never write a login secret to production logs, even with the escape hatch on.
+    if (!isProd) console.info(`[securequiz] development OTP for ${user.email}: ${code}`);
   } else {
-    // Production wiring point: hand the code to the college SMS/email gateway.
-    await deliverOtp(user.email, code);
+    try {
+      await deliverOtp(user.email, code);
+    } catch (error) {
+      // Kill the undelivered code so the resend cooldown does not block a retry.
+      await prisma.otpChallenge.updateMany({
+        where: { id: challenge.id, consumedAt: null },
+        data: { consumedAt: new Date() },
+      });
+      throw error;
+    }
   }
 
   return {
     issued: true,
     expiresInSeconds: OTP_TTL_SECONDS,
     resendInSeconds: OTP_RESEND_COOLDOWN_SECONDS,
-    maskedDestination: maskEmail(user.email),
     ...(isDevOtpMode() ? { devCode: code } : {}),
   };
 }
 
 /**
- * Delivery adapter, backed by Resend. Falls back to logging the code to the
- * server console when RESEND_API_KEY is not set, so local testing still
- * works without an email account — but that fallback prints a real login
- * secret to the log, so it must never be reachable with real users on it.
+ * Delivery adapter, backed by Resend. Outside production it falls back to
+ * logging the code when RESEND_API_KEY is not set, so local testing works
+ * without an email account; in production assertDeliveryConfigured() has
+ * already refused that case. Throws OtpDeliveryError when Resend rejects a send.
  */
 async function deliverOtp(email: string, code: string) {
   if (!resend) {
@@ -177,11 +225,11 @@ async function deliverOtp(email: string, code: string) {
   });
 
   if (error) {
-    // Never throw here: issueOtp() must return an identical response whether
-    // or not delivery succeeded, or a delivery failure becomes a side
-    // channel an attacker can use to probe which accounts exist. Log loudly
-    // instead so a misconfigured deployment is visible in the server log.
+    // Fail the request rather than telling the student a code is on its way.
+    // (A per-recipient failure is only observable for real accounts; that is
+    // the accepted price of not stranding students without a code.)
     console.error(`[securequiz] Resend delivery failed for ${email}:`, error);
+    throw new OtpDeliveryError('Resend rejected the send');
   }
 }
 
@@ -207,7 +255,7 @@ export async function verifyOtp(
 ): Promise<OtpVerification> {
   const genericFailure = new ApiError(
     'VALIDATION',
-    'That code is incorrect or has expired. Please try again.',
+    'That code is incorrect or has expired. Try again, or request a new code.',
   );
 
   const user = await findUserByIdentifier(identifier);
@@ -231,49 +279,47 @@ export async function verifyOtp(
     throw genericFailure;
   }
 
-  if (challenge.attempts >= challenge.maxAttempts) {
-    await prisma.otpChallenge.update({
-      where: { id: challenge.id },
-      data: { consumedAt: new Date() },
-    });
-    throw new ApiError(
-      'RATE_LIMITED',
-      'Too many incorrect attempts. Request a new code to continue.',
-    );
-  }
-
-  const valid = await verifySecret(code, challenge.codeHash);
-
-  if (!valid) {
-    const updated = await prisma.otpChallenge.update({
-      where: { id: challenge.id },
-      data: { attempts: { increment: 1 } },
-    });
+  // Claim an attempt atomically before the slow hash comparison, so parallel
+  // guesses cannot all slip past the attempt limit.
+  const claimed = await prisma.otpChallenge.updateMany({
+    where: {
+      id: challenge.id,
+      consumedAt: null,
+      expiresAt: { gt: new Date() },
+      attempts: { lt: challenge.maxAttempts },
+    },
+    data: { attempts: { increment: 1 } },
+  });
+  if (claimed.count === 0) {
     await audit({
       action: 'auth.otp_failed',
       userId: user.id,
       context,
-      metadata: { attempts: updated.attempts },
+      metadata: { reason: 'attempts_exhausted' },
     });
-
-    const remaining = challenge.maxAttempts - updated.attempts;
-    if (remaining <= 0) {
-      throw new ApiError(
-        'RATE_LIMITED',
-        'Too many incorrect attempts. Request a new code to continue.',
-      );
-    }
-    throw new ApiError(
-      'VALIDATION',
-      `That code is incorrect. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`,
-      { attemptsRemaining: remaining },
-    );
+    throw genericFailure;
   }
 
-  await prisma.otpChallenge.update({
-    where: { id: challenge.id },
-    data: { consumedAt: new Date() },
-  });
+  const valid = await verifySecret(code, challenge.codeHash);
+
+  // Consume conditionally: only one concurrent correct guess can win.
+  const consumed = valid
+    ? await prisma.otpChallenge.updateMany({
+        where: { id: challenge.id, consumedAt: null },
+        data: { consumedAt: new Date() },
+      })
+    : { count: 0 };
+
+  if (consumed.count !== 1) {
+    await audit({
+      action: 'auth.otp_failed',
+      userId: user.id,
+      context,
+      metadata: { reason: valid ? 'already_consumed' : 'wrong_code' },
+    });
+    // Same message as for unknown accounts: no attempts-remaining hint.
+    throw genericFailure;
+  }
 
   return { userId: user.id, role: user.role };
 }

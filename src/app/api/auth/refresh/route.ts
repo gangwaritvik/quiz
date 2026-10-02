@@ -16,8 +16,14 @@ export const GET = route(async (request: Request) => {
   const url = new URL(request.url);
   const rawNext = url.searchParams.get('next') ?? '';
 
-  // Open-redirect guard: only same-site absolute paths are honoured.
-  const next = rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : null;
+  // Open-redirect guard: only same-origin paths are honoured. Backslashes are
+  // rejected outright because browsers treat `/\host` like `//host`.
+  const next =
+    rawNext.startsWith('/') &&
+    !rawNext.includes('\\') &&
+    new URL(rawNext, url).origin === url.origin
+      ? rawNext
+      : null;
 
   const session = await refreshAccessToken();
 

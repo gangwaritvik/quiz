@@ -31,7 +31,7 @@ npm install
 copy .env.example .env
 ```
 
-Edit `.env`. At minimum, set `DATABASE_URL`, `AUTH_SECRET`, and `HASH_PEPPER`. For local development, the values in `.env.example` work with the bundled database and `OTP_DEV_MODE=true`.
+Edit `.env`. At minimum, set `DATABASE_URL`, `AUTH_SECRET`, and `HASH_PEPPER`. For local development, the values in `.env.example` work with the bundled database; uncomment `OTP_DEV_MODE="true"` to see codes on the login screen.
 
 Start PostgreSQL:
 
@@ -79,7 +79,7 @@ There is currently no test script in `package.json` and no committed automated t
 | `DATABASE_URL` | Yes | PostgreSQL connection string |
 | `AUTH_SECRET` | Yes in production | At least 32 random characters; signs access JWTs |
 | `HASH_PEPPER` | Yes | Server-side pepper for OTP, IP, and device hashes |
-| `OTP_DEV_MODE` | Development only | Defaults to enabled outside production; never returns codes in production |
+| `OTP_DEV_MODE` | Development only | Off unless set to `true`; shows codes on the login screen. Ignored in production unless `OTP_DEV_MODE_ALLOW_IN_PRODUCTION=i-understand-this-is-insecure` is also set (insecure; local smoke tests and staging only) |
 | `UPLOAD_DIR` | Recommended | Private storage root for question and answer images; defaults to `./var/uploads` |
 | `RESEND_API_KEY` | Production email | Enables Resend OTP delivery |
 | `OTP_FROM_EMAIL` | Production email | Sender identity, ideally on a verified domain |
@@ -179,7 +179,9 @@ Question types are `MCQ_SINGLE`, `MCQ_MULTI`, `TRUE_FALSE`, `ASSERTION_REASON`, 
 
 - Put the app behind HTTPS. Production cookies become `Secure` automatically.
 - Set strong, different random values for `AUTH_SECRET` and `HASH_PEPPER`.
-- Configure a verified Resend sending domain before real OTP delivery.
+- Configure a verified Resend sending domain before real OTP delivery. In production, a missing `RESEND_API_KEY`/`OTP_FROM_EMAIL` or a `resend.dev` sender makes code requests fail with a 503 rather than silently dropping codes.
+- Leave `OTP_DEV_MODE` and `OTP_DEV_MODE_ALLOW_IN_PRODUCTION` unset in production; with both set, anyone can sign in as anyone.
+- OTP rate limits are per account (5 requests / 10 verifies per 15 minutes); the per-IP limit is a coarse guard sized for a campus behind one NAT address. The app must only be reachable through the reverse proxy, which supplies `X-Real-IP`.
 - Keep `UPLOAD_DIR` private and persistent. Do not mount it as a public web directory.
 - The current rate limiter is in-process. Multiple app instances require a shared implementation, such as Redis, in `src/lib/rate-limit.ts`.
 - The current upload store is local filesystem storage. For multiple instances or managed hosting, replace it with private object storage while preserving relationship-based authorization.

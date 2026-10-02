@@ -1,7 +1,7 @@
 import { assertSameOrigin, ok, parseBody, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { prisma } from '@/lib/db';
-import { verifyOtp } from '@/lib/otp';
+import { identifierRateLimitKey, verifyOtp } from '@/lib/otp';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 import { ROLE_HOME } from '@/lib/roles';
 import { createSession, getRequestContext } from '@/lib/session';
@@ -16,8 +16,9 @@ export const POST = route(async (request: Request) => {
   const context = await getRequestContext();
   const body = await parseBody(request, otpVerifySchema);
 
-  enforceRateLimit(RATE_LIMITS.otpVerify, `ip:${context.ipHash}`);
-  enforceRateLimit(RATE_LIMITS.otpVerify, `id:${body.identifier.toLowerCase()}`);
+  // Per-account limit protects the code; the per-IP one is a campus-sized abuse guard.
+  enforceRateLimit(RATE_LIMITS.otpVerifyPerIp, `ip:${context.ipHash}`);
+  enforceRateLimit(RATE_LIMITS.otpVerify, await identifierRateLimitKey(body.identifier));
 
   const { userId, role } = await verifyOtp(body.identifier, body.code, context);
 
