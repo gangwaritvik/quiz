@@ -23,6 +23,7 @@ import * as React from 'react';
 import { toast } from 'sonner';
 
 import { AssignStudentsDialog } from '@/components/admin/assign-students-dialog';
+import { ItemAnalysis } from '@/components/admin/item-analysis';
 import { ExtraTimePanel } from '@/components/admin/extra-time-panel';
 import {
   InstantQuestionBuilder,
@@ -268,7 +269,12 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
               ) : null}
             </TabsTrigger>
             <TabsTrigger value="extra-time">Extra time</TabsTrigger>
+            <TabsTrigger value="item-analysis">Item analysis</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="item-analysis">
+            <ItemAnalysis quizId={quiz.id} />
+          </TabsContent>
 
           <TabsContent value="extra-time">
             <ExtraTimePanel quizId={quiz.id} durationMinutes={quiz.durationMinutes} />

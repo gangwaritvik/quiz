@@ -397,6 +397,18 @@ const dup = await fac('(l) duplicate copies the scheme', 'POST', `/api/admin/qui
 const copy = await prisma.quiz.findFirst({ where: { title: { contains: '(copy)' }, negativeMarkingPct: 50, multiPartialCredit: false } });
 check('(l) the copy has the scheme', Boolean(copy), JSON.stringify(dup.data));
 
+// ---------------- (m) item analysis ----------------
+await fac2('(m) non-owner cannot read item analysis', 'GET', `/api/admin/quizzes/${quiz4}/item-analysis`, undefined, { expect: [403] });
+await s9('(m) student cannot read item analysis', 'GET', `/api/admin/quizzes/${quiz4}/item-analysis`, undefined, abuse);
+const ia = await fac('(m) item analysis', 'GET', `/api/admin/quizzes/${quiz4}/item-analysis`, undefined, { expect: [200] });
+const iaMcq = ia.data?.questions.find((q) => q.type === 'MCQ_SINGLE');
+const iaShort = ia.data?.questions.find((q) => q.type === 'SHORT_ANSWER');
+check('(m) one attempt, four questions', ia.data?.attempts === 1 && ia.data.questions.length === 4, JSON.stringify([ia.data?.attempts, ia.data?.questions?.length]));
+check('(m) the wrong MCQ pick earned nothing and is the most chosen wrong option', iaMcq?.facility === 0 && iaMcq.mostChosenWrong?.chosen === 1, JSON.stringify(iaMcq?.mostChosenWrong));
+check('(m) the right short answer earned everything', iaShort?.facility === 1);
+check('(m) separation is withheld with one attempt', iaMcq?.discrimination === null);
+check('(m) the answer key is part of the option list for faculty', iaMcq?.distractors.some((d) => d.correct) === true);
+
 // (e) events after the 60 s post-submit window
 const wait = Math.max(0, submittedAt + 120_000 - Date.now());
 log(`     info     waiting ${Math.round(wait / 1000)} s for post-submit window`);
