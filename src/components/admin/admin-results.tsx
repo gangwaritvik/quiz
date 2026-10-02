@@ -183,7 +183,7 @@ export function AdminResults() {
             Select a quiz to see the students who attempted it and review their answers.
           </p>
 
-          <ul className="mt-5 divide-y divide-border rounded-lg border border-border bg-card">
+          <ul className="stagger mt-5 divide-y divide-border rounded-lg border border-border bg-card">
             {data.quizSummaries.map((summary) => (
               <li key={summary.quizId}>
                 <button

@@ -6,6 +6,7 @@ import * as React from 'react';
 
 import { ErrorState } from '@/components/shared/error-state';
 import { PageHeader, PageShell } from '@/components/shared/page-header';
+import { CountUp } from '@/components/ui/count-up';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -87,7 +88,7 @@ export function StudentResultsList() {
             <section aria-label="Average" className="mt-8 max-w-md">
               <p className="text-sm text-muted-foreground">Average across released results</p>
               <p className="tabular mt-1 font-serif text-4xl font-semibold text-foreground">
-                {average}%
+                <CountUp value={`${average}%`} />
               </p>
               <Progress value={average} aria-label="Average score" className="mt-3 h-1.5" />
               <p className="mt-2 text-xs text-muted-foreground">
@@ -98,7 +99,7 @@ export function StudentResultsList() {
             </section>
           ) : null}
 
-          <ul className="mt-8 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+          <ul className="stagger mt-8 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
             {released.map((attempt) => (
               <li key={attempt.id}>
                 <Link

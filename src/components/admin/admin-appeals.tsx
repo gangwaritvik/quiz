@@ -109,7 +109,7 @@ export function AdminAppeals() {
             description="When a student asks for a result to be re-checked, it appears here."
           />
         ) : (
-          <ul className="divide-y divide-border rounded-lg border border-border bg-card">
+          <ul className="stagger divide-y divide-border rounded-lg border border-border bg-card">
             {appeals.map((appeal) => {
               const badge = STATUS_BADGE[appeal.status];
               return (

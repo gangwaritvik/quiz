@@ -93,7 +93,7 @@ const TabsContent = React.forwardRef<
   HTMLDivElement,
   { value: string; className?: string; children?: React.ReactNode }
 >(({ value, className, children }, ref) => (
-  <AriaTabPanel ref={ref} id={value} className={cn('mt-5 outline-offset-4', className)}>
+  <AriaTabPanel ref={ref} id={value} className={cn('mt-5 outline-offset-4', 'animate-in fade-in-0 duration-base', className)}>
     {children}
   </AriaTabPanel>
 ));

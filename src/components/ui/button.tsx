@@ -13,7 +13,8 @@ import { cn } from '@/lib/utils';
 const buttonVariants = cva(
   [
     'inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium',
-    'transition-[color,background-color,border-color,box-shadow,opacity] duration-fast ease-standard',
+    'transition-[color,background-color,border-color,box-shadow,opacity,transform] duration-fast ease-standard',
+    'active:scale-[0.98] motion-reduce:active:scale-100',
     'disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50',
     '[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0',
   ],

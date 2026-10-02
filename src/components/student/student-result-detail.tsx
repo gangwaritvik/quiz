@@ -20,6 +20,7 @@ import { AppealSection, type ResultAppealView } from '@/components/student/appea
 import { ErrorState } from '@/components/shared/error-state';
 import type { IntegrityStatus } from '@/components/shared/integrity-badge';
 import { PageShell } from '@/components/shared/page-header';
+import { CountUp } from '@/components/ui/count-up';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -245,7 +246,7 @@ export function StudentResultDetail({ attemptId }: { attemptId: string }) {
             {data.provisional ? 'Score so far' : 'Score'}
           </p>
           <p className="tabular mt-1 flex items-baseline gap-2 font-serif text-4xl font-semibold text-foreground">
-            {attempt.score}
+            {typeof attempt.score === 'number' ? <CountUp value={attempt.score} /> : attempt.score}
             <span className="font-sans text-xl font-normal text-muted-foreground">
               / {attempt.maxScore}
             </span>

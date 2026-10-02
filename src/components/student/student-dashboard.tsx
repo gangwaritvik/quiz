@@ -8,6 +8,7 @@ import { ErrorState } from '@/components/shared/error-state';
 import type { IntegrityStatus } from '@/components/shared/integrity-badge';
 import { PageHeader, PageShell } from '@/components/shared/page-header';
 import { QuizCard, type QuizState, type StudentQuizSummary } from '@/components/student/quiz-card';
+import { CountUp } from '@/components/ui/count-up';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -228,7 +229,13 @@ function Stat({
     <div className="min-w-0 bg-card p-4 sm:p-5">
       <dt className="truncate text-xs font-medium text-muted-foreground">{label}</dt>
       <dd className="tabular mt-1.5 font-serif text-2xl font-semibold leading-tight text-foreground">
-        {loading ? <Skeleton className="h-7 w-14" /> : value}
+        {loading ? (
+          <Skeleton className="h-7 w-14" />
+        ) : typeof value === 'string' || typeof value === 'number' ? (
+          <CountUp value={value} />
+        ) : (
+          value
+        )}
       </dd>
       <dd className="mt-1.5 text-xs text-muted-foreground">
         {loading ? <Skeleton className="h-3 w-28" /> : hint}

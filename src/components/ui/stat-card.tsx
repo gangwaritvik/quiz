@@ -6,6 +6,7 @@ import type { LucideIcon } from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
 
+import { CountUp } from '@/components/ui/count-up';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
@@ -78,7 +79,7 @@ export function StatCard({
         <Skeleton className="mt-3 h-8 w-16" />
       ) : (
         <p className="tabular mt-2.5 flex flex-wrap items-baseline gap-2 font-serif text-3xl font-semibold leading-none text-foreground">
-          {value}
+          {typeof value === 'number' || typeof value === 'string' ? <CountUp value={value} /> : value}
           {trend !== null ? (
             <span
               className={cn(
