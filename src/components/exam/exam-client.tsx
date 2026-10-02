@@ -9,6 +9,7 @@ import {
   LogOut,
   MonitorX,
   ScreenShare,
+  TimerOff,
   WifiOff,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -30,7 +31,7 @@ import { Logo } from '@/components/brand/logo';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useExamSecurity } from '@/hooks/use-exam-security';
-import { useExamTimer, type TimerSync } from '@/hooks/use-exam-timer';
+import { useExamTimer, type ExamTimer, type TimerSync } from '@/hooks/use-exam-timer';
 import { ApiClientError, apiFetch, apiUpload } from '@/lib/client/api';
 import { cn, formatDateTime } from '@/lib/utils';
 
@@ -96,11 +97,21 @@ interface SubmitResult {
   total: number;
   autoSubmitted: boolean;
   resultsReleased: boolean;
+  /** Set when results are held until the quiz window closes. */
+  releasesAt?: string | null;
 }
 
 type Phase = 'loading' | 'active' | 'submitting' | 'submitted' | 'blocked';
 
 const HEARTBEAT_MS = 20_000;
+
+/** Auto-submit retry delays; after the list runs out, retry at the steady rate. */
+const AUTO_SUBMIT_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000];
+const AUTO_SUBMIT_RETRY_MS = 10_000;
+/** Spreads the buzzer so a whole room does not submit in the same second. */
+const AUTO_SUBMIT_JITTER_MS = 3_000;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
 export function ExamClient({ attemptId }: { attemptId: string }) {
   const router = useRouter();
@@ -144,6 +155,14 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
   const pendingSaves = React.useRef<Map<string, AnswerPayload>>(new Map());
   const debounceTimers = React.useRef<Map<string, number>>(new Map());
   const submitLock = React.useRef(false);
+  const unmounted = React.useRef(false);
+  /**
+   * The timer object is new on every 250 ms tick. Effects and callbacks read it
+   * through this ref so they are not torn down and rebuilt four times a second.
+   */
+  const timerRef = React.useRef<ExamTimer | null>(null);
+  /** Null unless an auto-submit is running; otherwise its failed tries so far. */
+  const [autoSubmitFailures, setAutoSubmitFailures] = React.useState<number | null>(null);
 
   const security = state?.quiz.security;
   const timerSync = state?.timer ?? null;
@@ -154,42 +173,79 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
       if (submitLock.current) return;
       submitLock.current = true;
       setPhase('submitting');
+      if (auto) {
+        setAutoSubmitFailures(0);
+        await sleep(Math.random() * AUTO_SUBMIT_JITTER_MS);
+      }
 
-      try {
-        // Cancel pending debounces; their payloads are already in the queue
-        // below, so waiting for the timers would only delay submission.
-        for (const timer of debounceTimers.current.values()) window.clearTimeout(timer);
-        debounceTimers.current.clear();
+      for (let failures = 0; ; failures++) {
+        try {
+          // Cancel pending debounces; their payloads are already in the queue
+          // below, so waiting for the timers would only delay submission.
+          for (const timer of debounceTimers.current.values()) window.clearTimeout(timer);
+          debounceTimers.current.clear();
 
-        // Flush anything still queued so no answer is lost at the buzzer.
-        for (const [attemptQuestionId, payload] of pendingSaves.current) {
-          try {
-            await apiFetch(`/api/exam/${attemptId}/answer`, {
-              method: 'POST',
-              body: { attemptQuestionId, ...payload },
-            });
-            pendingSaves.current.delete(attemptQuestionId);
-          } catch {
-            // Best effort — submission itself must still proceed.
+          // Flush anything still queued so no answer is lost at the buzzer.
+          for (const [attemptQuestionId, payload] of pendingSaves.current) {
+            try {
+              await apiFetch(`/api/exam/${attemptId}/answer`, {
+                method: 'POST',
+                body: { attemptQuestionId, ...payload },
+              });
+              pendingSaves.current.delete(attemptQuestionId);
+            } catch {
+              // Best effort — submission itself must still proceed.
+            }
           }
+
+          // Idempotent server-side: an already-submitted attempt returns its receipt.
+          const result = await apiFetch<SubmitResult>(`/api/exam/${attemptId}/submit`, {
+            method: 'POST',
+            body: { confirm: true },
+          });
+
+          setSubmitResult(result);
+          setPhase('submitted');
+          setSubmitOpen(false);
+          setAutoSubmitFailures(null);
+          if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
+          if (auto) toast.warning('Time expired — your exam was submitted automatically.');
+          return;
+        } catch (caught) {
+          const error = caught instanceof ApiClientError ? caught : null;
+          // A manual submit that fails after the buzzer becomes an auto-submit:
+          // the timer has already fired, so nothing else would retry it.
+          if (!auto && timerRef.current?.expired) {
+            auto = true;
+            setSubmitOpen(false);
+          }
+          // ATTEMPT_EXPIRED means the server finalised it; the next try returns the receipt.
+          const retryable =
+            !error ||
+            error.isTransient ||
+            error.code === 'RATE_LIMITED' ||
+            error.code === 'ATTEMPT_EXPIRED';
+
+          if (auto && retryable) {
+            if (unmounted.current) return;
+            setAutoSubmitFailures(failures + 1);
+            await sleep(AUTO_SUBMIT_BACKOFF_MS[failures] ?? AUTO_SUBMIT_RETRY_MS);
+            if (unmounted.current) return;
+            continue;
+          }
+
+          setAutoSubmitFailures(null);
+          if (auto && error) {
+            // Retrying cannot fix this (session or device no longer checks out).
+            setBlockedError(error);
+            setPhase('blocked');
+            return;
+          }
+          submitLock.current = false;
+          setPhase('active');
+          toast.error(error?.message ?? 'We could not submit your exam.', { duration: 8000 });
+          return;
         }
-
-        const result = await apiFetch<SubmitResult>(`/api/exam/${attemptId}/submit`, {
-          method: 'POST',
-          body: { confirm: true },
-        });
-
-        setSubmitResult(result);
-        setPhase('submitted');
-        setSubmitOpen(false);
-        if (document.fullscreenElement) await document.exitFullscreen().catch(() => undefined);
-        if (auto) toast.warning('Time expired — your exam was submitted automatically.');
-      } catch (caught) {
-        submitLock.current = false;
-        setPhase('active');
-        const message =
-          caught instanceof ApiClientError ? caught.message : 'We could not submit your exam.';
-        toast.error(message, { duration: 8000 });
       }
     },
     [attemptId],
@@ -198,57 +254,77 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
   const timer = useExamTimer(timerSync, () => {
     if (phase === 'active') void submit(true);
   });
+  timerRef.current = timer;
 
   // --- Security monitoring -------------------------------------------------
-  const examSecurity = useExamSecurity({
-    attemptId,
-    active: phase === 'active',
-    policy: {
-      requireFullscreen: security?.requireFullscreen ?? false,
-      detectTabSwitch: security?.detectTabSwitch ?? false,
-      blockCopyPaste: security?.blockCopyPaste ?? false,
-      maxFullscreenExits: security?.maxFullscreenExits ?? 3,
-      blockMultipleDisplays: security?.blockMultipleDisplays ?? false,
-      requireScreenShare: security?.requireScreenShare ?? false,
-    },
-    onFullscreenExit: (count) => {
-      const max = security?.maxFullscreenExits ?? 3;
+  // The hook lists these callbacks as effect dependencies, and this component
+  // re-renders on every timer tick: inline arrows would re-run those effects
+  // (resetting the 3 s display check and its state) four times a second.
+  const maxFullscreenExits = security?.maxFullscreenExits ?? 3;
+  const requireFullscreen = security?.requireFullscreen ?? false;
+  const blockMultipleDisplays = security?.blockMultipleDisplays ?? false;
+
+  const onFullscreenExit = React.useCallback(
+    (count: number) => {
       toast.warning(
-        count >= max
+        count >= maxFullscreenExits
           ? 'You have left fullscreen several times. This has been recorded for your faculty.'
           : 'Please return to fullscreen to continue your exam.',
       );
     },
-    onNetworkChange: (isOnline) => {
-      setOnline(isOnline);
-      if (!isOnline) {
-        setConnectionLost(true);
-      } else {
-        toast.success('Connection restored. Your answers are saved.');
-      }
-    },
-    onWindowBlur: () => {
-      // Hide the exam paper immediately. The student cannot read questions
-      // while their attention is on another window.
-      setFocusLost(true);
-    },
-    onWindowFocus: () => {
-      setFocusLost(false);
-      // If fullscreen is required, silently re-request it so the student
-      // cannot bypass the fullscreen gate by Alt+Tabbing out and back in.
-      if (security?.requireFullscreen) {
-        void document.documentElement
-          .requestFullscreen({ navigationUI: 'hide' })
-          .catch(() => undefined);
-      }
-    },
-    onMultipleDisplaysChange: (hasMultiple) => {
+    [maxFullscreenExits],
+  );
+  const onNetworkChange = React.useCallback((isOnline: boolean) => {
+    setOnline(isOnline);
+    if (!isOnline) {
+      setConnectionLost(true);
+    } else {
+      toast.success('Connection restored. Your answers are saved.');
+    }
+  }, []);
+  const onWindowBlur = React.useCallback(() => {
+    // Hide the exam paper immediately. The student cannot read questions
+    // while their attention is on another window.
+    setFocusLost(true);
+  }, []);
+  const onWindowFocus = React.useCallback(() => {
+    setFocusLost(false);
+    // If fullscreen is required, silently re-request it so the student
+    // cannot bypass the fullscreen gate by Alt+Tabbing out and back in.
+    if (requireFullscreen) {
+      void document.documentElement
+        .requestFullscreen({ navigationUI: 'hide' })
+        .catch(() => undefined);
+    }
+  }, [requireFullscreen]);
+  const onMultipleDisplaysChange = React.useCallback(
+    (hasMultiple: boolean) => {
       setMultipleDisplaysDetected(hasMultiple);
-      if (hasMultiple && security?.blockMultipleDisplays) {
+      if (hasMultiple && blockMultipleDisplays) {
         toast.error('Multiple displays detected. Please disconnect secondary monitors to continue.');
       }
     },
+    [blockMultipleDisplays],
+  );
+
+  const examSecurity = useExamSecurity({
+    attemptId,
+    active: phase === 'active',
+    policy: {
+      requireFullscreen,
+      detectTabSwitch: security?.detectTabSwitch ?? false,
+      blockCopyPaste: security?.blockCopyPaste ?? false,
+      maxFullscreenExits,
+      blockMultipleDisplays,
+      requireScreenShare: security?.requireScreenShare ?? false,
+    },
+    onFullscreenExit,
+    onNetworkChange,
+    onWindowBlur,
+    onWindowFocus,
+    onMultipleDisplaysChange,
   });
+  const recordEvent = examSecurity.record;
 
   // --- Screen share handling -----------------------------------------------
   const requestScreenShare = React.useCallback(async () => {
@@ -286,7 +362,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
         setScreenShareActive(false);
         setScreenShareStream(null);
         setScreenShareStoppedCount((prev) => prev + 1);
-        examSecurity.record('SCREEN_SHARE_STOPPED');
+        recordEvent('SCREEN_SHARE_STOPPED');
         toast.error('Screen sharing was stopped! You must resume sharing your screen to continue the examination.', { duration: 9000 });
       });
 
@@ -294,11 +370,11 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
     } catch {
       setScreenShareActive(false);
       setScreenShareStream(null);
-      examSecurity.record('SCREEN_SHARE_PERMISSION_LOST');
+      recordEvent('SCREEN_SHARE_PERMISSION_LOST');
       toast.error('Screen share permission was denied or cancelled. You must grant entire-screen access to view the exam.', { duration: 6000 });
       return false;
     }
-  }, [examSecurity]);
+  }, [recordEvent]);
 
   React.useEffect(() => {
     if (phase === 'active' && security?.requireScreenShare && screenShareActive === null) {
@@ -350,6 +426,9 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
   }, []);
 
   // --- Heartbeat: liveness plus authoritative time sync --------------------
+  // Runs for the whole 'active' phase, including while a gate (fullscreen,
+  // focus, screen share) covers the paper. Reads the timer through a ref so
+  // the interval is created once per phase, not every tick.
   React.useEffect(() => {
     if (phase !== 'active') return;
 
@@ -359,10 +438,18 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
           `/api/exam/${attemptId}/heartbeat`,
           { method: 'POST', body: {} },
         );
-        timer.sync(result.timer);
+        timerRef.current?.sync(result.timer);
         setConnectionLost(false);
       } catch (caught) {
-        if (caught instanceof ApiClientError && !caught.isTransient) {
+        if (caught instanceof ApiClientError && caught.code === 'ATTEMPT_EXPIRED') {
+          void submit(true);
+          return;
+        }
+        if (
+          caught instanceof ApiClientError &&
+          !caught.isTransient &&
+          caught.code !== 'RATE_LIMITED'
+        ) {
           // A hard failure here means the session or device no longer checks
           // out; stop the exam rather than letting it drift on.
           setBlockedError(caught);
@@ -375,7 +462,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
 
     const interval = window.setInterval(() => void beat(), HEARTBEAT_MS);
     return () => window.clearInterval(interval);
-  }, [phase, attemptId, timer]);
+  }, [phase, attemptId, submit]);
 
   // --- Answer persistence --------------------------------------------------
   const persistAnswer = React.useCallback(
@@ -390,7 +477,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
         pendingSaves.current.delete(attemptQuestionId);
         setSavedAtById((current) => ({ ...current, [attemptQuestionId]: Date.now() }));
         setConnectionLost(false);
-        timer.sync({
+        timerRef.current?.sync({
           remainingMs: result.timer.remainingMs,
           serverNow: result.timer.serverNow,
           expiresAt: new Date(Date.now() + result.timer.remainingMs).toISOString(),
@@ -422,7 +509,9 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
         });
       }
     },
-    [attemptId, submit, timer],
+    // No `timer` here: it changes every tick, which re-fired the retry effect
+    // below (re-sending queued answers) four times a second.
+    [attemptId, submit],
   );
 
   // Retry queued answers as soon as connectivity returns.
@@ -634,7 +723,9 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
   // unmounts so nothing fires against a torn-down component.
   React.useEffect(() => {
     const timers = debounceTimers.current;
+    unmounted.current = false;
     return () => {
+      unmounted.current = true;
       for (const timer of timers.values()) window.clearTimeout(timer);
       timers.clear();
     };
@@ -802,6 +893,27 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
         submitting={phase === 'submitting'}
         onConfirm={() => void submit(false)}
       />
+
+      {/* Auto-submit at the buzzer. Static text, no spinner: the exam surface
+          does not animate. The status line updates as retries happen. */}
+      {phase === 'submitting' && autoSubmitFailures !== null ? (
+        <ExamGate
+          titleId="auto-submit-title"
+          descriptionId="auto-submit-desc"
+          tone="primary"
+          icon={TimerOff}
+          title="Time is up"
+          description="Submitting your answers… Please keep this window open."
+        >
+          <p role="status" className="tabular mt-3 text-xs text-muted-foreground">
+            {autoSubmitFailures === 0
+              ? 'Sending your answers to the server.'
+              : `Could not reach the server yet. Retrying automatically (attempt ${
+                  autoSubmitFailures + 1
+                }).`}
+          </p>
+        </ExamGate>
+      ) : null}
 
       {/* Fullscreen gate. Rendered above everything so the paper is not
           readable while the requirement is unmet. */}
@@ -1088,7 +1200,9 @@ function ExamSubmitted({ result }: { result: SubmitResult }) {
             </Button>
           ) : (
             <p className="rounded-md bg-muted px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-              Results will be available once your faculty releases them for this quiz.
+              {result.releasesAt
+                ? `Results will be available after the quiz closes on ${formatDateTime(result.releasesAt)}.`
+                : 'Results will be available once your faculty releases them for this quiz.'}
             </p>
           )}
           <Button asChild size="lg" variant={result.resultsReleased ? 'outline' : 'default'}>

@@ -1,3 +1,5 @@
+import { NextResponse } from 'next/server';
+
 import { ApiError, assertSameOrigin, ok, route } from '@/lib/api';
 import { requireStudent } from '@/lib/auth';
 import { attachAnswerImage } from '@/lib/exam';
@@ -27,9 +29,23 @@ export const POST = route(async (request: Request, { params }: Params) => {
   const context = await getRequestContext();
   const { attemptId } = await params;
 
-  enforceRateLimit(RATE_LIMITS.upload, `attempt:${attemptId}`);
+  enforceRateLimit(RATE_LIMITS.upload, `attempt:${session.userId}:${attemptId}`);
 
   const { remaining } = await loadLiveAttempt(attemptId, session, context);
+
+  // Refuse oversized bodies before `formData()` buffers them into memory.
+  if (Number(request.headers.get('content-length') ?? 0) > 6 * 1024 * 1024) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: {
+          code: 'VALIDATION',
+          message: `Images must be ${Math.round(MAX_UPLOAD_BYTES / (1024 * 1024))} MB or smaller.`,
+        },
+      },
+      { status: 413 },
+    );
+  }
 
   let form: FormData;
   try {

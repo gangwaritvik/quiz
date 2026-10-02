@@ -113,7 +113,11 @@ export const examEventSchema = z.object({
   type: examEventTypeSchema,
   durationMs: z.number().int().min(0).max(6 * 60 * 60 * 1000).optional(),
   clientTimestamp: z.string().datetime().optional(),
-  metadata: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
+  // Flat and small: at most 10 primitive values, strings capped, no nesting.
+  metadata: z
+    .record(z.string().max(64), z.union([z.string().max(200), z.number(), z.boolean()]))
+    .refine((value) => Object.keys(value).length <= 10, { message: 'Too many metadata keys.' })
+    .optional(),
 });
 
 export const examEventBatchSchema = z.object({

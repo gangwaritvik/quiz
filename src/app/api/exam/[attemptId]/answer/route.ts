@@ -20,7 +20,7 @@ export const POST = route(async (request: Request, { params }: Params) => {
   const context = await getRequestContext();
   const { attemptId } = await params;
 
-  enforceRateLimit(RATE_LIMITS.answerSave, `answer:${attemptId}`);
+  enforceRateLimit(RATE_LIMITS.answerSave, `answer:${session.userId}:${attemptId}`);
 
   const { remaining } = await loadLiveAttempt(attemptId, session, context);
   const body = await parseBody(request, saveAnswerSchema);

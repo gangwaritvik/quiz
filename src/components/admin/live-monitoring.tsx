@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import * as React from "react";
+import { toast } from "sonner";
 
 import { ErrorState } from "@/components/shared/error-state";
 import {
@@ -17,6 +18,16 @@ import {
   type IntegrityStatus,
 } from "@/components/shared/integrity-badge";
 import { PageHeader, PageShell } from "@/components/shared/page-header";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Progress } from "@/components/ui/progress";
@@ -30,6 +41,7 @@ import {
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { EVENT_LABELS_CLIENT } from "@/lib/event-labels";
 import { useApi } from "@/hooks/use-api";
+import { ApiClientError, apiFetch } from "@/lib/client/api";
 import { cn, formatDuration } from "@/lib/utils";
 
 interface LiveStudent {
@@ -92,6 +104,35 @@ export function LiveMonitoring() {
   );
 
   const students = data?.students ?? [];
+  const [releasing, setReleasing] = React.useState<LiveStudent | null>(null);
+  const [releaseBusy, setReleaseBusy] = React.useState(false);
+
+  const releaseDevice = async (student: LiveStudent) => {
+    setReleaseBusy(true);
+    try {
+      const result = await apiFetch<{ sessionBound: boolean }>(
+        `/api/admin/attempts/${student.attemptId}/release-device`,
+        { method: "POST" },
+      );
+      if (result.sessionBound) {
+        toast.success(`${student.name} can continue on their new sign-in.`);
+      } else {
+        toast.warning(
+          `${student.name} has no active sign-in yet. Ask them to sign in, then try again.`,
+        );
+      }
+      setReleasing(null);
+      void refetch();
+    } catch (caught) {
+      toast.error(
+        caught instanceof ApiClientError
+          ? caught.message
+          : `We could not let ${student.name} back in.`,
+      );
+    } finally {
+      setReleaseBusy(false);
+    }
+  };
 
   if (error && !data) {
     return (
@@ -218,11 +259,47 @@ export function LiveMonitoring() {
           </div>
           <ul className="divide-y divide-border">
             {students.map((student) => (
-              <LiveStudentRow key={student.attemptId} student={student} />
+              <LiveStudentRow
+                key={student.attemptId}
+                student={student}
+                onLetBackIn={() => setReleasing(student)}
+              />
             ))}
           </ul>
         </div>
       )}
+
+      <AlertDialog
+        open={releasing !== null}
+        onOpenChange={(open) => {
+          if (!open) setReleasing(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="break-words">
+              Let {releasing?.name} back in?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Use this if the student&apos;s browser crashed or they changed
+              device. Ask the student to sign in again first; this moves their
+              exam to their newest sign-in. Their answers are kept.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={releaseBusy}
+              onClick={(event) => {
+                event.preventDefault();
+                if (releasing) void releaseDevice(releasing);
+              }}
+            >
+              Let back in
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </PageShell>
   );
 }
@@ -231,7 +308,13 @@ export function LiveMonitoring() {
  * One student, one row. On a wide screen every row shares the same columns so
  * a whole room can be scanned top to bottom; on a phone it stacks.
  */
-function LiveStudentRow({ student }: { student: LiveStudent }) {
+function LiveStudentRow({
+  student,
+  onLetBackIn,
+}: {
+  student: LiveStudent;
+  onLetBackIn: () => void;
+}) {
   const connection = CONNECTION_LABEL[student.connection];
   const ConnectionIcon = connection.icon;
   const progress =
@@ -311,18 +394,24 @@ function LiveStudentRow({ student }: { student: LiveStudent }) {
         )}
       </div>
 
-      <Button
-        asChild
-        variant="outline"
-        className="w-full sm:col-span-2 lg:col-span-1 lg:w-[8.5rem]"
-      >
-        <Link
-          href={`/admin/integrity/${student.attemptId}`}
-          aria-label={`View timeline for ${student.name}`}
+      <div className="flex flex-col gap-2 sm:col-span-2 lg:col-span-1 lg:w-[8.5rem]">
+        <Button asChild variant="outline" className="w-full">
+          <Link
+            href={`/admin/integrity/${student.attemptId}`}
+            aria-label={`View timeline for ${student.name}`}
+          >
+            View timeline
+          </Link>
+        </Button>
+        <Button
+          variant="secondary"
+          className="w-full"
+          onClick={onLetBackIn}
+          aria-label={`Let ${student.name} back in`}
         >
-          View timeline
-        </Link>
-      </Button>
+          Let back in
+        </Button>
+      </div>
     </li>
   );
 }

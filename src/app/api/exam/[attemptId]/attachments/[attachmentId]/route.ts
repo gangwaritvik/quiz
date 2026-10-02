@@ -21,7 +21,7 @@ export const DELETE = route(async (request: Request, { params }: Params) => {
   const context = await getRequestContext();
   const { attemptId, attachmentId } = await params;
 
-  enforceRateLimit(RATE_LIMITS.answerSave, `detach:${attemptId}`);
+  enforceRateLimit(RATE_LIMITS.answerSave, `detach:${session.userId}:${attemptId}`);
 
   const { remaining } = await loadLiveAttempt(attemptId, session, context);
 

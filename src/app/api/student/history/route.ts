@@ -1,7 +1,7 @@
 import { ok, route } from '@/lib/api';
 import { requireStudent } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { sweepExpiredAttempts } from '@/lib/exam';
+import { resultsVisibility, sweepExpiredAttempts } from '@/lib/exam';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 
 export const runtime = 'nodejs';
@@ -23,25 +23,32 @@ export const GET = route(async () => {
     orderBy: { startedAt: 'desc' },
   });
 
+  const now = new Date();
+
   return ok({
-    attempts: attempts.map((attempt) => ({
-      id: attempt.id,
-      quizTitle: attempt.quiz.title,
-      subject: attempt.quiz.subject.name,
-      subjectCode: attempt.quiz.subject.code,
-      status: attempt.status,
-      attemptNumber: attempt.attemptNumber,
-      startedAt: attempt.startedAt.toISOString(),
-      submittedAt: attempt.submittedAt?.toISOString() ?? null,
-      durationMinutes: attempt.quiz.durationMinutes,
-      // Scores stay hidden until the teacher releases results for that quiz.
-      resultsReleased: attempt.quiz.releaseResults,
-      score: attempt.quiz.releaseResults ? attempt.score : null,
-      maxScore: attempt.quiz.releaseResults ? attempt.maxScore : null,
-      percentage: attempt.quiz.releaseResults ? attempt.percentage : null,
-      integrityScore: attempt.integrity?.score ?? null,
-      integrityStatus: attempt.integrity?.status ?? null,
-      eventCount: attempt._count.events,
-    })),
+    attempts: attempts.map((attempt) => {
+      const released = resultsVisibility(attempt.quiz, now).results;
+      return {
+        id: attempt.id,
+        quizTitle: attempt.quiz.title,
+        subject: attempt.quiz.subject.name,
+        subjectCode: attempt.quiz.subject.code,
+        status: attempt.status,
+        attemptNumber: attempt.attemptNumber,
+        startedAt: attempt.startedAt.toISOString(),
+        submittedAt: attempt.submittedAt?.toISOString() ?? null,
+        durationMinutes: attempt.quiz.durationMinutes,
+        // Scores stay hidden until results are released AND the window has closed.
+        resultsReleased: released,
+        releasesAt: attempt.quiz.releaseResults ? attempt.quiz.endsAt.toISOString() : null,
+        score: released ? attempt.score : null,
+        maxScore: released ? attempt.maxScore : null,
+        percentage: released ? attempt.percentage : null,
+        awaitingMarking: attempt.pendingManualCount > 0,
+        integrityScore: attempt.integrity?.score ?? null,
+        integrityStatus: attempt.integrity?.status ?? null,
+        eventCount: attempt._count.events,
+      };
+    }),
   });
 });

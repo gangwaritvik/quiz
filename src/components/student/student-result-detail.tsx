@@ -72,6 +72,8 @@ interface ResultData {
   topicPerformance?: Array<{ topic: string; correct: number; total: number; percentage: number }>;
   questions?: ResultQuestion[];
   submittedAt?: string | null;
+  /** Set when results are held until the quiz window closes. */
+  releasesAt?: string | null;
 }
 
 export function StudentResultDetail({ attemptId }: { attemptId: string }) {
@@ -111,7 +113,9 @@ export function StudentResultDetail({ attemptId }: { attemptId: string }) {
           <Lock className="mx-auto size-7 text-muted-foreground" strokeWidth={1.5} aria-hidden />
           <h1 className="type-heading mt-4">Results not released</h1>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            {data.message ?? 'Your faculty has not released results for this quiz yet.'}
+            {data.releasesAt
+              ? `Results will be available after the quiz closes on ${formatDateTime(data.releasesAt)}.`
+              : (data.message ?? 'Your faculty has not released results for this quiz yet.')}
           </p>
           <dl className="mt-6 divide-y divide-border border-y border-border text-left text-sm">
             <div className="flex justify-between gap-4 py-2.5">

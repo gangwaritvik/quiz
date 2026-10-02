@@ -2,7 +2,8 @@ import 'server-only';
 
 import { randomInt } from 'node:crypto';
 
-import type { AttemptStatus, Difficulty, Prisma, QuestionType, Quiz } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { AttemptStatus, Difficulty, QuestionType, Quiz } from '@prisma/client';
 
 import { ApiError } from '@/lib/api';
 import { prisma } from '@/lib/db';
@@ -38,6 +39,23 @@ function shuffle<T>(items: T[]): T[] {
 
 /** Grace period after `expiresAt` during which a late submit is still accepted. */
 export const SUBMIT_GRACE_MS = 10_000;
+
+/** Explicit limits for interactive transactions on hot exam paths. */
+const TX_OPTIONS = { maxWait: 10_000, timeout: 15_000 };
+
+/**
+ * Scores are visible only once faculty released them AND the exam window has
+ * closed — otherwise an early finisher could relay answers to students still
+ * sitting the paper. Correct answers additionally need `releaseAnswers`.
+ */
+export function resultsVisibility(
+  quiz: Pick<Quiz, 'releaseResults' | 'releaseAnswers' | 'endsAt'>,
+  now = new Date(),
+) {
+  const windowClosed = now >= quiz.endsAt;
+  const results = quiz.releaseResults && windowClosed;
+  return { results, answers: results && quiz.releaseAnswers, windowClosed };
+}
 
 export interface RemainingTime {
   remainingMs: number;
@@ -265,36 +283,53 @@ export async function startAttempt(input: StartAttemptInput) {
     Math.min(now.getTime() + quiz.durationMinutes * 60_000, quiz.endsAt.getTime()),
   );
 
-  const attempt = await prisma.$transaction(async (tx) => {
-    const created = await tx.quizAttempt.create({
-      data: {
-        quizId: quiz.id,
-        studentId: input.studentId,
-        sessionId: input.sessionId,
-        attemptNumber: (existing[0]?.attemptNumber ?? 0) + 1,
-        startedAt: now,
-        expiresAt,
-        deviceHash: input.deviceHash,
-        ipHash: input.ipHash,
-        maxScore: paper.reduce((sum, q) => sum + q.marks, 0),
-      },
-    });
+  let attempt;
+  try {
+    attempt = await prisma.$transaction(async (tx) => {
+      const created = await tx.quizAttempt.create({
+        data: {
+          quizId: quiz.id,
+          studentId: input.studentId,
+          sessionId: input.sessionId,
+          attemptNumber: (existing[0]?.attemptNumber ?? 0) + 1,
+          startedAt: now,
+          expiresAt,
+          deviceHash: input.deviceHash,
+          ipHash: input.ipHash,
+          maxScore: paper.reduce((sum, q) => sum + q.marks, 0),
+        },
+      });
 
-    await tx.attemptQuestion.createMany({
-      data: paper.map((q) => ({ ...q, attemptId: created.id })),
-    });
+      await tx.attemptQuestion.createMany({
+        data: paper.map((q) => ({ ...q, attemptId: created.id })),
+      });
 
-    await tx.question.updateMany({
+      await tx.examEvent.create({
+        data: { attemptId: created.id, type: 'ATTEMPT_STARTED', severity: 'INFO' },
+      });
+
+      return created;
+    }, TX_OPTIONS);
+  } catch (error) {
+    // A double-click or second tab raced us to the same attemptNumber: the
+    // other request created the attempt, so resume it instead of failing.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const winner = await prisma.quizAttempt.findFirst({
+        where: { quizId: quiz.id, studentId: input.studentId, status: 'IN_PROGRESS' },
+      });
+      if (winner) return { attempt: winner, resumed: true, quiz };
+    }
+    throw error;
+  }
+
+  // Statistics only, and outside the transaction so concurrent starts do not
+  // serialise on the same Question rows.
+  void prisma.question
+    .updateMany({
       where: { id: { in: paper.map((q) => q.questionId) } },
       data: { usageCount: { increment: 1 } },
-    });
-
-    await tx.examEvent.create({
-      data: { attemptId: created.id, type: 'ATTEMPT_STARTED', severity: 'INFO' },
-    });
-
-    return created;
-  });
+    })
+    .catch((error) => console.error('[exam] failed to bump question usage', error));
 
   await recomputeIntegrityScore(attempt.id);
   return { attempt, resumed: false, quiz };
@@ -482,6 +517,23 @@ async function loadWritableAttempt(attemptId: string, studentId: string) {
   return attempt;
 }
 
+/**
+ * Re-checks, inside the writing transaction, that the attempt is still open.
+ * The conditional UPDATE row-locks the attempt until commit, so a concurrent
+ * finalize either waits for this write (and grades it) or has already claimed
+ * the attempt, in which case this matches nothing and the write is refused.
+ */
+async function lockWritableAttempt(tx: Prisma.TransactionClient, attemptId: string) {
+  const now = new Date();
+  const { count } = await tx.quizAttempt.updateMany({
+    where: { id: attemptId, status: 'IN_PROGRESS', expiresAt: { gt: now } },
+    data: { lastSeenAt: now },
+  });
+  if (count !== 1) {
+    throw new ApiError('ATTEMPT_EXPIRED', 'This attempt has already been submitted.');
+  }
+}
+
 /** Resolves a question on this attempt, refusing ids from any other paper. */
 async function loadAttemptQuestion(attemptQuestionId: string, attemptId: string) {
   const attemptQuestion = await prisma.attemptQuestion.findUnique({
@@ -565,6 +617,8 @@ export async function saveAnswer(params: SaveAnswerInput) {
   }
 
   const answer = await prisma.$transaction(async (tx) => {
+    await lockWritableAttempt(tx, attempt.id);
+
     const saved = await tx.answer.upsert({
       where: { attemptQuestionId: attemptQuestion.id },
       create: {
@@ -596,12 +650,7 @@ export async function saveAnswer(params: SaveAnswerInput) {
     }
 
     return saved;
-  });
-
-  await prisma.quizAttempt.update({
-    where: { id: attempt.id },
-    data: { lastSeenAt: new Date() },
-  });
+  }, TX_OPTIONS);
 
   return {
     ...answer,
@@ -639,6 +688,8 @@ export async function attachAnswerImage(params: {
   }
 
   return prisma.$transaction(async (tx) => {
+    await lockWritableAttempt(tx, attempt.id);
+
     const answer = await tx.answer.upsert({
       where: { attemptQuestionId: attemptQuestion.id },
       create: { attemptId: attempt.id, attemptQuestionId: attemptQuestion.id },
@@ -663,13 +714,8 @@ export async function attachAnswerImage(params: {
       select: { id: true, asset: { select: { id: true, originalName: true } } },
     });
 
-    await tx.quizAttempt.update({
-      where: { id: attempt.id },
-      data: { lastSeenAt: new Date() },
-    });
-
     return attachment;
-  });
+  }, TX_OPTIONS);
 }
 
 /** Removes one attachment from a student's own in-progress answer. */
@@ -689,7 +735,10 @@ export async function detachAnswerImage(params: {
     throw new ApiError('FORBIDDEN', 'That attachment does not belong to this attempt.');
   }
 
-  await prisma.answerAttachment.delete({ where: { id: attachment.id } });
+  await prisma.$transaction(async (tx) => {
+    await lockWritableAttempt(tx, attempt.id);
+    await tx.answerAttachment.delete({ where: { id: attachment.id } });
+  }, TX_OPTIONS);
   return { assetId: attachment.assetId };
 }
 
@@ -793,10 +842,50 @@ export async function recomputeAttemptTotals(attemptId: string) {
  * quietly wrong.
  */
 export async function finalizeAttempt(attemptId: string, status: AttemptStatus = 'SUBMITTED') {
+  // Claim first. Only the caller whose conditional update matches grades the
+  // attempt; every concurrent finalize (sweeps on read paths, a retried
+  // submit) sees count 0 and returns the stored result. The UPDATE also waits
+  // on any in-flight answer save holding the row lock, so grading below reads
+  // every committed answer and no later save can land.
+  const claim = await prisma.quizAttempt.updateMany({
+    where: { id: attemptId, status: 'IN_PROGRESS' },
+    data: { status, submittedAt: new Date() },
+  });
+
+  if (claim.count !== 1) {
+    const stored = await prisma.quizAttempt.findUnique({
+      where: { id: attemptId },
+      include: { quiz: true },
+    });
+    if (!stored) throw new ApiError('NOT_FOUND', 'Attempt not found.');
+    return stored;
+  }
+
+  try {
+    await gradeClaimedAttempt(attemptId, status);
+  } catch (error) {
+    // Hand the attempt back so a retry or the expiry sweep can grade it,
+    // rather than leaving it submitted with no marks.
+    await prisma.quizAttempt
+      .updateMany({
+        where: { id: attemptId, status },
+        data: { status: 'IN_PROGRESS', submittedAt: null },
+      })
+      .catch(() => undefined);
+    throw error;
+  }
+
+  // Totals and integrity are pure recomputations from stored rows, safe to rerun.
+  const updated = await recomputeAttemptTotals(attemptId);
+  await recomputeIntegrityScore(attemptId);
+  return updated;
+}
+
+/** Grades the answers of an attempt this caller has just claimed. */
+async function gradeClaimedAttempt(attemptId: string, status: AttemptStatus) {
   const attempt = await prisma.quizAttempt.findUnique({
     where: { id: attemptId },
     include: {
-      quiz: true,
       questions: {
         include: {
           question: {
@@ -825,7 +914,6 @@ export async function finalizeAttempt(attemptId: string, status: AttemptStatus =
   });
 
   if (!attempt) throw new ApiError('NOT_FOUND', 'Attempt not found.');
-  if (attempt.status !== 'IN_PROGRESS') return attempt;
 
   const answerUpdates: Array<{
     id: string;
@@ -864,35 +952,27 @@ export async function finalizeAttempt(attemptId: string, status: AttemptStatus =
     });
   }
 
-  await prisma.$transaction(async (tx) => {
-    for (const update of answerUpdates) {
-      await tx.answer.update({
+  // One batched round trip instead of one awaited update per question.
+  await prisma.$transaction([
+    ...answerUpdates.map((update) =>
+      prisma.answer.update({
         where: { id: update.id },
         data: {
           isCorrect: update.isCorrect,
           awardedMarks: update.awardedMarks,
           requiresManualGrading: update.requiresManualGrading,
         },
-      });
-    }
-
-    await tx.examEvent.create({
+      }),
+    ),
+    prisma.examEvent.create({
       data: {
         attemptId: attempt.id,
         type: status === 'AUTO_SUBMITTED' ? 'AUTO_SUBMITTED' : 'ATTEMPT_SUBMITTED',
         severity: 'INFO',
       },
-    });
+    }),
+  ]);
 
-    await tx.quizAttempt.update({
-      where: { id: attempt.id },
-      data: { status, submittedAt: new Date() },
-    });
-  });
-
-  const updated = await recomputeAttemptTotals(attempt.id);
-  await recomputeIntegrityScore(attempt.id);
-  return updated;
 }
 
 /**

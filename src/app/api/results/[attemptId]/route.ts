@@ -1,6 +1,7 @@
 import { ApiError, ok, route } from '@/lib/api';
 import { requireStudent } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { resultsVisibility } from '@/lib/exam';
 import { MANUAL_TYPES } from '@/lib/grading';
 
 export const runtime = 'nodejs';
@@ -37,16 +38,23 @@ export const GET = route(async (_request: Request, { params }: Params) => {
   if (attempt.status === 'IN_PROGRESS') {
     throw new ApiError('CONFLICT', 'This attempt is still in progress.');
   }
-  if (!attempt.quiz.releaseResults) {
+  const visibility = resultsVisibility(attempt.quiz);
+  if (!visibility.results) {
+    // Released results still wait for the window to close, so nobody can
+    // relay a score or answer key to students who are still sitting the paper.
+    const releasesAt = attempt.quiz.releaseResults ? attempt.quiz.endsAt.toISOString() : null;
     return ok({
       released: false,
+      releasesAt,
       quiz: { title: attempt.quiz.title, subject: attempt.quiz.subject.name },
       submittedAt: attempt.submittedAt?.toISOString() ?? null,
-      message: 'Your faculty has not released results for this quiz yet.',
+      message: releasesAt
+        ? 'Results will be available once the exam window closes.'
+        : 'Your faculty has not released results for this quiz yet.',
     });
   }
 
-  const showAnswers = attempt.quiz.releaseAnswers;
+  const showAnswers = visibility.answers;
   /** Some answers are still with a human marker, so the total will still move. */
   const provisional = attempt.pendingManualCount > 0;
 
@@ -108,7 +116,10 @@ export const GET = route(async (_request: Request, { params }: Params) => {
     topicTotals.set(topic, entry);
   }
 
+  // A topic with one or two questions maps its percentage straight back to
+  // per-question correctness, so it is shown only alongside the answer key.
   const topicPerformance = [...topicTotals.entries()]
+    .filter(([, value]) => showAnswers || value.total >= 3)
     .map(([topic, value]) => ({
       topic,
       correct: value.correct,

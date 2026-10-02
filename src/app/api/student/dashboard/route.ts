@@ -1,7 +1,7 @@
 import { ok, route } from '@/lib/api';
 import { requireStudent } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { sweepExpiredAttempts } from '@/lib/exam';
+import { resultsVisibility, sweepExpiredAttempts } from '@/lib/exam';
 import { statusForScore } from '@/lib/integrity';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 
@@ -48,6 +48,8 @@ export const GET = route(async () => {
           select: {
             title: true,
             releaseResults: true,
+            releaseAnswers: true,
+            endsAt: true,
             subject: { select: { name: true } },
           },
         },
@@ -91,18 +93,19 @@ export const GET = route(async () => {
   });
 
   const completed = attempts.length;
+  // Only attempts whose results are visible (released and window closed) may
+  // feed the average, or it would leak a hidden score by difference.
+  const visible = attempts.filter((a) => resultsVisibility(a.quiz, now).results);
   const averageScore =
-    completed > 0
+    visible.length > 0
       ? Math.round(
-          (attempts.reduce((sum, a) => sum + (a.percentage ?? 0), 0) / completed) * 10,
+          (visible.reduce((sum, a) => sum + (a.percentage ?? 0), 0) / visible.length) * 10,
         ) / 10
       : null;
 
   const averageIntegrity =
     integrityScores.length > 0
-      ? Math.round(
-          integrityScores.reduce((sum, s) => sum + s.score, 0) / integrityScores.length,
-        )
+      ? Math.round(integrityScores.reduce((sum, s) => sum + s.score, 0) / integrityScores.length)
       : 100;
 
   return ok({
@@ -120,16 +123,20 @@ export const GET = route(async () => {
       integrityStatus: statusForScore(averageIntegrity),
     },
     upcoming,
-    recentResults: attempts.slice(0, 5).map((a) => ({
-      attemptId: a.id,
-      title: a.quiz.title,
-      subject: a.quiz.subject.name,
-      submittedAt: a.submittedAt?.toISOString() ?? null,
-      // The score is withheld unless faculty released it, exactly as on the
-      // full results page — the dashboard must not become a side channel.
-      released: a.quiz.releaseResults,
-      percentage: a.quiz.releaseResults ? a.percentage : null,
-      awaitingMarking: a.pendingManualCount > 0,
-    })),
+    recentResults: attempts.slice(0, 5).map((a) => {
+      const released = resultsVisibility(a.quiz, now).results;
+      return {
+        attemptId: a.id,
+        title: a.quiz.title,
+        subject: a.quiz.subject.name,
+        submittedAt: a.submittedAt?.toISOString() ?? null,
+        // The score is withheld unless faculty released it, exactly as on the
+        // full results page — the dashboard must not become a side channel.
+        released,
+        releasesAt: a.quiz.releaseResults ? a.quiz.endsAt.toISOString() : null,
+        percentage: released ? a.percentage : null,
+        awaitingMarking: a.pendingManualCount > 0,
+      };
+    }),
   });
 });

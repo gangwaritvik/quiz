@@ -2,7 +2,7 @@ import { assertSameOrigin, ok, parseBody, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { requireStudent } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { finalizeAttempt, remainingTime } from '@/lib/exam';
+import { finalizeAttempt, remainingTime, resultsVisibility } from '@/lib/exam';
 import { loadLiveAttempt } from '@/lib/exam-guard';
 import { getRequestContext } from '@/lib/session';
 import { submitExamSchema } from '@/lib/validation';
@@ -45,8 +45,18 @@ export const POST = route(async (request: Request, { params }: Params) => {
     context,
   });
 
+  // Every response kind counts: an option, a multi-select, text, or an upload.
+  // (Whitespace-only text is stored as null by `saveAnswer`.)
   const answered = await prisma.answer.count({
-    where: { attemptId, selectedOptionId: { not: null } },
+    where: {
+      attemptId,
+      OR: [
+        { selectedOptionId: { not: null } },
+        { textResponse: { not: null } },
+        { selectedOptions: { some: {} } },
+        { attachments: { some: {} } },
+      ],
+    },
   });
   const total = await prisma.attemptQuestion.count({ where: { attemptId } });
 
@@ -59,6 +69,7 @@ export const POST = route(async (request: Request, { params }: Params) => {
     autoSubmitted: expired,
     // Scores are withheld here regardless; the results endpoint applies the
     // teacher's release policy.
-    resultsReleased: finalized.quiz.releaseResults,
+    resultsReleased: resultsVisibility(finalized.quiz).results,
+    releasesAt: finalized.quiz.releaseResults ? finalized.quiz.endsAt.toISOString() : null,
   });
 });

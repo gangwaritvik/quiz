@@ -54,3 +54,17 @@ export async function recomputeIntegrityScore(attemptId: string) {
 
   return computation;
 }
+
+/**
+ * Recomputes only when the stored score is older than `minIntervalMs`, so a
+ * stream of client events cannot turn every request into a full rescan.
+ * Submission and server-authored events still recompute unconditionally.
+ */
+export async function recomputeIntegrityScoreThrottled(attemptId: string, minIntervalMs: number) {
+  const stored = await prisma.integrityScore.findUnique({
+    where: { attemptId },
+    select: { score: true, status: true, computedAt: true },
+  });
+  if (stored && Date.now() - stored.computedAt.getTime() < minIntervalMs) return stored;
+  return recomputeIntegrityScore(attemptId);
+}

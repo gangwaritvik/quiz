@@ -27,6 +27,8 @@ interface HistoryAttempt {
   percentage: number | null;
   /** Optional: true while a marker still has answers to grade (score may move). */
   awaitingMarking?: boolean;
+  /** Set when results are held until the quiz window closes. */
+  releasesAt?: string | null;
 }
 
 export function StudentResultsList() {
@@ -138,6 +140,12 @@ export function StudentResultsList() {
                   <p className="tabular mt-1 text-xs text-muted-foreground">
                     Submitted {attempt.submittedAt ? formatDateTime(attempt.submittedAt) : '—'}
                   </p>
+                  {attempt.releasesAt ? (
+                    <p className="tabular mt-1 text-xs text-muted-foreground">
+                      Results will be available after the quiz closes on{' '}
+                      {formatDateTime(attempt.releasesAt)}.
+                    </p>
+                  ) : null}
                 </div>
                 <Badge variant="muted" className="shrink-0">
                   <Lock aria-hidden />

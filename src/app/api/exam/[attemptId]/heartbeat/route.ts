@@ -26,7 +26,7 @@ export const POST = route(async (request: Request, { params }: Params) => {
   const context = await getRequestContext();
   const { attemptId } = await params;
 
-  enforceRateLimit(RATE_LIMITS.examEvent, `heartbeat:${attemptId}`);
+  enforceRateLimit(RATE_LIMITS.examEvent, `heartbeat:${session.userId}:${attemptId}`);
 
   const { attempt, remaining } = await loadLiveAttempt(attemptId, session, context);
 
