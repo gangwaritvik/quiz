@@ -1034,6 +1034,8 @@ export async function gradeAnswerManually(params: {
   adminId: string;
   awardedMarks: number;
   note?: string | null;
+  /** Re-mark an answer the server graded itself: used only when faculty uphold an appeal. */
+  override?: boolean;
 }) {
   const answer = await prisma.answer.findUnique({
     where: { id: params.answerId },
@@ -1046,7 +1048,7 @@ export async function gradeAnswerManually(params: {
   });
 
   if (!answer) throw new ApiError('NOT_FOUND', 'That answer could not be found.');
-  if (!answer.requiresManualGrading) {
+  if (!answer.requiresManualGrading && !params.override) {
     throw new ApiError('VALIDATION', 'That answer was marked automatically and cannot be re-marked.');
   }
 

@@ -37,6 +37,14 @@ export async function assertAttemptOwner(attemptId: string, adminId: string) {
   check(attempt ? attempt.quiz.authorId : undefined, adminId, 'attempt');
 }
 
+export async function assertAppealOwner(appealId: string, adminId: string) {
+  const appeal = await prisma.resultAppeal.findUnique({
+    where: { id: appealId },
+    select: { attempt: { select: { quiz: { select: { authorId: true } } } } },
+  });
+  check(appeal ? appeal.attempt.quiz.authorId : undefined, adminId, 'appeal');
+}
+
 export async function assertAnswerOwner(answerId: string, adminId: string) {
   const answer = await prisma.answer.findUnique({
     where: { id: answerId },

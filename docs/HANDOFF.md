@@ -167,6 +167,14 @@ A successful login creates a database-backed `DeviceSession`. The access JWT is 
 7. Automatic answers are graded immediately. descriptive and image answers remain provisional until faculty grading.
 8. Time extensions (`src/lib/time-extension.ts`): faculty can set extra minutes for a student before they start (quiz detail > Extra time, `QuizAssignment.extraMinutes`) or add time to a running attempt (Live exams > Add time, `POST /api/admin/attempts/:id/extend`). Both move only the server deadline: `expiresAt = min(start + duration + extra, endsAt + extra)`. Caps are 120 minutes per grant and 180 per attempt. `Quiz.maxExtensionMinutes` only ever rises, and scores stay hidden until `endsAt + maxExtensionMinutes`.
 
+### Running an exam (live controls)
+
+Faculty controls on **Live exams**: add time, pause/resume one student (the server freezes the clock and refuses answer writes while paused; `pausedAt`), message everyone sitting a quiz (`QuizNotice`, delivered on the heartbeat), and let a student back in after a crash. Students' unsent answers are kept in `localStorage` with a growing sequence number (`src/lib/offline-queue.ts`) and replayed when the connection returns; the server ignores stale replays via `Answer.clientSeq`.
+
+### Quiz view and marking
+
+The quiz view has Attempts, Assigned (editable, by student or section), Questions, Extra time and Item analysis tabs. Quiz-wide marking (`negativeMarkingPct`, `multiPartialCredit`) overrides per-question settings when set. A faculty member can grant one student another attempt at a single-attempt quiz (`QuizAssignment.extraAttempts`, `src/lib/attempt-policy.ts`); class averages count each student's best attempt. Students can ask for a released result to be re-checked (`ResultAppeal`); faculty answer from **Appeals** and may change marks, including on auto-graded answers.
+
 ### Results and integrity
 
 `releaseResults` controls score visibility. `releaseAnswers` independently controls answer-key and explanation visibility. Integrity signals are timestamped events aggregated into a score and status for human review; they are not an automatic academic verdict. Manual grading and score changes are audited.

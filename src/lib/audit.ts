@@ -14,6 +14,8 @@ export type AuditAction =
   | 'exam.attempt_submitted'
   | 'exam.attempt_auto_submitted'
   | 'exam.access_denied'
+  /** A student asked for a released result to be re-checked. */
+  | 'student.appeal_filed'
   | 'admin.quiz_created'
   | 'admin.quiz_updated'
   | 'admin.quiz_published'
@@ -35,6 +37,8 @@ export type AuditAction =
   | 'admin.attempt_resumed'
   /** Faculty gave a student another attempt at a single-attempt quiz, or took one back. */
   | 'admin.attempt_granted'
+  /** Faculty answered a result appeal; any mark changes are listed in the metadata. */
+  | 'admin.appeal_resolved'
   /** Faculty broadcast a notice to a quiz's students. */
   | 'admin.notice_sent'
   | 'admin.media_uploaded'

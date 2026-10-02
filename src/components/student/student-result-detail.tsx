@@ -16,6 +16,7 @@ import {
 import Link from 'next/link';
 import * as React from 'react';
 
+import { AppealSection, type ResultAppealView } from '@/components/student/appeal-section';
 import { ErrorState } from '@/components/shared/error-state';
 import type { IntegrityStatus } from '@/components/shared/integrity-badge';
 import { PageShell } from '@/components/shared/page-header';
@@ -77,6 +78,9 @@ interface ResultData {
   submittedAt?: string | null;
   /** Set when results are held until the quiz window closes. */
   releasesAt?: string | null;
+  /** The latest re-check request on this result, if any. */
+  appeal?: ResultAppealView | null;
+  canAppeal?: boolean;
 }
 
 export function StudentResultDetail({ attemptId }: { attemptId: string }) {
@@ -223,6 +227,13 @@ export function StudentResultDetail({ attemptId }: { attemptId: string }) {
           </div>
         ) : null}
       </motion.header>
+
+      <AppealSection
+        attemptId={attemptId}
+        appeal={data.appeal ?? null}
+        canAppeal={Boolean(data.canAppeal)}
+        onChanged={() => void refetch()}
+      />
 
       <div className="mt-10 grid gap-10 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         {/* First in the DOM so the score is read first; moved right on wide screens. */}

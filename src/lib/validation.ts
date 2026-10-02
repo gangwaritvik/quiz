@@ -221,6 +221,30 @@ export const retakeGrantSchema = z.object({
   action: z.enum(['grant', 'revoke']),
 });
 
+/** A student asking for a released result to be re-checked. */
+export const fileAppealSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .min(10, 'Say which question and why, in a sentence or two')
+    .max(1000, 'Keep it under 1000 characters'),
+});
+
+/** Faculty answering an appeal; marks may be changed only when it is upheld. */
+export const resolveAppealSchema = z
+  .object({
+    status: z.enum(['UPHELD', 'REJECTED']),
+    note: z.string().trim().min(1, 'Explain the decision').max(1000),
+    adjustments: z
+      .array(z.object({ answerId: cuid, awardedMarks: z.number().min(0).max(1000) }))
+      .max(50)
+      .default([]),
+  })
+  .refine((data) => data.status === 'UPHELD' || data.adjustments.length === 0, {
+    message: 'Marks can only be changed when the appeal is upheld.',
+    path: ['adjustments'],
+  });
+
 /** Pause or resume one running attempt. */
 export const pauseAttemptSchema = z.object({
   action: z.enum(['pause', 'resume']),

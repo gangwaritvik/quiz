@@ -12,6 +12,7 @@ import {
   Moon,
   PenLine,
   ShieldAlert,
+  MessageSquare,
   Sun,
   Users,
   X,
@@ -43,7 +44,7 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   exact?: boolean;
-  badge?: 'live' | 'flagged' | 'grading';
+  badge?: 'live' | 'flagged' | 'grading' | 'appeals';
 }
 
 /** Three groups answer "what am I doing": set things up, run an exam, look back. */
@@ -62,6 +63,7 @@ const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { href: '/admin/live', label: 'Live Exams', icon: MonitorPlay, badge: 'live' },
       { href: '/admin/grading', label: 'Marking', icon: PenLine, badge: 'grading' },
+      { href: '/admin/appeals', label: 'Appeals', icon: MessageSquare, badge: 'appeals' },
     ],
   },
   {
@@ -79,7 +81,12 @@ interface AdminShellProps {
 }
 
 interface OverviewCounts {
-  stats: { studentsTakingExams: number; flaggedAttempts: number; answersAwaitingMarking: number };
+  stats: {
+    studentsTakingExams: number;
+    flaggedAttempts: number;
+    answersAwaitingMarking: number;
+    openAppeals: number;
+  };
 }
 
 export function AdminShell({ user, children }: AdminShellProps) {
@@ -107,7 +114,7 @@ export function AdminShell({ user, children }: AdminShellProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [mobileOpen]);
 
-  const badgeFor = (kind?: 'live' | 'flagged' | 'grading') => {
+  const badgeFor = (kind?: 'live' | 'flagged' | 'grading' | 'appeals') => {
     if (!data) return null;
     if (kind === 'live' && data.stats.studentsTakingExams > 0) {
       return (
@@ -125,6 +132,13 @@ export function AdminShell({ user, children }: AdminShellProps) {
     }
     // Students are waiting on a real person for these, so the count is shown
     // as a standing prompt rather than only inside the screen itself.
+    if (kind === 'appeals' && data.stats.openAppeals > 0) {
+      return (
+        <Badge variant="secondary" className="tabular ml-auto">
+          {data.stats.openAppeals}
+        </Badge>
+      );
+    }
     if (kind === 'grading' && data.stats.answersAwaitingMarking > 0) {
       return (
         <Badge variant="secondary" className="tabular ml-auto">
@@ -240,6 +254,7 @@ export function AdminShell({ user, children }: AdminShellProps) {
               <NotificationBell
                 flagged={data?.stats.flaggedAttempts ?? 0}
                 marking={data?.stats.answersAwaitingMarking ?? 0}
+                appeals={data?.stats.openAppeals ?? 0}
               />
 
               <Button
@@ -284,8 +299,26 @@ export function AdminShell({ user, children }: AdminShellProps) {
  * The dot appears only when there is genuinely something to act on, so it
  * never becomes the notification badge everybody learns to ignore.
  */
-function NotificationBell({ flagged, marking }: { flagged: number; marking: number }) {
+function NotificationBell({
+  flagged,
+  marking,
+  appeals,
+}: {
+  flagged: number;
+  marking: number;
+  appeals: number;
+}) {
   const items = [
+    appeals > 0
+      ? {
+          key: 'appeals',
+          href: '/admin/appeals',
+          icon: MessageSquare,
+          tone: 'text-warning',
+          title: `${appeals} re-check request${appeals === 1 ? '' : 's'}`,
+          detail: 'Students are waiting to hear back.',
+        }
+      : null,
     marking > 0
       ? {
           key: 'marking',

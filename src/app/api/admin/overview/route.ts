@@ -37,6 +37,10 @@ export const GET = route(async () => {
   // Every count and list below is limited to this faculty member's own quizzes.
   const ownQuiz = ownQuizWhere(session.adminId);
   const ownAttempt = ownAttemptWhere(session.adminId);
+  // Students waiting for a re-check of a released result.
+  const openAppeals = await prisma.resultAppeal.count({
+    where: { status: 'OPEN', attempt: ownAttempt },
+  });
 
   const [
     activeExams,
@@ -309,6 +313,7 @@ export const GET = route(async () => {
       studentsTakingExams: liveStudents,
       completedAttempts,
       flaggedAttempts: flagged,
+      openAppeals,
       answersAwaitingMarking: awaitingMarking,
       averageScore: overallAverage,
       scoredAttempts: scored.length,

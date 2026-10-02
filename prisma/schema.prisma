@@ -395,14 +395,14 @@ model QuizQuestion {
 
 /// Explicit allow-list: a student may only reach a quiz they are assigned to.
 model QuizAssignment {
-  id           String   @id @default(cuid())
-  quizId       String
-  studentId    String
-  assignedAt   DateTime @default(now())
+  id            String   @id @default(cuid())
+  quizId        String
+  studentId     String
+  assignedAt    DateTime @default(now())
   /// Pre-start accommodation: extra minutes added to this student's clock when they begin.
-  extraMinutes Int      @default(0)
+  extraMinutes  Int      @default(0)
   /// Attempts faculty granted beyond the quiz's own limit (single-attempt quizzes).
-  extraAttempts Int     @default(0)
+  extraAttempts Int      @default(0)
 
   quiz    Quiz    @relation(fields: [quizId], references: [id], onDelete: Cascade)
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -474,6 +474,7 @@ model QuizAttempt {
   events    ExamEvent[]
   integrity IntegrityScore?
   reviews   IntegrityReview[]
+  appeals   ResultAppeal[]
 
   @@unique([quizId, studentId, attemptNumber])
   @@index([quizId, status])
@@ -744,4 +745,29 @@ model QuizNotice {
 
   @@index([quizId, createdAt])
   @@map("quiz_notices")
+}
+
+enum AppealStatus {
+  OPEN
+  UPHELD
+  REJECTED
+}
+
+/// A student's request for faculty to re-check a released result.
+model ResultAppeal {
+  id           String       @id @default(cuid())
+  attemptId    String
+  studentId    String
+  reason       String
+  status       AppealStatus @default(OPEN)
+  facultyNote  String?
+  resolvedById String?
+  resolvedAt   DateTime?
+  createdAt    DateTime     @default(now())
+
+  attempt QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId])
+  @@index([status, createdAt])
+  @@map("result_appeals")
 }

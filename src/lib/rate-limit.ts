@@ -45,6 +45,8 @@ export const RATE_LIMITS = {
   answerSave: { name: 'exam:answer', limit: 300, windowMs: 60_000 },
   examStart: { name: 'exam:start', limit: 10, windowMs: 10 * 60_000 },
   adminWrite: { name: 'admin:write', limit: 120, windowMs: 60_000 },
+  // A handful a day is plenty; this stops a flood, not a worried student.
+  appealSubmit: { name: 'appeal:submit', limit: 5, windowMs: 60 * 60_000 },
   read: { name: 'read', limit: 600, windowMs: 60_000 },
   // Uploads are far heavier than a JSON write, so they get their own, tighter
   // budget rather than sharing the generic ones.

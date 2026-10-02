@@ -439,6 +439,38 @@ check('(n) a retaker counts once in the quiz average', sums.data?.quizSummaries.
 await prisma.quiz.update({ where: { id: quiz4 }, data: { startsAt: new Date(Date.now() - 7200_000), endsAt: new Date(Date.now() - 1000) } });
 await fac('(n) no grant once the window has closed', 'POST', retakeUrl, grant9, { expect: [409] });
 
+// ---------------- (o) result appeals ----------------
+const appealUrl = `/api/results/${attemptId}/appeal`;
+const resBefore = (await stu('(o) result before any appeal', 'GET', `/api/results/${attemptId}`, undefined, { expect: [200] })).data;
+check('(o) a released, final result can be appealed', resBefore.canAppeal === true && resBefore.appeal === null);
+await s9('(o) another student cannot appeal it', 'POST', appealUrl, { reason: 'This is not my result at all.' }, { expect: [403] });
+await s3('(o) no appeal while results are held back', 'POST', `/api/results/${a3}/appeal`, { reason: 'I would like this checked please.' }, { expect: [409] });
+await stu('(o) a one-word reason is refused', 'POST', appealUrl, { reason: 'wrong' }, { expect: [422] });
+await stu('(o) file an appeal', 'POST', appealUrl, { reason: 'Question 1: I chose the right protocol name, please check.' }, { expect: [200] });
+await stu('(o) a second open appeal is refused', 'POST', appealUrl, { reason: 'Asking twice should not be possible.' }, { expect: [409] });
+const resOpen = (await stu('(o) result with an open appeal', 'GET', `/api/results/${attemptId}`, undefined, { expect: [200] })).data;
+check('(o) the student sees it waiting', resOpen.appeal?.status === 'OPEN' && resOpen.canAppeal === false, JSON.stringify(resOpen.appeal));
+
+const queue = await fac('(o) faculty appeals queue', 'GET', '/api/admin/appeals', undefined, { expect: [200] });
+const myAppeal = queue.data?.appeals.find((a) => a.attemptId === attemptId);
+check('(o) the owner sees it', Boolean(myAppeal) && myAppeal.status === 'OPEN' && myAppeal.rollNumber === '23CSE001', JSON.stringify(myAppeal));
+const queue2 = await fac2('(o) other faculty appeals queue', 'GET', '/api/admin/appeals?status=all', undefined, { expect: [200] });
+check('(o) another faculty member does not', !queue2.text.includes(attemptId));
+await fac2('(o) another faculty member cannot answer it', 'POST', `/api/admin/appeals/${myAppeal.id}`, { status: 'REJECTED', note: 'no' }, { expect: [403] });
+await stu('(o) a student cannot answer it', 'POST', `/api/admin/appeals/${myAppeal.id}`, { status: 'UPHELD', note: 'I win' }, abuse);
+check('(o) the owner overview counts it', (await fac('(o) overview', 'GET', '/api/admin/overview', undefined, { expect: [200] })).data?.stats.openAppeals === 1);
+await fac('(o) rejecting cannot change marks', 'POST', `/api/admin/appeals/${myAppeal.id}`, { status: 'REJECTED', note: 'stands', adjustments: [{ answerId: 'x'.repeat(25), awardedMarks: 1 }] }, { expect: [422] });
+const mcqAnswer = await prisma.answer.findFirst({ where: { attemptId, attemptQuestion: { question: { type: 'MCQ_SINGLE' } } }, select: { id: true } });
+const scoreBefore = (await prisma.quizAttempt.findUnique({ where: { id: attemptId }, select: { score: true } })).score;
+await fac('(o) marks above the maximum are refused and nothing changes', 'POST', `/api/admin/appeals/${myAppeal.id}`, { status: 'UPHELD', note: 'bump', adjustments: [{ answerId: mcqAnswer.id, awardedMarks: 99 }] }, { expect: [422] });
+check('(o) the refused decision left the appeal open', (await prisma.resultAppeal.findUnique({ where: { id: myAppeal.id } })).status === 'OPEN');
+const decided = await fac('(o) uphold and change an auto-graded answer', 'POST', `/api/admin/appeals/${myAppeal.id}`, { status: 'UPHELD', note: 'Re-marked: half credit.', adjustments: [{ answerId: mcqAnswer.id, awardedMarks: 1 }] }, { expect: [200] });
+check('(o) the attempt total follows the change', decided.data?.score === scoreBefore - 1, `${scoreBefore} -> ${decided.data?.score}`);
+await fac('(o) answering twice is refused', 'POST', `/api/admin/appeals/${myAppeal.id}`, { status: 'REJECTED', note: 'again' }, { expect: [409] });
+const resDone = (await stu('(o) result after the decision', 'GET', `/api/results/${attemptId}`, undefined, { expect: [200] })).data;
+check('(o) the student sees the outcome and the note', resDone.appeal?.status === 'UPHELD' && resDone.appeal.facultyNote === 'Re-marked: half credit.' && resDone.canAppeal === true);
+check('(o) filing and answering are audited', (await prisma.auditLog.count({ where: { action: 'student.appeal_filed' } })) === 1 && (await prisma.auditLog.count({ where: { action: 'admin.appeal_resolved' } })) === 1);
+
 // (e) events after the 60 s post-submit window
 const wait = Math.max(0, submittedAt + 120_000 - Date.now());
 log(`     info     waiting ${Math.round(wait / 1000)} s for post-submit window`);

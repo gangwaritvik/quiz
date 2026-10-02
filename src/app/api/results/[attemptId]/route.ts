@@ -129,8 +129,26 @@ export const GET = route(async (_request: Request, { params }: Params) => {
     }))
     .sort((a, b) => b.percentage - a.percentage);
 
+  // The student's re-check requests on this result, newest first.
+  const appeals = await prisma.resultAppeal.findMany({
+    where: { attemptId },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true, status: true, reason: true, facultyNote: true, createdAt: true, resolvedAt: true },
+  });
+
   return ok({
     released: true,
+    appeal: appeals[0]
+      ? {
+          ...appeals[0],
+          createdAt: appeals[0].createdAt.toISOString(),
+          resolvedAt: appeals[0].resolvedAt?.toISOString() ?? null,
+        }
+      : null,
+    canAppeal:
+      attempt.pendingManualCount === 0 &&
+      appeals.length < 3 &&
+      !appeals.some((appeal) => appeal.status === 'OPEN'),
     showAnswers,
     provisional,
     pendingManualCount: attempt.pendingManualCount,
