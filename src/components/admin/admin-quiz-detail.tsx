@@ -22,6 +22,7 @@ import Link from 'next/link';
 import * as React from 'react';
 import { toast } from 'sonner';
 
+import { AssignStudentsDialog } from '@/components/admin/assign-students-dialog';
 import { ExtraTimePanel } from '@/components/admin/extra-time-panel';
 import {
   InstantQuestionBuilder,
@@ -32,6 +33,7 @@ import {
   type InstantQuestion,
   type SavedQuestion,
 } from '@/components/admin/instant-question-builder';
+import { QuizEditDialog } from '@/components/admin/quiz-edit-dialog';
 import { MathText } from '@/components/shared/math-text';
 import { ErrorState } from '@/components/shared/error-state';
 import { IntegrityBadge, type IntegrityStatus } from '@/components/shared/integrity-badge';
@@ -114,6 +116,8 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
     `/api/admin/quizzes/${quizId}`,
   );
   const [updating, setUpdating] = React.useState(false);
+  const [editing, setEditing] = React.useState(false);
+  const [assigning, setAssigning] = React.useState(false);
 
   const publish = async () => {
     setUpdating(true);
@@ -183,22 +187,38 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
           </>
         }
         actions={
-          quiz.status === 'DRAFT' ? (
-            <Button loading={updating} onClick={() => void publish()}>
-              <Send />
-              Publish
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 sm:justify-end">
+            <dl className="space-y-0.5 text-right text-sm">
+              <div className="flex justify-end gap-2">
+                <dt className="text-muted-foreground">Opens</dt>
+                <dd className="tabular font-medium">{formatDateTime(quiz.startsAt)}</dd>
+              </div>
+              <div className="flex justify-end gap-2">
+                <dt className="text-muted-foreground">Closes</dt>
+                <dd className="tabular font-medium">{formatDateTime(quiz.endsAt)}</dd>
+              </div>
+            </dl>
+            <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+              <Pencil />
+              Edit details
             </Button>
-          ) : quiz.status === 'PUBLISHED' ? (
-            <Badge variant="success">
-              <CheckCircle2 aria-hidden />
-              Published
-            </Badge>
-          ) : (
-            <Badge variant="outline">
-              <Archive aria-hidden />
-              Archived
-            </Badge>
-          )
+            {quiz.status === 'DRAFT' ? (
+              <Button loading={updating} onClick={() => void publish()}>
+                <Send />
+                Publish
+              </Button>
+            ) : quiz.status === 'PUBLISHED' ? (
+              <Badge variant="success">
+                <CheckCircle2 aria-hidden />
+                Published
+              </Badge>
+            ) : (
+              <Badge variant="outline">
+                <Archive aria-hidden />
+                Archived
+              </Badge>
+            )}
+          </div>
         }
       />
 
@@ -369,6 +389,12 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
           </TabsContent>
 
           <TabsContent value="assigned">
+            <div className="mb-3 flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => setAssigning(true)}>
+                <Users />
+                Edit assigned students
+              </Button>
+            </div>
             {assignments.length === 0 ? (
               <EmptyState
                 icon={Users}
@@ -426,26 +452,6 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
         {/* One sheet for the quiz's standing facts, split by a hairline. */}
         <aside className="divide-y divide-border rounded-lg border border-border bg-card">
           <section className="p-5">
-            <h2 className="type-subheading font-sans">Examination window</h2>
-            <dl className="mt-3 space-y-2.5 text-sm">
-              <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground">Opens</dt>
-                <dd className="tabular text-right font-medium">{formatDateTime(quiz.startsAt)}</dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground">Closes</dt>
-                <dd className="tabular text-right font-medium">{formatDateTime(quiz.endsAt)}</dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground">Difficulty mix</dt>
-                <dd className="tabular text-right font-medium">
-                  {quiz.difficultyMix.easy}/{quiz.difficultyMix.medium}/{quiz.difficultyMix.hard}
-                </dd>
-              </div>
-            </dl>
-          </section>
-
-          <section className="p-5">
             <h2 className="type-subheading font-sans">Security policy</h2>
             <ul className="mt-3 space-y-2">
               {Object.entries(SECURITY_LABELS).map(([key, label]) => {
@@ -477,6 +483,40 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
           </section>
         </aside>
       </div>
+
+      <QuizEditDialog
+        quiz={
+          editing
+            ? {
+                id: quiz.id,
+                title: quiz.title,
+                description: quiz.description,
+                durationMinutes: quiz.durationMinutes,
+                difficultyMix: quiz.difficultyMix,
+                startsAt: quiz.startsAt,
+                endsAt: quiz.endsAt,
+                attemptCount: attempts.length,
+                security: quiz.security,
+              }
+            : null
+        }
+        onOpenChange={setEditing}
+        onSaved={() => {
+          setEditing(false);
+          void refetch();
+        }}
+      />
+
+      <AssignStudentsDialog
+        open={assigning}
+        onOpenChange={setAssigning}
+        quizId={quiz.id}
+        assignedIds={assignments.map((a) => a.studentId)}
+        startedIds={assignments
+          .filter((a) => attempts.some((attempt) => attempt.rollNumber === a.rollNumber))
+          .map((a) => a.studentId)}
+        onSaved={() => void refetch()}
+      />
     </PageShell>
   );
 }
