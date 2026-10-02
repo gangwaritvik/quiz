@@ -174,7 +174,9 @@ export function computeIntegrity(
   }
 
   // Highest-impact signals first so the report leads with what matters.
-  breakdown.sort((a, b) => b.penalty - a.penalty || b.count - a.count);
+  breakdown.sort(
+    (a, b) => b.penalty - a.penalty || b.count - a.count || a.type.localeCompare(b.type),
+  );
 
   const score = Math.max(0, Math.min(100, Math.round(100 - deduction)));
   const clean = HEADLINE_CLEAN_SIGNALS.filter((type) => !grouped.has(type)).map(

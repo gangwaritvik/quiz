@@ -114,6 +114,24 @@ export const GET = route(async () => {
     };
   });
 
+  // Answers to the student's re-check requests from the last two weeks, for the bell.
+  const appealReplies = await prisma.resultAppeal.findMany({
+    where: {
+      studentId,
+      status: { not: 'OPEN' },
+      resolvedAt: { gte: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000) },
+    },
+    orderBy: { resolvedAt: 'desc' },
+    take: 5,
+    select: {
+      id: true,
+      status: true,
+      attemptId: true,
+      resolvedAt: true,
+      attempt: { select: { quiz: { select: { title: true } } } },
+    },
+  });
+
   const completed = attempts.length;
   // Only attempts whose results are visible (released and window closed) may
   // feed the average, or it would leak a hidden score by difference.
@@ -152,6 +170,12 @@ export const GET = route(async () => {
       integrityStatus: statusForScore(averageIntegrity),
     },
     upcoming,
+    appealReplies: appealReplies.map((appeal) => ({
+      id: appeal.id,
+      status: appeal.status,
+      attemptId: appeal.attemptId,
+      title: appeal.attempt.quiz.title,
+    })),
     recentResults: attempts.slice(0, 5).map((a) => {
       const released = resultsVisibility(a.quiz, now).results;
       return {

@@ -4,6 +4,7 @@ import { Users } from 'lucide-react';
 import * as React from 'react';
 import { toast } from 'sonner';
 
+import { SectionChips } from '@/components/admin/section-chips';
 import { InlineError } from '@/components/shared/error-state';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -17,13 +18,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiClientError, apiFetch } from '@/lib/client/api';
 import { cn } from '@/lib/utils';
@@ -79,7 +73,7 @@ export function AssignStudentsDialog({
   const [roster, setRoster] = React.useState<RosterStudent[] | null>(null);
   const [loadError, setLoadError] = React.useState<string | null>(null);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
-  const [section, setSection] = React.useState('ALL');
+  const [picked, setPicked] = React.useState<string[]>([]);
   const [query, setQuery] = React.useState('');
   const [saving, setSaving] = React.useState(false);
 
@@ -90,7 +84,7 @@ export function AssignStudentsDialog({
     if (!open) return;
     let cancelled = false;
     setSelected(new Set(assignedIds));
-    setSection('ALL');
+    setPicked([]);
     setQuery('');
     setRoster(null);
     setLoadError(null);
@@ -98,7 +92,9 @@ export function AssignStudentsDialog({
       (students) => !cancelled && setRoster(students),
       (caught) =>
         !cancelled &&
-        setLoadError(caught instanceof ApiClientError ? caught.message : 'We could not load students.'),
+        setLoadError(
+          caught instanceof ApiClientError ? caught.message : 'We could not load students.',
+        ),
     );
     return () => {
       cancelled = true;
@@ -107,15 +103,20 @@ export function AssignStudentsDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const sections = React.useMemo(
-    () => [...new Set((roster ?? []).map(sectionKey))].sort(),
-    [roster],
-  );
+  const sections = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const student of roster ?? []) {
+      counts.set(sectionKey(student), (counts.get(sectionKey(student)) ?? 0) + 1);
+    }
+    return [...counts]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([label, count]) => ({ label, count }));
+  }, [roster]);
 
   const needle = query.trim().toLowerCase();
   const visible = (roster ?? []).filter(
     (student) =>
-      (section === 'ALL' || sectionKey(student) === section) &&
+      (picked.length === 0 || picked.includes(sectionKey(student))) &&
       (needle === '' ||
         student.name.toLowerCase().includes(needle) ||
         student.rollNumber.toLowerCase().includes(needle)),
@@ -174,7 +175,8 @@ export function AssignStudentsDialog({
         <DialogHeader>
           <DialogTitle>Assigned students</DialogTitle>
           <DialogDescription>
-            Tick the students who can see this quiz. Use a section to add everyone in it at once.
+            Tick the students who can see this quiz. Pick one or more sections to add everyone in
+            them at once.
           </DialogDescription>
         </DialogHeader>
 
@@ -187,31 +189,14 @@ export function AssignStudentsDialog({
           </div>
         ) : (
           <>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <div className="w-full sm:w-56">
-                <Select value={section} onValueChange={setSection}>
-                  <SelectTrigger aria-label="Filter by section">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All sections</SelectItem>
-                    {sections.map((entry) => (
-                      <SelectItem key={entry} value={entry}>
-                        {entry}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Input
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search name or roll number"
-                aria-label="Search students"
-                className="sm:flex-1"
-              />
-            </div>
+            <SectionChips sections={sections} value={picked} onChange={setPicked} />
+            <Input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search name or roll number"
+              aria-label="Search students"
+            />
 
             <div className="flex items-center justify-between gap-3">
               <Badge variant={selected.size > 0 ? 'default' : 'muted'}>
@@ -227,14 +212,14 @@ export function AssignStudentsDialog({
                 onClick={toggleVisible}
               >
                 {allVisibleSelected
-                  ? section === 'ALL' && needle === ''
+                  ? picked.length === 0 && needle === ''
                     ? 'Clear all'
                     : 'Clear shown'
-                  : section === 'ALL' && needle === ''
+                  : picked.length === 0 && needle === ''
                     ? 'Select all'
-                    : section === 'ALL'
+                    : picked.length === 0 || needle !== ''
                       ? 'Select shown'
-                      : `Add all in ${section}`}
+                      : `Add all in ${picked.length === 1 ? picked[0] : `${picked.length} sections`}`}
               </Button>
             </div>
 

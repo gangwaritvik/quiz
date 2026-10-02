@@ -354,6 +354,15 @@ await s4('(k) answers work again', 'POST', `/api/exam/${a4}/answer`, { attemptQu
 const pauseAudits = await prisma.auditLog.count({ where: { action: { in: ['admin.attempt_paused', 'admin.attempt_resumed'] } } });
 check('(k) pause and resume are audited', pauseAudits === 2, String(pauseAudits));
 check('(k) notices are audited', (await prisma.auditLog.count({ where: { action: 'admin.notice_sent' } })) === 1);
+// a pause nobody ends: after an hour the clock runs again by itself, and the student gets back exactly that hour
+const horizonBefore = (await prisma.quiz.findUnique({ where: { id: quiz3 }, select: { maxExtensionMinutes: true } })).maxExtensionMinutes;
+await prisma.quizAttempt.update({ where: { id: a4 }, data: { pausedAt: new Date(Date.now() - 61 * 60_000), expiresAt: new Date(Date.now() + 29 * 60_000) } });
+const h4 = (await s4('(k) heartbeat after an overlong pause', 'POST', `/api/exam/${a4}/heartbeat`, {}, { expect: [200] })).data;
+check('(k) an overlong pause ends by itself', h4.paused === false, JSON.stringify(h4.paused));
+check('(k) the student got back one hour, not 61 minutes', h4.timer.remainingMs > 88 * 60_000 && h4.timer.remainingMs < 90 * 60_000, String(h4.timer.remainingMs));
+await s4('(k) answers work after the automatic resume', 'POST', `/api/exam/${a4}/answer`, { attemptQuestionId: short4, textResponse: 'after auto resume' }, { expect: [200] });
+check('(k) the automatic resume is audited', (await prisma.auditLog.count({ where: { action: 'admin.attempt_resumed', entityId: a4 } })) === 2);
+await prisma.quiz.update({ where: { id: quiz3 }, data: { maxExtensionMinutes: horizonBefore } });
 
 // the window closes while 23CSE005 is still sitting on extra time
 const closeEnd3 = new Date(Date.now() - 1000).toISOString();
@@ -470,6 +479,8 @@ await fac('(o) answering twice is refused', 'POST', `/api/admin/appeals/${myAppe
 const resDone = (await stu('(o) result after the decision', 'GET', `/api/results/${attemptId}`, undefined, { expect: [200] })).data;
 check('(o) the student sees the outcome and the note', resDone.appeal?.status === 'UPHELD' && resDone.appeal.facultyNote === 'Re-marked: half credit.' && resDone.canAppeal === true);
 check('(o) filing and answering are audited', (await prisma.auditLog.count({ where: { action: 'student.appeal_filed' } })) === 1 && (await prisma.auditLog.count({ where: { action: 'admin.appeal_resolved' } })) === 1);
+const dashAfter = (await stu('(o) dashboard after the decision', 'GET', '/api/student/dashboard', undefined, { expect: [200] })).data;
+check('(o) the dashboard carries the reply for the bell', dashAfter.appealReplies?.length === 1 && dashAfter.appealReplies[0].status === 'UPHELD' && dashAfter.appealReplies[0].attemptId === attemptId, JSON.stringify(dashAfter.appealReplies));
 
 // (e) events after the 60 s post-submit window
 const wait = Math.max(0, submittedAt + 120_000 - Date.now());

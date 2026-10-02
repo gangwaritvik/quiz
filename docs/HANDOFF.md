@@ -169,7 +169,7 @@ A successful login creates a database-backed `DeviceSession`. The access JWT is 
 
 ### Running an exam (live controls)
 
-Faculty controls on **Live exams**: add time, pause/resume one student (the server freezes the clock and refuses answer writes while paused; `pausedAt`), message everyone sitting a quiz (`QuizNotice`, delivered on the heartbeat), and let a student back in after a crash. Students' unsent answers are kept in `localStorage` with a growing sequence number (`src/lib/offline-queue.ts`) and replayed when the connection returns; the server ignores stale replays via `Answer.clientSeq`.
+Faculty controls on **Live exams**: add time, pause/resume one student (the server freezes the clock and refuses answer writes while paused; `pausedAt`), message everyone sitting a quiz (`QuizNotice`, delivered on the heartbeat), and let a student back in after a crash. Students' unsent answers are kept in `localStorage` with a growing sequence number (`src/lib/offline-queue.ts`) and replayed when the connection returns; the server ignores stale replays via `Answer.clientSeq`. A pause nobody ends runs out after `MAX_PAUSE_MS` (one hour, `src/lib/time-extension.ts`): `resumeOverlongPauses` resumes it from the sweep and from the student's next heartbeat, giving back exactly that hour. `docs/MANUAL_EXAM_CHECKLIST.md` is the two-window check for the parts automated tests cannot reach.
 
 ### Quiz view and marking
 

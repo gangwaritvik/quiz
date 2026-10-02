@@ -5,7 +5,7 @@ import type { Quiz, QuizAttempt } from '@prisma/client';
 import { ApiError } from '@/lib/api';
 import type { StudentSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { finalizeAttempt, remainingTime, SUBMIT_GRACE_MS } from '@/lib/exam';
+import { finalizeAttempt, remainingTime, resumeOverlongPauses, SUBMIT_GRACE_MS } from '@/lib/exam';
 import { pauseAdjustedExpiresAt } from '@/lib/time-extension';
 import { recomputeIntegrityScore, severityForEvent } from '@/lib/integrity';
 import type { RequestContext } from '@/lib/session';
@@ -40,6 +40,11 @@ export async function loadLiveAttempt(
   // IDOR guard — the attempt id is a lookup key, never an authorisation token.
   if (attempt.studentId !== session.studentId) {
     throw new ApiError('FORBIDDEN', 'This attempt does not belong to you.');
+  }
+
+  // A pause nobody ended runs out; read the attempt again once it has.
+  if (attempt.pausedAt && (await resumeOverlongPauses(attempt.id)) > 0) {
+    return loadLiveAttempt(attemptId, session, context, options);
   }
 
   if (attempt.status !== 'IN_PROGRESS') {

@@ -465,7 +465,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
     if (!isOnline) {
       setConnectionLost(true);
     } else {
-      toast.success('Connection restored. Your answers are saved.');
+      toast.success('Connection restored. Sending your latest answers.');
     }
   }, []);
   const onWindowBlur = React.useCallback(() => {
@@ -1021,8 +1021,8 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
               <div className="mx-auto flex max-w-[1440px] items-center gap-2.5 px-4 py-2.5 text-sm text-warning sm:px-6">
                 <WifiOff className="size-4 shrink-0" aria-hidden />
                 <p>
-                  Connection interrupted. Your previous answer has been saved — we&apos;ll keep
-                  retrying automatically.
+                  Connection interrupted. Your answers are kept on this device and sent as soon as
+                  you are back online.
                 </p>
                 <Loader2 className="ml-auto size-4 shrink-0 animate-spin" aria-hidden />
               </div>

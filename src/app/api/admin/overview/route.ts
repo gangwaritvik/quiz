@@ -1,4 +1,5 @@
 import { ok, route } from '@/lib/api';
+import { bestPerStudent } from '@/lib/attempt-policy';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import {
@@ -48,7 +49,7 @@ export const GET = route(async () => {
     completedAttempts,
     flagged,
     awaitingMarking,
-    recentAttempts,
+    recentRows,
     quizzes,
     markingGroups,
     questionDifficulty,
@@ -87,6 +88,8 @@ export const GET = route(async () => {
       prisma.quizAttempt.findMany({
         where: { ...ownAttempt, status: { in: ['SUBMITTED', 'AUTO_SUBMITTED'] } },
         select: {
+          quizId: true,
+          studentId: true,
           percentage: true,
           submittedAt: true,
           pendingManualCount: true,
@@ -169,6 +172,13 @@ export const GET = route(async () => {
         })
       : []
     ).map((quiz) => [quiz.id, quiz.title]),
+  );
+
+  // A student who retook a quiz counts once, at their best attempt.
+  const recentAttempts = bestPerStudent(
+    recentRows,
+    (attempt) => `${attempt.quizId}:${attempt.studentId}`,
+    (attempt) => attempt.percentage,
   );
 
   const liveStudents = liveGroups.reduce((sum, group) => sum + group._count._all, 0);

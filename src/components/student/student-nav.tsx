@@ -40,6 +40,23 @@ interface StudentNavProps {
 
 interface DashboardSummary {
   upcoming: Array<{ id: string; title: string; subject: string; startsAt: string; state: string }>;
+  appealReplies?: Array<{
+    id: string;
+    status: 'UPHELD' | 'REJECTED';
+    attemptId: string;
+    title: string;
+  }>;
+}
+
+const SEEN_REPLIES_KEY = 'sq-seen-appeal-replies';
+
+function readSeenReplies(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(SEEN_REPLIES_KEY) ?? '[]');
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
 }
 
 export function StudentNav({ user }: StudentNavProps) {
@@ -52,6 +69,22 @@ export function StudentNav({ user }: StudentNavProps) {
   const notifications = (data?.upcoming ?? []).filter(
     (quiz) => quiz.state === 'AVAILABLE' || quiz.state === 'IN_PROGRESS',
   );
+
+  // Faculty answers to re-check requests stay in the bell until the menu is opened.
+  const [seenReplies, setSeenReplies] = React.useState<string[]>([]);
+  React.useEffect(() => setSeenReplies(readSeenReplies()), []);
+  const replies = (data?.appealReplies ?? []).filter((reply) => !seenReplies.includes(reply.id));
+  const bellCount = notifications.length + replies.length;
+  const markRepliesSeen = (open: boolean) => {
+    if (!open || replies.length === 0) return;
+    const next = [...new Set([...seenReplies, ...replies.map((reply) => reply.id)])].slice(-50);
+    try {
+      localStorage.setItem(SEEN_REPLIES_KEY, JSON.stringify(next));
+    } catch {
+      // Private mode: the replies simply show again next time.
+    }
+    // Kept visible for this opening; they drop out the next time the page loads.
+  };
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
@@ -99,11 +132,11 @@ export function StudentNav({ user }: StudentNavProps) {
         </nav>
 
         <div className="ml-auto flex items-center gap-1">
-          <DropdownMenu>
+          <DropdownMenu onOpenChange={markRepliesSeen}>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
                 <Bell />
-                {notifications.length > 0 ? (
+                {bellCount > 0 ? (
                   <span
                     className="absolute right-2.5 top-2.5 size-2 rounded-full bg-primary ring-2 ring-card"
                     aria-hidden
@@ -114,17 +147,34 @@ export function StudentNav({ user }: StudentNavProps) {
             <DropdownMenuContent align="end" className="w-[min(20rem,calc(100vw-2rem))]">
               <DropdownMenuLabel className="flex items-center justify-between">
                 Notifications
-                {notifications.length > 0 ? (
-                  <Badge className="tabular">{notifications.length}</Badge>
+                {bellCount > 0 ? (
+                  <Badge className="tabular">{bellCount}</Badge>
                 ) : null}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {notifications.length === 0 ? (
+              {bellCount === 0 ? (
                 <p className="px-2 py-6 text-center text-sm text-muted-foreground">
                   You&apos;re all caught up.
                 </p>
               ) : (
                 <ul className="max-h-72 overflow-y-auto py-1">
+                  {replies.map((reply) => (
+                    <li key={reply.id}>
+                      <Link
+                        href={`/results/${reply.attemptId}`}
+                        className="flex min-h-11 flex-col justify-center gap-0.5 rounded-md px-2 py-2 transition-colors duration-fast ease-standard hover:bg-accent"
+                      >
+                        <span className="truncate text-sm font-medium text-foreground">
+                          {reply.title}
+                        </span>
+                        <span className="truncate text-xs text-muted-foreground">
+                          {reply.status === 'UPHELD'
+                            ? 'Your re-check was upheld'
+                            : 'Your faculty replied to your re-check'}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
                   {notifications.map((quiz) => (
                     <li key={quiz.id}>
                       <Link

@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client';
 import type { AttemptStatus, Difficulty, QuestionType, Quiz } from '@prisma/client';
 
 import { ApiError } from '@/lib/api';
+import { audit } from '@/lib/audit';
 import { prisma } from '@/lib/db';
 import {
   FIXED_OPTION_ORDER_TYPES,
@@ -18,7 +19,12 @@ import {
 import { recomputeIntegrityScore } from '@/lib/integrity';
 import { canStartAnother } from '@/lib/attempt-policy';
 import { shouldApply } from '@/lib/offline-queue';
-import { computeExpiresAt, effectiveEndsAt, pauseAdjustedExpiresAt } from '@/lib/time-extension';
+import {
+  MAX_PAUSE_MS,
+  computeExpiresAt,
+  effectiveEndsAt,
+  pauseAdjustedExpiresAt,
+} from '@/lib/time-extension';
 
 /**
  * The exam engine. Everything that decides *what a student sees* and *what a
@@ -1100,7 +1106,65 @@ export async function gradeAnswerManually(params: {
  * paths (dashboards, live monitoring) so an abandoned tab cannot leave an
  * attempt open indefinitely.
  */
+/**
+ * A pause nobody ended: after MAX_PAUSE_MS the clock runs again. Same write as
+ * a manual resume (deadline moves by the capped pause, compare-and-set), so a
+ * simultaneous manual resume wins or loses cleanly. Returns how many resumed.
+ */
+export async function resumeOverlongPauses(attemptId?: string) {
+  const overdue = await prisma.quizAttempt.findMany({
+    where: {
+      status: 'IN_PROGRESS',
+      pausedAt: { lt: new Date(Date.now() - MAX_PAUSE_MS) },
+      ...(attemptId ? { id: attemptId } : {}),
+    },
+    select: {
+      id: true,
+      quizId: true,
+      expiresAt: true,
+      pausedAt: true,
+      pausedTotalMs: true,
+      extraMinutes: true,
+    },
+    take: 50,
+  });
+
+  let resumed = 0;
+  for (const attempt of overdue) {
+    const pausedTotalMs = attempt.pausedTotalMs + MAX_PAUSE_MS;
+    const horizonMinutes = attempt.extraMinutes + Math.ceil(pausedTotalMs / 60_000);
+    await prisma.quiz.updateMany({
+      where: { id: attempt.quizId, maxExtensionMinutes: { lt: horizonMinutes } },
+      data: { maxExtensionMinutes: horizonMinutes },
+    });
+    const { count } = await prisma.quizAttempt.updateMany({
+      where: {
+        id: attempt.id,
+        status: 'IN_PROGRESS',
+        pausedAt: attempt.pausedAt,
+        expiresAt: attempt.expiresAt,
+      },
+      data: {
+        expiresAt: new Date(attempt.expiresAt.getTime() + MAX_PAUSE_MS),
+        pausedAt: null,
+        pausedTotalMs,
+      },
+    });
+    if (count === 1) {
+      resumed += 1;
+      await audit({
+        action: 'admin.attempt_resumed',
+        entityType: 'QuizAttempt',
+        entityId: attempt.id,
+        metadata: { automatic: true, pausedMs: MAX_PAUSE_MS, pausedTotalMs },
+      });
+    }
+  }
+  return resumed;
+}
+
 export async function sweepExpiredAttempts() {
+  await resumeOverlongPauses();
   const stale = await prisma.quizAttempt.findMany({
     where: {
       status: 'IN_PROGRESS',

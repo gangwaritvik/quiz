@@ -12,6 +12,9 @@ export const MAX_EXTENSION_MINUTES = 120;
 /** Most extra minutes one attempt may accumulate across every grant. */
 export const MAX_TOTAL_EXTENSION_MINUTES = 180;
 
+/** Longest a pause can freeze the clock; after this the clock runs again by itself. */
+export const MAX_PAUSE_MS = 60 * 60_000;
+
 const MINUTE_MS = 60_000;
 
 /**
@@ -67,5 +70,10 @@ export function pauseAdjustedExpiresAt(
   now = new Date(),
 ): Date {
   if (!pausedAt) return expiresAt;
-  return new Date(expiresAt.getTime() + Math.max(0, now.getTime() - pausedAt.getTime()));
+  return new Date(expiresAt.getTime() + pauseShiftMs(pausedAt, now));
+}
+
+/** How far a pause that began at `pausedAt` moves the deadline: its length, up to the cap. */
+export function pauseShiftMs(pausedAt: Date, now = new Date()): number {
+  return Math.min(MAX_PAUSE_MS, Math.max(0, now.getTime() - pausedAt.getTime()));
 }

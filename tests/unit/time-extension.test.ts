@@ -8,7 +8,9 @@ import {
   effectiveEndsAt,
   extendExpiresAt,
   extensionRefusal,
+  MAX_PAUSE_MS,
   pauseAdjustedExpiresAt,
+  pauseShiftMs,
 } from '@/lib/time-extension';
 
 const MIN = 60_000;
@@ -116,13 +118,21 @@ describe('pauseAdjustedExpiresAt', () => {
     assert.equal(pauseAdjustedExpiresAt(deadline, null, at('2026-10-05T10:50:00Z')), deadline);
   });
 
-  test('a paused attempt keeps the same time remaining however long the pause lasts', () => {
+  test('a paused attempt keeps the same time remaining while the pause lasts', () => {
     const pausedAt = at('2026-10-05T10:30:00Z');
     const remainingAt = (now: string) =>
       pauseAdjustedExpiresAt(deadline, pausedAt, at(now)).getTime() - at(now).getTime();
     assert.equal(remainingAt('2026-10-05T10:30:00Z'), 30 * MIN);
     assert.equal(remainingAt('2026-10-05T10:45:00Z'), 30 * MIN);
-    assert.equal(remainingAt('2026-10-05T13:00:00Z'), 30 * MIN);
+  });
+
+  test('a pause stops moving the deadline after the cap, so the clock runs again', () => {
+    const pausedAt = at('2026-10-05T10:30:00Z');
+    const shift = (now: string) => pauseAdjustedExpiresAt(deadline, pausedAt, at(now)).getTime() - deadline.getTime();
+    assert.equal(shift('2026-10-05T11:00:00Z'), 30 * MIN);
+    assert.equal(shift('2026-10-05T11:30:00Z'), MAX_PAUSE_MS);
+    assert.equal(shift('2026-10-05T15:00:00Z'), MAX_PAUSE_MS);
+    assert.equal(pauseShiftMs(pausedAt, at('2026-10-05T10:20:00Z')), 0);
   });
 
   test('a pause that starts in the future (clock skew) does not move the deadline backwards', () => {

@@ -86,13 +86,21 @@ export type GradeOutcome =
  * accepted spellings.
  */
 export function normalizeAnswerText(value: string, caseSensitive: boolean): string {
-  const collapsed = value.trim().replace(/\s+/g, ' ');
+  const collapsed = value.normalize('NFC').trim().replace(/\s+/g, ' ');
   return caseSensitive ? collapsed : collapsed.toLowerCase();
 }
 
+const PLAIN_NUMBER = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
+
+/** A whole-string number: "2abc" and "2/3" are not numbers. */
+function parseNumber(text: string): number {
+  const trimmed = text.trim();
+  return PLAIN_NUMBER.test(trimmed) ? Number(trimmed) : Number.NaN;
+}
+
 function numericallyMatches(response: string, accepted: string, tolerance: number): boolean {
-  const given = Number.parseFloat(response);
-  const expected = Number.parseFloat(accepted);
+  const given = parseNumber(response);
+  const expected = parseNumber(accepted);
   if (!Number.isFinite(given) || !Number.isFinite(expected)) return false;
   return Math.abs(given - expected) <= tolerance;
 }

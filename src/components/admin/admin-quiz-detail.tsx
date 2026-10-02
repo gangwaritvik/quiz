@@ -35,7 +35,7 @@ import {
   type InstantQuestion,
   type SavedQuestion,
 } from '@/components/admin/instant-question-builder';
-import { describeMarking, type QuizMarkingValue } from '@/components/admin/marking-settings';
+import { type QuizMarkingValue } from '@/components/admin/marking-settings';
 import { QuizEditDialog } from '@/components/admin/quiz-edit-dialog';
 import { MathText } from '@/components/shared/math-text';
 import { ErrorState } from '@/components/shared/error-state';
@@ -101,23 +101,6 @@ interface QuizDetail {
   }>;
 }
 
-const SECURITY_LABELS: Record<string, string> = {
-  randomizeQuestions: 'Randomize questions',
-  randomizeOptions: 'Randomize options',
-  singleAttempt: 'One attempt only',
-  requireFullscreen: 'Fullscreen required',
-  detectTabSwitch: 'Detect tab switching',
-  blockCopyPaste: 'Disable copy/paste',
-  bindDeviceSession: 'Device/session binding',
-  cameraMonitoring: 'Camera monitoring',
-  microphoneMonitoring: 'Microphone monitoring',
-  lockQuestionNavigation: 'Lock question order',
-  blockMultipleDisplays: 'Single display required',
-  requireScreenShare: 'Screen share proctoring',
-  releaseResults: 'Results released',
-  releaseAnswers: 'Answers released',
-};
-
 export function AdminQuizDetail({ quizId }: { quizId: string }) {
   const { data, error, initialLoading, refetch } = useApi<QuizDetail>(
     `/api/admin/quizzes/${quizId}`,
@@ -159,10 +142,7 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
         <Skeleton className="mt-5 h-9 w-full max-w-md" />
         <Skeleton className="mt-3 h-4 w-full max-w-lg" />
         <Skeleton className="mt-8 h-20 w-full rounded-lg" />
-        <div className="mt-8 grid gap-8 min-[1340px]:grid-cols-[minmax(0,1fr)_300px]">
-          <Skeleton className="h-72 rounded-lg" />
-          <Skeleton className="h-72 rounded-lg" />
-        </div>
+        <Skeleton className="mt-8 h-72 rounded-lg" />
       </PageShell>
     );
   }
@@ -261,7 +241,7 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
         />
       </dl>
 
-      <div className="mt-8 grid gap-8 min-[1340px]:grid-cols-[minmax(0,1fr)_300px] min-[1340px]:items-start">
+      <div className="mt-8">
         <Tabs defaultValue="attempts" className="min-w-0">
           <TabsList aria-label="Quiz detail">
             <TabsTrigger value="attempts">
@@ -496,47 +476,6 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
           </TabsContent>
         </Tabs>
 
-        {/* One sheet for the quiz's standing facts, split by a hairline. */}
-        <aside className="divide-y divide-border rounded-lg border border-border bg-card">
-          <section className="p-5">
-            <h2 className="type-subheading font-sans">Security policy</h2>
-            <ul className="mt-3 space-y-2">
-              {Object.entries(SECURITY_LABELS).map(([key, label]) => {
-                const enabled = quiz.security[key];
-                return (
-                  <li key={key} className="flex items-center gap-2 text-sm">
-                    <span
-                      className={
-                        enabled
-                          ? 'flex size-4 shrink-0 items-center justify-center rounded-full bg-success-subtle text-success'
-                          : 'flex size-4 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground'
-                      }
-                      aria-hidden
-                    >
-                      {enabled ? (
-                        <Check className="size-2.5" strokeWidth={3.5} />
-                      ) : (
-                        <X className="size-2.5" strokeWidth={3} />
-                      )}
-                    </span>
-                    <span className={enabled ? 'text-foreground' : 'text-muted-foreground'}>
-                      {label}
-                    </span>
-                    <span className="sr-only">{enabled ? 'enabled' : 'disabled'}</span>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-          <section className="p-5">
-            <h2 className="type-subheading font-sans">Marking</h2>
-            <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-              {describeMarking(quiz.marking).map((line) => (
-                <li key={line}>{line}</li>
-              ))}
-            </ul>
-          </section>
-        </aside>
       </div>
 
       <QuizEditDialog

@@ -97,7 +97,6 @@ describe('matchesAcceptedAnswer', () => {
   });
   test(
     'trailing junk after a number is not accepted as the number',
-    { todo: 'numericallyMatches uses parseFloat, so "2/3" or "2abc" match accepted "2" (grading.ts numericallyMatches)' },
     () => {
       const num = { acceptedAnswers: ['2'], caseSensitive: false, numericTolerance: 0 };
       assert.equal(matchesAcceptedAnswer('2/3', num), false);
@@ -106,7 +105,6 @@ describe('matchesAcceptedAnswer', () => {
   );
   test(
     'canonically equivalent Unicode (NFC vs NFD) matches',
-    { todo: 'normalizeAnswerText never calls String.normalize(), so a decomposed "e + U+0301" fails against composed "é" (grading.ts normalizeAnswerText)' },
     () => {
       const accepted = { acceptedAnswers: ['café'], caseSensitive: false, numericTolerance: null };
       assert.equal(matchesAcceptedAnswer('café', accepted), true);

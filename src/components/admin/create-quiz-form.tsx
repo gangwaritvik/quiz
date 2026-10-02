@@ -1,15 +1,6 @@
 'use client';
 
-import {
-  AlertTriangle,
-  ArrowLeft,
-  Check,
-  Library,
-  PenLine,
-  Save,
-  Send,
-  Users,
-} from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, Library, PenLine, Save, Send, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
@@ -32,6 +23,7 @@ import {
   SecuritySettings,
   type QuizSecurity,
 } from '@/components/admin/security-settings';
+import { SectionChips } from '@/components/admin/section-chips';
 import { InlineError } from '@/components/shared/error-state';
 import { PageHeader, PageShell } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -119,9 +111,11 @@ export function CreateQuizForm() {
   const [security, setSecurity] = React.useState<QuizSecurity>(DEFAULT_SECURITY);
   const [marking, setMarking] = React.useState<QuizMarkingValue>(DEFAULT_MARKING);
   const [assignedIds, setAssignedIds] = React.useState<string[]>([]);
-  const [sectionFilter, setSectionFilter] = React.useState('ALL');
+  const [sectionFilter, setSectionFilter] = React.useState<string[]>([]);
   const [activeSection, setActiveSection] = React.useState<ReviewSection>('content');
-  const [reviewedSections, setReviewedSections] = React.useState<Set<ReviewSection>>(() => new Set());
+  const [reviewedSections, setReviewedSections] = React.useState<Set<ReviewSection>>(
+    () => new Set(),
+  );
 
   const [submitting, setSubmitting] = React.useState<'DRAFT' | 'PUBLISHED' | null>(null);
   const [errors, setErrors] = React.useState<Record<string, string[]>>(emptyErrors);
@@ -131,22 +125,26 @@ export function CreateQuizForm() {
   const students = studentData?.students ?? [];
 
   const sections = React.useMemo(() => {
-    const unique = new Set(students.map((student) => `${student.department} · ${student.section}`));
-    return [...unique].sort();
+    const counts = new Map<string, number>();
+    for (const student of students) {
+      const key = `${student.department} · ${student.section}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([label, count]) => ({ label, count }));
   }, [students]);
 
   const visibleStudents =
-    sectionFilter === 'ALL'
+    sectionFilter.length === 0
       ? students
-      : students.filter(
-          (student) => `${student.department} · ${student.section}` === sectionFilter,
+      : students.filter((student) =>
+          sectionFilter.includes(`${student.department} · ${student.section}`),
         );
 
   const fixedMode = sourceMode === 'FIXED';
   const pctTotal = easyPct + mediumPct + hardPct;
-  const requestedCount = fixedMode
-    ? questions.length
-    : Number.parseInt(questionCount, 10) || 0;
+  const requestedCount = fixedMode ? questions.length : Number.parseInt(questionCount, 10) || 0;
 
   // Pool sizing is checked as the teacher types, so publishing never fails for
   // a reason they could have seen earlier.
@@ -252,9 +250,7 @@ export function CreateQuizForm() {
         },
       });
 
-      toast.success(
-        status === 'PUBLISHED' ? 'Quiz published and assigned.' : 'Draft saved.',
-      );
+      toast.success(status === 'PUBLISHED' ? 'Quiz published and assigned.' : 'Draft saved.');
       router.push(`/admin/quizzes/${result.quizId}`);
     } catch (caught) {
       if (caught instanceof ApiClientError) {
@@ -291,11 +287,13 @@ export function CreateQuizForm() {
         <nav aria-label="Quiz setup" className="lg:sticky lg:top-28 lg:self-start">
           <p className="type-eyebrow mb-3 hidden lg:block">Quiz setup</p>
           <ol className="grid grid-cols-3 gap-1 rounded-lg border border-border bg-card p-1 lg:grid-cols-1 lg:gap-0.5 lg:border-0 lg:bg-transparent lg:p-0">
-            {([
-              ['content', 'Content', 'Paper and schedule'],
-              ['students', 'Students', 'Who sits it'],
-              ['security', 'Security', 'Rules and release'],
-            ] as const).map(([section, label, hint], index) => {
+            {(
+              [
+                ['content', 'Content', 'Paper and schedule'],
+                ['students', 'Students', 'Who sits it'],
+                ['security', 'Security', 'Rules and release'],
+              ] as const
+            ).map(([section, label, hint], index) => {
               const reviewed = section === 'content' || reviewedSections.has(section);
               const active = activeSection === section;
               return (
@@ -476,7 +474,10 @@ export function CreateQuizForm() {
                     showErrors={Boolean(errors.questions)}
                   />
                   {errors.questions ? (
-                    <p role="alert" className="mt-3 flex items-start gap-1.5 text-xs text-destructive">
+                    <p
+                      role="alert"
+                      className="mt-3 flex items-start gap-1.5 text-xs text-destructive"
+                    >
                       <AlertTriangle className="mt-px size-3.5 shrink-0" aria-hidden />
                       {errors.questions[0]}
                     </p>
@@ -576,7 +577,8 @@ export function CreateQuizForm() {
                   <div className="mt-8">
                     <p className="text-sm font-medium text-foreground">Difficulty distribution</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Must total 100%. Shortfalls in one band are backfilled from the rest of the pool.
+                      Must total 100%. Shortfalls in one band are backfilled from the rest of the
+                      pool.
                     </p>
 
                     <div className="mt-3 grid max-w-md grid-cols-3 gap-3">
@@ -624,8 +626,8 @@ export function CreateQuizForm() {
                   </Field>
                 </div>
                 <p className="mt-4 max-w-2xl text-xs leading-relaxed text-muted-foreground">
-                  A student&apos;s timer starts when they begin and is capped by the closing time, so a
-                  late start cannot run past the window.
+                  A student&apos;s timer starts when they begin and is capped by the closing time,
+                  so a late start cannot run past the window.
                 </p>
               </Section>
             </div>
@@ -644,10 +646,17 @@ export function CreateQuizForm() {
                   <InlineError message={studentsError.message} />
                 ) : students.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-border px-5 py-10 text-center">
-                    <Users className="mx-auto size-6 text-muted-foreground" strokeWidth={1.5} aria-hidden />
+                    <Users
+                      className="mx-auto size-6 text-muted-foreground"
+                      strokeWidth={1.5}
+                      aria-hidden
+                    />
                     <p className="mt-3 text-sm text-muted-foreground">
                       No students on the roster yet.{' '}
-                      <Link href="/admin/students" className="font-medium text-primary underline-offset-4 hover:underline">
+                      <Link
+                        href="/admin/students"
+                        className="font-medium text-primary underline-offset-4 hover:underline"
+                      >
                         Add students
                       </Link>{' '}
                       before publishing.
@@ -655,23 +664,12 @@ export function CreateQuizForm() {
                   </div>
                 ) : (
                   <>
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                      <div className="w-full sm:w-72">
-                        <Select value={sectionFilter} onValueChange={setSectionFilter}>
-                          <SelectTrigger aria-label="Filter by section">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="ALL">All sections</SelectItem>
-                            {sections.map((section) => (
-                              <SelectItem key={section} value={section}>
-                                {section}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-
+                    <SectionChips
+                      sections={sections}
+                      value={sectionFilter}
+                      onChange={setSectionFilter}
+                    />
+                    <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
                       <div className="flex items-center justify-between gap-3 sm:ml-auto sm:justify-end">
                         <Badge variant={assignedIds.length > 0 ? 'default' : 'muted'}>
                           <Users aria-hidden />
@@ -889,7 +887,10 @@ function Section({
       <div className="border-b border-border pb-3">
         <h2 id={id} className="type-heading flex items-baseline gap-3">
           {number ? (
-            <span className="tabular font-sans text-sm font-semibold text-muted-foreground" aria-hidden>
+            <span
+              className="tabular font-sans text-sm font-semibold text-muted-foreground"
+              aria-hidden
+            >
               {String(number).padStart(2, '0')}
             </span>
           ) : null}
@@ -961,7 +962,9 @@ function DifficultyInput({
           min={0}
           max={100}
           value={value}
-          onChange={(event) => onChange(Math.max(0, Math.min(100, Number(event.target.value) || 0)))}
+          onChange={(event) =>
+            onChange(Math.max(0, Math.min(100, Number(event.target.value) || 0)))
+          }
           className="tabular pr-8"
         />
         <span

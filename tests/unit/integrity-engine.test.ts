@@ -193,7 +193,6 @@ describe('computeIntegrity: determinism', () => {
 
   test(
     'breakdown order is independent of event order when penalties tie',
-    { todo: 'sort ties on (penalty, count) fall back to Map insertion order, i.e. event order (integrity-engine.ts computeIntegrity sort)' },
     () => {
       const a = computeIntegrity([ev('COPY_ATTEMPT'), ev('CUT_ATTEMPT')]);
       const b = computeIntegrity([ev('CUT_ATTEMPT'), ev('COPY_ATTEMPT')]);

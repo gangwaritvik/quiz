@@ -2,6 +2,7 @@ import { ApiError, assertSameOrigin, ok, parseBody, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
+import { pauseShiftMs } from '@/lib/time-extension';
 import { assertAttemptOwner } from '@/lib/ownership';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 import { getRequestContext } from '@/lib/session';
@@ -85,7 +86,7 @@ export const POST = route(async (request: Request, { params }: Params) => {
 
     // resume
     if (!attempt.pausedAt) throw new ApiError('CONFLICT', 'This attempt is not paused.');
-    const pausedMs = Math.max(0, now.getTime() - attempt.pausedAt.getTime());
+    const pausedMs = pauseShiftMs(attempt.pausedAt, now);
     const expiresAt = new Date(attempt.expiresAt.getTime() + pausedMs);
     const pausedTotalMs = attempt.pausedTotalMs + pausedMs;
 
