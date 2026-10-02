@@ -75,7 +75,8 @@ const NEUTRAL_EVENTS: ExamEventType[] = [
  * counted, which is a narrow, deliberate blind spot.
  */
 function isFilePickerBlur(event: { type: ExamEventType; metadata?: unknown }): boolean {
-  if (event.type !== 'WINDOW_BLUR') return false;
+  // A native file dialog also drops fullscreen, so that exit is annotated alike.
+  if (event.type !== 'WINDOW_BLUR' && event.type !== 'FULLSCREEN_EXIT') return false;
   const metadata = event.metadata;
   if (!metadata || typeof metadata !== 'object') return false;
   return (metadata as Record<string, unknown>).context === 'file-picker';
@@ -126,12 +127,22 @@ const HEADLINE_CLEAN_SIGNALS: ExamEventType[] = [
 
 export function computeIntegrity(
   events: Array<{ type: ExamEventType; durationMs?: number | null; metadata?: unknown }>,
+  /**
+   * How many file-picker-tagged events may be ignored. The tag is written by
+   * the student's browser, so the server caps it by what the attempt can
+   * evidence (see `filePickerAllowance`); events beyond it are scored as usual.
+   */
+  filePickerAllowance = Infinity,
 ): IntegrityComputation {
   const grouped = new Map<ExamEventType, { count: number; duration: number }>();
+  let exemptLeft = filePickerAllowance;
 
   for (const event of events) {
     if (NEUTRAL_EVENTS.includes(event.type)) continue;
-    if (isFilePickerBlur(event)) continue;
+    if (isFilePickerBlur(event) && exemptLeft > 0) {
+      exemptLeft -= 1;
+      continue;
+    }
     const entry = grouped.get(event.type) ?? { count: 0, duration: 0 };
     entry.count += 1;
     entry.duration += event.durationMs ?? 0;

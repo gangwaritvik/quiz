@@ -278,6 +278,14 @@ const granted = burst.filter((r) => r.status === 200).length;
 const row6 = await prisma.quizAttempt.findUnique({ where: { id: a6 }, select: { extraMinutes: true, expiresAt: true, startedAt: true } });
 check('(i) concurrent grants are applied once each, within the cap', granted >= 1 && row6.extraMinutes === granted * 60 && row6.extraMinutes <= 180, `granted=${granted} extra=${row6.extraMinutes} statuses=${burst.map((r) => r.status)}`);
 check('(i) deadline equals start + 30 + granted', row6.expiresAt.getTime() === row6.startedAt.getTime() + (30 + row6.extraMinutes) * 60_000);
+// fullscreen exits tagged as file-picker are forgiven only up to the server allowance (2 with no uploads)
+const pick = (n) => s6(`(i) ${n} file-picker fullscreen exits`, 'POST', `/api/exam/${a6}/events`, { events: Array.from({ length: n }, () => ({ type: 'FULLSCREEN_EXIT', metadata: { context: 'file-picker' } })) }, { expect: [200] });
+await pick(2);
+const rep2 = await fac('(i) integrity report after 2 tagged exits', 'GET', `/api/admin/integrity/${a6}`, undefined, { expect: [200] });
+check('(i) 2 file-picker exits are not scored', rep2.data?.integrity?.score === 100, JSON.stringify(rep2.data?.breakdown ?? rep2.data?.integrity ?? '').slice(0, 160));
+await pick(4);
+const rep6 = await fac('(i) integrity report after 6 tagged exits', 'GET', `/api/admin/integrity/${a6}`, undefined, { expect: [200] });
+check('(i) tagged exits past the allowance are scored', rep6.data?.integrity?.score < 100, JSON.stringify(rep6.data?.integrity ?? '').slice(0, 160));
 const q3 = await prisma.quiz.findUnique({ where: { id: quiz3 }, select: { maxExtensionMinutes: true } });
 check('(i) quiz release horizon is the largest extension (180)', q3.maxExtensionMinutes === 180, String(q3.maxExtensionMinutes));
 const audits = await prisma.auditLog.count({ where: { action: 'admin.time_extended' } });

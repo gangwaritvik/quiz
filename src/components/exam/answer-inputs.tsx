@@ -325,6 +325,8 @@ export function ImageAnswerInput({
   onPickerOpen: () => void;
 }) {
   const inputRef = React.useRef<HTMLInputElement | null>(null);
+  // Only put the student back in fullscreen if they were in it before the dialog.
+  const wasFullscreen = React.useRef(false);
   const atLimit = attachments.length >= maxAttachments;
 
   return (
@@ -344,6 +346,11 @@ export function ImageAnswerInput({
           // Reset first so choosing the same file twice still fires a change.
           event.target.value = '';
           if (file) onUpload(file);
+          // Choosing a file is a user gesture, so fullscreen can be re-entered
+          // now without a second click. If the browser refuses, the gate asks.
+          if (wasFullscreen.current && !document.fullscreenElement) {
+            void document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => undefined);
+          }
         }}
       />
 
@@ -393,6 +400,7 @@ export function ImageAnswerInput({
           onClick={() => {
             // Tell the security monitor a native dialog is about to take focus,
             // so the blur it causes is not read as leaving the exam.
+            wasFullscreen.current = Boolean(document.fullscreenElement);
             onPickerOpen();
             inputRef.current?.click();
           }}

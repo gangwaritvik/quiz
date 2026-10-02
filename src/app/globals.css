@@ -3,6 +3,11 @@
 @tailwind utilities;
 
 @layer base {
+  /* Keyboard focus must never land under the sticky exam header and notice banner. */
+  html {
+    scroll-padding-top: 8rem;
+  }
+
   /*
    * SecureQuiz design tokens — "Quiet Authority".
    *

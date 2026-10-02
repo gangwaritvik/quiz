@@ -25,6 +25,20 @@ export {
   type SignalBreakdown,
 } from '@/lib/integrity-engine';
 
+/**
+ * How many file-picker-tagged events an attempt may have ignored. Zero unless
+ * the paper has an image-answer question; otherwise a little slack for
+ * cancelled dialogs plus two per photo actually uploaded, so a tag cannot buy
+ * unlimited free exits without anything being uploaded.
+ */
+export async function filePickerAllowance(attemptId: string) {
+  const [imageQuestions, uploads] = await Promise.all([
+    prisma.attemptQuestion.count({ where: { attemptId, question: { type: 'IMAGE_ANSWER' } } }),
+    prisma.answerAttachment.count({ where: { answer: { attemptId } } }),
+  ]);
+  return imageQuestions === 0 ? 0 : 2 + 2 * uploads;
+}
+
 /** Recomputes and persists the integrity score for one attempt. */
 export async function recomputeIntegrityScore(attemptId: string) {
   const events = await prisma.examEvent.findMany({
@@ -34,7 +48,7 @@ export async function recomputeIntegrityScore(attemptId: string) {
     select: { type: true, durationMs: true, metadata: true },
   });
 
-  const computation = computeIntegrity(events);
+  const computation = computeIntegrity(events, await filePickerAllowance(attemptId));
 
   await prisma.integrityScore.upsert({
     where: { attemptId },

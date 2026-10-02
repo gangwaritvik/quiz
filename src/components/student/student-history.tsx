@@ -30,7 +30,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useApi } from '@/hooks/use-api';
-import { formatDateTime, pluralize } from '@/lib/utils';
+import { formatDateTime } from '@/lib/utils';
 
 interface HistoryAttempt {
   id: string;
@@ -47,7 +47,6 @@ interface HistoryAttempt {
   percentage: number | null;
   integrityScore: number | null;
   integrityStatus: IntegrityStatus | null;
-  eventCount: number;
 }
 
 const STATUS_LABEL: Record<
@@ -118,7 +117,6 @@ export function StudentHistory() {
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Score</TableHead>
                   <TableHead>Review</TableHead>
-                  <TableHead className="text-right">Events</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -142,9 +140,6 @@ export function StudentHistory() {
                     </TableCell>
                     <TableCell>
                       <AttemptIntegrity attempt={attempt} />
-                    </TableCell>
-                    <TableCell className="tabular text-right text-sm text-muted-foreground">
-                      {attempt.eventCount}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -173,8 +168,7 @@ export function StudentHistory() {
                   <AttemptIntegrity attempt={attempt} />
                 </div>
                 <p className="tabular mt-2 text-xs text-muted-foreground">
-                  Started {formatDateTime(attempt.startedAt)} ·{' '}
-                  {pluralize(attempt.eventCount, 'event')}
+                  Started {formatDateTime(attempt.startedAt)}
                 </p>
               </li>
             ))}

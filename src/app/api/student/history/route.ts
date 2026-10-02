@@ -19,7 +19,6 @@ export const GET = route(async () => {
     include: {
       quiz: { include: { subject: { select: { name: true, code: true } } } },
       integrity: { select: { score: true, status: true } },
-      _count: { select: { events: true } },
     },
     orderBy: { startedAt: 'desc' },
   });
@@ -48,7 +47,6 @@ export const GET = route(async () => {
         awaitingMarking: attempt.pendingManualCount > 0,
         integrityScore: attempt.integrity?.score ?? null,
         integrityStatus: attempt.integrity?.status ?? null,
-        eventCount: attempt._count.events,
       };
     }),
   });

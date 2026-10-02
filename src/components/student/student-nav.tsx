@@ -1,11 +1,12 @@
 'use client';
 
-import { Bell, Menu, X } from 'lucide-react';
+import { Bell, Menu, Moon, Sun, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import * as React from 'react';
 
 import { Logo } from '@/components/brand/logo';
+import { useTheme } from '@/components/providers';
 import { UserMenu } from '@/components/shared/user-menu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,6 +43,7 @@ interface DashboardSummary {
 }
 
 export function StudentNav({ user }: StudentNavProps) {
+  const { theme, toggleTheme } = useTheme();
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
@@ -144,6 +146,15 @@ export function StudentNav({ user }: StudentNavProps) {
             </DropdownMenuContent>
           </DropdownMenu>
 
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+            title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+          >
+            {theme === 'dark' ? <Sun /> : <Moon />}
+          </Button>
           <UserMenu user={user} role="STUDENT" />
 
           <Button

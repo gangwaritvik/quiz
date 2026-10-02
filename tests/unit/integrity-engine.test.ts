@@ -115,6 +115,20 @@ describe('computeIntegrity: tolerance and neutral events', () => {
     assert.equal(computeIntegrity(times(3, 'FACE_NOT_DETECTED')).score, 96);
   });
 
+  test('a fullscreen exit caused by a file picker is not scored, an ordinary one still is', () => {
+    const picker = computeIntegrity(times(5, 'FULLSCREEN_EXIT', { metadata: { context: 'file-picker' } }));
+    assert.equal(picker.score, 100);
+    assert.deepEqual(picker.breakdown, []);
+    assert.ok(computeIntegrity(times(1, 'FULLSCREEN_EXIT')).score < 100);
+  });
+
+  test('file-picker tags beyond the server allowance are scored like ordinary events', () => {
+    const tagged = times(6, 'FULLSCREEN_EXIT', { metadata: { context: 'file-picker' } });
+    assert.equal(computeIntegrity(tagged, 6).score, 100);
+    assert.ok(computeIntegrity(tagged, 2).score < 100);
+    assert.ok(computeIntegrity(tagged, 0).score < 100);
+  });
+
   test('blur while a file picker is open is not scored and not counted in the breakdown', () => {
     const out = computeIntegrity(times(10, 'WINDOW_BLUR', { metadata: { context: 'file-picker' } }));
     assert.equal(out.score, 100);

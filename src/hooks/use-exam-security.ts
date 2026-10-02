@@ -192,8 +192,11 @@ export function useExamSecurity({
           case 'TAB_SWITCH':
             return { ...current, tabSwitches: current.tabSwitches + 1 };
           case 'FULLSCREEN_EXIT':
+            // A file dialog closing fullscreen is not the student's doing.
+            if (options.metadata?.context === 'file-picker') return current;
             return { ...current, fullscreenExits: current.fullscreenExits + 1 };
           case 'WINDOW_BLUR':
+            if (options.metadata?.context === 'file-picker') return current;
             return { ...current, blurEvents: current.blurEvents + 1 };
           case 'COPY_ATTEMPT':
           case 'PASTE_ATTEMPT':
@@ -286,7 +289,13 @@ export function useExamSecurity({
       const isFullscreen = Boolean(document.fullscreenElement);
       setFullscreenActive(isFullscreen);
 
-      if (!isFullscreen && policy.requireFullscreen) {
+      if (!isFullscreen && policy.requireFullscreen && filePickerOpen.current) {
+        // The browser drops fullscreen when a native file dialog opens. Record
+        // it for faculty, annotated and unscored, but do not count it as an
+        // exit or warn the student; the gate asks them back in afterwards.
+        exitedAt = Date.now();
+        record('FULLSCREEN_EXIT', { metadata: { context: 'file-picker' } });
+      } else if (!isFullscreen && policy.requireFullscreen) {
         exitedAt = Date.now();
         // `record` owns the counter; the ref is what the callback reads, so the
         // notification never runs inside a state updater.
