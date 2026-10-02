@@ -133,7 +133,6 @@ Important ownership boundaries:
 - `/dashboard`: assigned quiz overview.
 - `/quizzes/[quizId]`: quiz details and start checks.
 - `/exam/[attemptId]`: distraction-reduced exam surface with no site chrome.
-- `/history`: prior attempts.
 - `/results/[attemptId]`: released result details.
 - `/profile`: profile and device/session management.
 

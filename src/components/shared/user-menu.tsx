@@ -51,7 +51,7 @@ export function UserMenu({ user, role }: UserMenuProps) {
       ? [user.rollNumber, user.section ? `Section ${user.section}` : null]
           .filter(Boolean)
           .join(' · ')
-      : user.department ?? 'Faculty';
+      : (user.department ?? 'Faculty');
 
   return (
     <DropdownMenu>
@@ -93,12 +93,14 @@ export function UserMenu({ user, role }: UserMenuProps) {
           </DropdownMenuItem>
         ) : null}
 
-        <DropdownMenuItem asChild>
-          <Link href={role === 'STUDENT' ? '/history' : '/admin/integrity'}>
-            <ShieldCheck />
-            {role === 'STUDENT' ? 'Integrity status' : 'Integrity reports'}
-          </Link>
-        </DropdownMenuItem>
+        {role !== 'STUDENT' ? (
+          <DropdownMenuItem asChild>
+            <Link href="/admin/integrity">
+              <ShieldCheck />
+              Integrity reports
+            </Link>
+          </DropdownMenuItem>
+        ) : null}
 
         <DropdownMenuSeparator />
         <DropdownMenuItem destructive disabled={signingOut} onSelect={() => void signOut()}>

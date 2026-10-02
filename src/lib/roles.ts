@@ -13,7 +13,6 @@ export const PROTECTED_PREFIXES: Array<{ prefix: string; role: Role }> = [
   { prefix: '/quizzes', role: 'STUDENT' },
   { prefix: '/exam', role: 'STUDENT' },
   { prefix: '/results', role: 'STUDENT' },
-  { prefix: '/history', role: 'STUDENT' },
   { prefix: '/profile', role: 'STUDENT' },
 ];
 

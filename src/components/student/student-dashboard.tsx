@@ -159,7 +159,7 @@ export function StudentDashboard() {
             description="You have nothing scheduled at the moment. New quizzes assigned by your faculty will appear here automatically."
             action={
               <Button asChild variant="outline">
-                <Link href="/history">Review past attempts</Link>
+                <Link href="/results">View my results</Link>
               </Button>
             }
           />

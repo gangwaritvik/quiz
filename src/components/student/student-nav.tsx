@@ -24,7 +24,6 @@ const LINKS = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/quizzes', label: 'My Quizzes' },
   { href: '/results', label: 'Results' },
-  { href: '/history', label: 'Exam History' },
   { href: '/profile', label: 'Profile' },
 ];
 
