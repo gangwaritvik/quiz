@@ -1,7 +1,18 @@
 'use client';
 
-import { CheckCircle2, ClipboardCheck, Clock3, PenLine, RefreshCw } from 'lucide-react';
+import {
+  CheckCircle2,
+  ClipboardCheck,
+  Clock3,
+  ListChecks,
+  PenLine,
+  RefreshCw,
+  Search,
+  SearchX,
+  X,
+} from 'lucide-react';
 import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
 
 import { ErrorState } from '@/components/shared/error-state';
@@ -9,7 +20,9 @@ import { PageHeader, PageShell } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton, SkeletonRows } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -21,7 +34,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useApi } from '@/hooks/use-api';
-import { formatDateTime } from '@/lib/utils';
+import { cn, formatDateTime } from '@/lib/utils';
 
 interface QueueAttempt {
   attemptId: string;
@@ -39,8 +52,21 @@ interface QueueResponse {
   page: number;
   pageCount: number;
   summary: { attemptsPending: number; answersPending: number };
+  quizzes: Array<{ id: string; title: string; pending: number }>;
   attempts: QueueAttempt[];
 }
+
+const ALL = 'ALL';
+
+const SORTS = {
+  oldest: 'Longest waiting',
+  newest: 'Newest first',
+  student: 'Roll number (A–Z)',
+  quiz: 'Quiz title (A–Z)',
+} as const;
+type Sort = keyof typeof SORTS;
+const isSort = (value: string | null): value is Sort =>
+  value !== null && (Object.keys(SORTS) as string[]).includes(value);
 
 /** "Waiting 3 days" / "Waiting 5 hours" for an attempt still needing marks. */
 function waiting(a: QueueAttempt) {
@@ -57,31 +83,113 @@ function waiting(a: QueueAttempt) {
  * attempt containing one waits here. Until it is marked the student's score is
  * provisional, which is why the queue leads with how many people are waiting
  * rather than with how much work is outstanding.
+ *
+ * Filters, sort and page live in the URL, so refresh and back/forward keep them.
  */
 export function GradingQueue() {
-  const [page, setPage] = React.useState(1);
-  const [includeCompleted, setIncludeCompleted] = React.useState(false);
+  // useSearchParams needs a Suspense boundary above it.
+  return (
+    <React.Suspense
+      fallback={
+        <PageShell>
+          <SkeletonRows rows={5} />
+        </PageShell>
+      }
+    >
+      <GradingQueueView />
+    </React.Suspense>
+  );
+}
+
+function GradingQueueView() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const q = (searchParams.get('q') ?? '').slice(0, 60);
+  const quizId = searchParams.get('quizId') ?? '';
+  const sortParam = searchParams.get('sort');
+  const sort: Sort = isSort(sortParam) ? sortParam : 'oldest';
+  const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '', 10) || 1);
+  const includeCompleted = searchParams.get('includeCompleted') === 'true';
+
+  /** Empty string removes the key. Anything but a page change goes back to page 1. */
+  const setParams = React.useCallback(
+    (patch: Record<string, string>) => {
+      const next = new URLSearchParams(searchParams.toString());
+      if (!('page' in patch)) next.delete('page');
+      for (const [key, value] of Object.entries(patch)) {
+        if (value) next.set(key, value);
+        else next.delete(key);
+      }
+      const qs = next.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
+
+  // The search box types ahead of the URL. `written` is the last value the two
+  // agreed on, so the URL echoing our own write never overwrites newer typing,
+  // while Clear or a link to the bare page does reset the box.
+  const [search, setSearch] = React.useState(q);
+  const written = React.useRef(q);
+  React.useEffect(() => {
+    if (q !== written.current) {
+      written.current = q;
+      setSearch(q);
+    }
+  }, [q]);
+  React.useEffect(() => {
+    const next = search.trim();
+    if (next === written.current) return;
+    const timer = window.setTimeout(() => {
+      written.current = next;
+      setParams({ q: next });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [search, setParams]);
 
   const query = React.useMemo(() => {
-    const params = new URLSearchParams({ page: String(page), pageSize: '20' });
+    const params = new URLSearchParams({ page: String(page), pageSize: '20', sort });
+    if (q) params.set('q', q);
+    if (quizId) params.set('quizId', quizId);
     if (includeCompleted) params.set('includeCompleted', 'true');
     return `/api/admin/grading?${params.toString()}`;
-  }, [page, includeCompleted]);
+  }, [page, sort, q, quizId, includeCompleted]);
 
   const { data, error, initialLoading, loading, refetch } = useApi<QueueResponse>(query);
   const attempts = data?.attempts ?? [];
+  const quizzes = data?.quizzes ?? [];
 
-  // Group by quiz (groups ordered by their oldest submission), oldest first within each.
+  // A page that no longer exists (a stale link, or the last row was just marked).
+  React.useEffect(() => {
+    if (data && data.page === page && page > data.pageCount) {
+      setParams({ page: data.pageCount > 1 ? String(data.pageCount) : '' });
+    }
+  }, [data, page, setParams]);
+
+  // Group by quiz in the order the server sent them, so the sort decides the
+  // group order too: for "longest waiting" that is the oldest waiting attempt
+  // first. A roll-number sort is a flat list; grouping would only fight it.
   const groups = React.useMemo(() => {
-    const at = (a: QueueAttempt) => (a.submittedAt ? new Date(a.submittedAt).getTime() : Infinity);
+    if (sort === 'student') return null;
     const byQuiz = new Map<string, { quiz: QueueAttempt['quiz']; rows: QueueAttempt[] }>();
-    for (const a of [...(data?.attempts ?? [])].sort((x, y) => at(x) - at(y))) {
+    for (const a of data?.attempts ?? []) {
       const group = byQuiz.get(a.quiz.id) ?? { quiz: a.quiz, rows: [] };
       group.rows.push(a);
       byQuiz.set(a.quiz.id, group);
     }
     return [...byQuiz.values()];
-  }, [data]);
+  }, [data, sort]);
+
+  const filtered = q !== '' || quizId !== '';
+  const dirty = filtered || sort !== 'oldest' || includeCompleted;
+
+  const clearFilters = () => {
+    written.current = '';
+    setSearch('');
+    router.replace(pathname, { scroll: false });
+  };
 
   if (error && !data) {
     return (
@@ -97,10 +205,24 @@ export function GradingQueue() {
         title="Marking"
         description="Descriptive and uploaded answers need a person. Scores stay provisional until you have marked them."
         actions={
-          <Button variant="outline" onClick={() => void refetch()} loading={loading}>
-            <RefreshCw />
-            Refresh
-          </Button>
+          <>
+            <Button asChild variant="outline">
+              <Link
+                href={
+                  quizId
+                    ? `/admin/grading/questions?quizId=${encodeURIComponent(quizId)}`
+                    : '/admin/grading/questions'
+                }
+              >
+                <ListChecks />
+                Mark by question
+              </Link>
+            </Button>
+            <Button variant="outline" onClick={() => void refetch()} loading={loading}>
+              <RefreshCw />
+              Refresh
+            </Button>
+          </>
         }
       />
 
@@ -128,10 +250,7 @@ export function GradingQueue() {
           <Switch
             id="include-completed"
             checked={includeCompleted}
-            onCheckedChange={(value) => {
-              setIncludeCompleted(value);
-              setPage(1);
-            }}
+            onCheckedChange={(value) => setParams({ includeCompleted: value ? 'true' : '' })}
           />
           <Label htmlFor="include-completed" className="cursor-pointer text-sm font-normal">
             Include attempts I have already finished marking
@@ -139,27 +258,102 @@ export function GradingQueue() {
         </div>
       </div>
 
+      <div
+        role="search"
+        aria-label="Filter the marking queue"
+        className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.6fr)_repeat(2,minmax(0,1fr))_6rem] lg:items-end"
+      >
+        <div className="space-y-2 sm:col-span-2 lg:col-span-1">
+          <Label htmlFor="queue-search">Search</Label>
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              id="queue-search"
+              type="search"
+              value={search}
+              maxLength={60}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Student name or roll number"
+              className="pl-9"
+            />
+          </div>
+        </div>
+
+        <FilterSelect
+          id="queue-quiz"
+          label="Quiz"
+          value={quizId || ALL}
+          onChange={(value) => setParams({ quizId: value === ALL ? '' : value })}
+          options={[
+            { value: ALL, label: 'All my quizzes' },
+            ...quizzes.map((entry) => ({
+              value: entry.id,
+              label: `${entry.title} (${entry.pending})`,
+            })),
+          ]}
+        />
+
+        <FilterSelect
+          id="queue-sort"
+          label="Sort by"
+          value={sort}
+          onChange={(value) => setParams({ sort: value === 'oldest' ? '' : value })}
+          options={(Object.keys(SORTS) as Sort[]).map((value) => ({
+            value,
+            label: SORTS[value],
+          }))}
+        />
+
+        <div className={cn('sm:col-span-2 lg:col-span-1', !dirty && 'hidden lg:block')}>
+          {dirty ? (
+            <Button variant="ghost" onClick={clearFilters}>
+              <X />
+              Clear
+            </Button>
+          ) : null}
+        </div>
+      </div>
+
       {initialLoading ? (
         <SkeletonRows rows={5} className="mt-5" />
       ) : attempts.length === 0 ? (
         <div className="mt-5">
-          <EmptyState
-            icon={CheckCircle2}
-            tone="success"
-            title="Nothing waiting to be marked"
-            description="Descriptive and image answers appear here as soon as a student submits one. Everything else is marked automatically at submission."
-          />
+          {filtered ? (
+            <EmptyState
+              icon={SearchX}
+              title="No attempts match these filters"
+              description="Try another name or roll number, a different quiz, or clear the filters to see the whole queue."
+              action={
+                <Button variant="outline" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              }
+            />
+          ) : (
+            <EmptyState
+              icon={CheckCircle2}
+              tone="success"
+              title="Nothing waiting to be marked"
+              description="Descriptive and image answers appear here as soon as a student submits one. Everything else is marked automatically at submission."
+            />
+          )}
         </div>
       ) : (
-        <>
+        <div
+          aria-busy={loading || undefined}
+          className={cn('transition-opacity duration-fast', loading && 'opacity-60')}
+        >
           <div className="mt-5 rounded-lg border border-border bg-card">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Student</TableHead>
-                  <TableHead className="hidden xl:table-cell">Quiz</TableHead>
-                  <TableHead className="hidden xl:table-cell">Submitted</TableHead>
-                  <TableHead className="hidden text-right xl:table-cell">Marked so far</TableHead>
+                  <TableHead className="hidden min-[1340px]:table-cell">Quiz</TableHead>
+                  <TableHead className="hidden min-[1340px]:table-cell">Submitted</TableHead>
+                  <TableHead className="hidden text-right min-[1340px]:table-cell">Marked so far</TableHead>
                   <TableHead>Outstanding</TableHead>
                   <TableHead className="text-right">
                     <span className="sr-only">Action</span>
@@ -167,90 +361,43 @@ export function GradingQueue() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {groups.map(({ quiz, rows }) => (
-                  <React.Fragment key={quiz.id}>
-                    <TableRow className="bg-muted/50 hover:bg-muted/50">
-                      <TableCell colSpan={6} className="py-2">
-                        <span className="text-sm font-semibold">{quiz.title}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {' · '}
-                          {quiz.subject} ·{' '}
-                          <span className="tabular">
-                            {rows.reduce((sum, row) => sum + row.pendingCount, 0)}
-                          </span>{' '}
-                          to mark
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                    {rows.map((attempt) => (
-                  <TableRow key={attempt.attemptId}>
-                    <TableCell className="max-w-[18rem]">
-                      <p className="text-sm font-medium">{attempt.student.name}</p>
-                      <p className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-                        {attempt.student.rollNumber} · Section {attempt.student.section}
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground xl:hidden">
-                        {attempt.quiz.title} ·{' '}
-                        <span className="tabular">
-                          {attempt.score ?? 0} / {attempt.maxScore ?? 0}
-                        </span>
-                      </p>
-                      <p className="mt-0.5 text-xs text-muted-foreground xl:hidden">
-                        {waiting(attempt)}
-                      </p>
-                    </TableCell>
-                    <TableCell className="hidden max-w-[18rem] xl:table-cell">
-                      <p className="truncate text-sm">{attempt.quiz.title}</p>
-                      <p className="text-xs text-muted-foreground">{attempt.quiz.subject}</p>
-                    </TableCell>
-                    <TableCell className="hidden whitespace-nowrap text-sm text-muted-foreground xl:table-cell">
-                      {attempt.submittedAt ? formatDateTime(attempt.submittedAt) : '—'}
-                      {waiting(attempt)}
-                    </TableCell>
-                    <TableCell className="tabular hidden whitespace-nowrap text-right text-sm xl:table-cell">
-                      {attempt.score ?? 0} / {attempt.maxScore ?? 0}
-                    </TableCell>
-                    <TableCell className="whitespace-nowrap">
-                      {attempt.pendingCount > 0 ? (
-                        <Badge variant="warning">
-                          <Clock3 aria-hidden />
-                          <span className="tabular">{attempt.pendingCount}</span> to mark
-                        </Badge>
-                      ) : (
-                        <Badge variant="success">
-                          <CheckCircle2 aria-hidden />
-                          Done
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button asChild variant="outline">
-                        <Link
-                          href={`/admin/grading/${attempt.attemptId}`}
-                          aria-label={`${attempt.pendingCount > 0 ? 'Mark' : 'Review'} ${attempt.student.name}'s attempt`}
-                        >
-                          <ClipboardCheck />
-                          {attempt.pendingCount > 0 ? 'Mark' : 'Review'}
-                        </Link>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
+                {groups
+                  ? groups.map(({ quiz, rows }) => (
+                      <React.Fragment key={quiz.id}>
+                        <TableRow className="bg-muted/50 hover:bg-muted/50">
+                          <TableCell colSpan={6} className="py-2">
+                            <span className="text-sm font-semibold">{quiz.title}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {' · '}
+                              {quiz.subject} ·{' '}
+                              <span className="tabular">
+                                {rows.reduce((sum, row) => sum + row.pendingCount, 0)}
+                              </span>{' '}
+                              to mark
+                            </span>
+                          </TableCell>
+                        </TableRow>
+                        {rows.map((attempt) => (
+                          <AttemptRow key={attempt.attemptId} attempt={attempt} />
+                        ))}
+                      </React.Fragment>
+                    ))
+                  : attempts.map((attempt) => (
+                      <AttemptRow key={attempt.attemptId} attempt={attempt} />
                     ))}
-                  </React.Fragment>
-                ))}
               </TableBody>
             </Table>
           </div>
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground" aria-live="polite">
               Showing {attempts.length} of {data?.total ?? 0} attempts
             </p>
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 disabled={page <= 1 || loading}
-                onClick={() => setPage((value) => Math.max(1, value - 1))}
+                onClick={() => setParams({ page: page > 2 ? String(page - 1) : '' })}
               >
                 Previous
               </Button>
@@ -260,14 +407,101 @@ export function GradingQueue() {
               <Button
                 variant="outline"
                 disabled={page >= (data?.pageCount ?? 1) || loading}
-                onClick={() => setPage((value) => value + 1)}
+                onClick={() => setParams({ page: String(page + 1) })}
               >
                 Next
               </Button>
             </div>
           </div>
-        </>
+        </div>
       )}
     </PageShell>
+  );
+}
+
+function FilterSelect({
+  id,
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+}) {
+  return (
+    <div className="min-w-0 space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger id={id}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function AttemptRow({ attempt }: { attempt: QueueAttempt }) {
+  return (
+    <TableRow>
+      <TableCell className="max-w-[18rem]">
+        <p className="text-sm font-medium">{attempt.student.name}</p>
+        <p className="whitespace-nowrap font-mono text-xs text-muted-foreground">
+          {attempt.student.rollNumber} · Section {attempt.student.section}
+        </p>
+        <p className="mt-0.5 truncate text-xs text-muted-foreground min-[1340px]:hidden">
+          {attempt.quiz.title} ·{' '}
+          <span className="tabular">
+            {attempt.score ?? 0} / {attempt.maxScore ?? 0}
+          </span>
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground min-[1340px]:hidden">{waiting(attempt)}</p>
+      </TableCell>
+      <TableCell className="hidden max-w-[18rem] min-[1340px]:table-cell">
+        <p className="truncate text-sm">{attempt.quiz.title}</p>
+        <p className="text-xs text-muted-foreground">{attempt.quiz.subject}</p>
+      </TableCell>
+      <TableCell className="hidden whitespace-nowrap text-sm text-muted-foreground min-[1340px]:table-cell">
+        {attempt.submittedAt ? formatDateTime(attempt.submittedAt) : '—'}
+        {waiting(attempt)}
+      </TableCell>
+      <TableCell className="tabular hidden whitespace-nowrap text-right text-sm min-[1340px]:table-cell">
+        {attempt.score ?? 0} / {attempt.maxScore ?? 0}
+      </TableCell>
+      <TableCell className="whitespace-nowrap">
+        {attempt.pendingCount > 0 ? (
+          <Badge variant="warning">
+            <Clock3 aria-hidden />
+            <span className="tabular">{attempt.pendingCount}</span> to mark
+          </Badge>
+        ) : (
+          <Badge variant="success">
+            <CheckCircle2 aria-hidden />
+            Done
+          </Badge>
+        )}
+      </TableCell>
+      <TableCell className="text-right">
+        <Button asChild variant="outline">
+          <Link
+            href={`/admin/grading/${attempt.attemptId}`}
+            aria-label={`${attempt.pendingCount > 0 ? 'Mark' : 'Review'} ${attempt.student.name}'s attempt`}
+          >
+            <ClipboardCheck />
+            {attempt.pendingCount > 0 ? 'Mark' : 'Review'}
+          </Link>
+        </Button>
+      </TableCell>
+    </TableRow>
   );
 }

@@ -13,6 +13,7 @@ import {
   identifierSchema,
   importQuestionsSchema,
   importStudentsSchema,
+  integrityQueueSchema,
   otpRequestSchema,
   otpVerifySchema,
   paginationSchema,
@@ -370,4 +371,80 @@ describe('query-param schemas', () => {
       assert.equal(gradingQueueSchema.parse({ includeCompleted: 'false' }).includeCompleted, false);
     },
   );
+});
+
+describe('marking queue query schema', () => {
+  test('defaults: longest-waiting first, no search, no quiz, page 1', () => {
+    assert.deepEqual(gradingQueueSchema.parse({}), {
+      page: 1,
+      pageSize: 20,
+      q: '',
+      sort: 'oldest',
+      includeCompleted: false,
+    });
+  });
+  test('accepts every sort, and unknown sorts fall back instead of failing', () => {
+    for (const sort of ['oldest', 'newest', 'student', 'quiz']) {
+      assert.equal(gradingQueueSchema.parse({ sort }).sort, sort);
+    }
+    assert.equal(gradingQueueSchema.parse({ sort: 'random' }).sort, 'oldest');
+    assert.equal(gradingQueueSchema.parse({ sort: 'NEWEST' }).sort, 'oldest');
+    assert.equal(gradingQueueSchema.parse({ sort: '' }).sort, 'oldest');
+  });
+  test('q is trimmed, capped at 60 characters, and oversized input is rejected', () => {
+    assert.equal(gradingQueueSchema.parse({ q: '  23cse041  ' }).q, '23cse041');
+    assert.equal(gradingQueueSchema.parse({ q: '   ' }).q, '');
+    assert.ok(accepts(gradingQueueSchema, { q: 'a'.repeat(60) }));
+    assert.ok(rejects(gradingQueueSchema, { q: 'a'.repeat(61) }));
+  });
+  test('a malformed quizId is ignored, a cuid-shaped one is kept', () => {
+    assert.equal(gradingQueueSchema.parse({ quizId: id() }).quizId, id());
+    assert.equal(gradingQueueSchema.parse({ quizId: 'nope' }).quizId, undefined);
+    assert.equal(gradingQueueSchema.parse({ quizId: '' }).quizId, undefined);
+    assert.equal(gradingQueueSchema.parse({ quizId: "x' OR 1=1 --" }).quizId, undefined);
+  });
+  test('page and pageSize keep their bounds alongside the new params', () => {
+    assert.deepEqual(
+      gradingQueueSchema.parse({ page: '3', pageSize: '100', sort: 'student', q: 'asha' }),
+      { page: 3, pageSize: 100, q: 'asha', sort: 'student', includeCompleted: false },
+    );
+    assert.ok(rejects(gradingQueueSchema, { page: '0' }));
+    assert.ok(rejects(gradingQueueSchema, { pageSize: '101' }));
+    assert.ok(rejects(gradingQueueSchema, { pageSize: '0' }));
+  });
+});
+
+describe('integrity queue query schema', () => {
+  test('defaults: needs review, unreviewed, highest risk first', () => {
+    assert.deepEqual(integrityQueueSchema.parse({}), {
+      status: 'needs-review',
+      reviewed: 'unreviewed',
+      sort: 'risk',
+      q: '',
+    });
+  });
+  test('accepts every status, reviewed state and sort', () => {
+    for (const status of ['all', 'needs-review', 'high-risk', 'normal']) {
+      assert.equal(integrityQueueSchema.parse({ status }).status, status);
+    }
+    for (const reviewed of ['all', 'unreviewed', 'reviewed']) {
+      assert.equal(integrityQueueSchema.parse({ reviewed }).reviewed, reviewed);
+    }
+    for (const sort of ['risk', 'newest', 'oldest', 'student']) {
+      assert.equal(integrityQueueSchema.parse({ sort }).sort, sort);
+    }
+  });
+  test('unknown values fall back to the defaults, including the old upper-case ones', () => {
+    const out = integrityQueueSchema.parse({ status: 'HIGH_RISK', reviewed: 'true', sort: 'score' });
+    assert.equal(out.status, 'needs-review');
+    assert.equal(out.reviewed, 'unreviewed');
+    assert.equal(out.sort, 'risk');
+  });
+  test('q is capped at 60 characters; quizId is cuid-shaped or ignored', () => {
+    assert.equal(integrityQueueSchema.parse({ q: ' Asha ' }).q, 'Asha');
+    assert.ok(accepts(integrityQueueSchema, { q: 'a'.repeat(60) }));
+    assert.ok(rejects(integrityQueueSchema, { q: 'a'.repeat(61) }));
+    assert.equal(integrityQueueSchema.parse({ quizId: id(2) }).quizId, id(2));
+    assert.equal(integrityQueueSchema.parse({ quizId: 'short' }).quizId, undefined);
+  });
 });

@@ -147,7 +147,7 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
         <Skeleton className="mt-5 h-9 w-full max-w-md" />
         <Skeleton className="mt-3 h-4 w-full max-w-lg" />
         <Skeleton className="mt-8 h-20 w-full rounded-lg" />
-        <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="mt-8 grid gap-8 min-[1340px]:grid-cols-[minmax(0,1fr)_300px]">
           <Skeleton className="h-72 rounded-lg" />
           <Skeleton className="h-72 rounded-lg" />
         </div>
@@ -221,7 +221,7 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
         />
       </dl>
 
-      <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-start">
+      <div className="mt-8 grid gap-8 min-[1340px]:grid-cols-[minmax(0,1fr)_300px] min-[1340px]:items-start">
         <Tabs defaultValue="attempts" className="min-w-0">
           <TabsList aria-label="Quiz detail">
             <TabsTrigger value="attempts">
@@ -271,7 +271,7 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
                       <TableHead>Student</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Score</TableHead>
-                      <TableHead className="hidden xl:table-cell">Integrity</TableHead>
+                      <TableHead className="hidden 2xl:table-cell">Integrity</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -284,7 +284,7 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
                             {attempt.rollNumber}
                           </p>
                           {attempt.integrityStatus ? (
-                            <div className="mt-1 xl:hidden">
+                            <div className="mt-1 2xl:hidden">
                               <IntegrityBadge
                                 status={attempt.integrityStatus}
                                 score={attempt.integrityScore}
@@ -322,7 +322,7 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
                             </>
                           )}
                         </TableCell>
-                        <TableCell className="hidden xl:table-cell">
+                        <TableCell className="hidden 2xl:table-cell">
                           {attempt.integrityStatus ? (
                             <IntegrityBadge
                               status={attempt.integrityStatus}
@@ -349,7 +349,7 @@ export function AdminQuizDetail({ quizId }: { quizId: string }) {
                                 aria-label={`Integrity report for ${attempt.studentName}`}
                               >
                                 <ShieldAlert />
-                                <span className="hidden xl:inline">Integrity</span>
+                                <span className="hidden 2xl:inline">Integrity</span>
                               </Link>
                             </Button>
                           </div>

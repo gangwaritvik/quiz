@@ -244,10 +244,10 @@ export function AdminQuizList() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Quiz</TableHead>
-                  <TableHead className="hidden xl:table-cell">Window</TableHead>
-                  <TableHead className="hidden xl:table-cell">Security</TableHead>
-                  <TableHead className="hidden text-right xl:table-cell">Assigned</TableHead>
-                  <TableHead className="hidden text-right xl:table-cell">Attempts</TableHead>
+                  <TableHead className="hidden min-[1340px]:table-cell">Window</TableHead>
+                  <TableHead className="hidden min-[1340px]:table-cell">Security</TableHead>
+                  <TableHead className="hidden text-right min-[1340px]:table-cell">Assigned</TableHead>
+                  <TableHead className="hidden text-right min-[1340px]:table-cell">Attempts</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -269,23 +269,23 @@ export function AdminQuizList() {
                           questions · <span className="tabular">{quiz.durationMinutes}</span> min
                         </span>
                       </div>
-                      <p className="tabular mt-1 text-xs text-muted-foreground xl:hidden">
+                      <p className="tabular mt-1 text-xs text-muted-foreground min-[1340px]:hidden">
                         {formatDateTime(quiz.startsAt)} to {formatDateTime(quiz.endsAt)} ·{' '}
                         {quiz.assignedCount} assigned · {quiz.attemptCount} attempt{quiz.attemptCount === 1 ? '' : 's'}
                       </p>
                     </TableCell>
 
-                    <TableCell className="tabular hidden whitespace-nowrap text-xs text-muted-foreground xl:table-cell">
+                    <TableCell className="tabular hidden whitespace-nowrap text-xs text-muted-foreground min-[1340px]:table-cell">
                       <p>{formatDateTime(quiz.startsAt)}</p>
                       <p className="mt-0.5">to {formatDateTime(quiz.endsAt)}</p>
                     </TableCell>
 
-                    <TableCell className="hidden xl:table-cell">
+                    <TableCell className="hidden min-[1340px]:table-cell">
                       <SecurityPills security={quiz.security} />
                     </TableCell>
 
-                    <TableCell className="tabular hidden text-right xl:table-cell">{quiz.assignedCount}</TableCell>
-                    <TableCell className="tabular hidden text-right xl:table-cell">{quiz.attemptCount}</TableCell>
+                    <TableCell className="tabular hidden text-right min-[1340px]:table-cell">{quiz.assignedCount}</TableCell>
+                    <TableCell className="tabular hidden text-right min-[1340px]:table-cell">{quiz.attemptCount}</TableCell>
 
                     <TableCell>
                       <StatusBadge quiz={quiz} />

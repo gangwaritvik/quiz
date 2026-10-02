@@ -358,9 +358,9 @@ export function QuestionBank() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Question</TableHead>
-                  <TableHead className="hidden xl:table-cell">Subject</TableHead>
+                  <TableHead className="hidden min-[1340px]:table-cell">Subject</TableHead>
                   <TableHead>Difficulty</TableHead>
-                  <TableHead className="hidden xl:table-cell">Type</TableHead>
+                  <TableHead className="hidden min-[1340px]:table-cell">Type</TableHead>
                   <TableHead className="text-right">Used</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -379,12 +379,12 @@ export function QuestionBank() {
                       <p className="mt-1 text-xs text-muted-foreground">
                         <QuestionFacts question={question} />
                       </p>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground xl:hidden">
+                      <p className="mt-0.5 truncate text-xs text-muted-foreground min-[1340px]:hidden">
                         {question.subject} · {question.topic ?? 'No topic'} ·{' '}
                         {QUESTION_TYPE_LABEL[question.type]}
                       </p>
                     </TableCell>
-                    <TableCell className="hidden max-w-[12rem] xl:table-cell">
+                    <TableCell className="hidden max-w-[12rem] min-[1340px]:table-cell">
                       <p className="truncate text-sm">{question.subject}</p>
                       <p className="truncate text-xs text-muted-foreground">
                         {question.topic ?? 'No topic'}
@@ -393,7 +393,7 @@ export function QuestionBank() {
                     <TableCell>
                       <DifficultyBadge difficulty={question.difficulty} />
                     </TableCell>
-                    <TableCell className="hidden whitespace-nowrap text-sm text-muted-foreground xl:table-cell">
+                    <TableCell className="hidden whitespace-nowrap text-sm text-muted-foreground min-[1340px]:table-cell">
                       {QUESTION_TYPE_LABEL[question.type]}
                     </TableCell>
                     <TableCell className="tabular text-right text-sm">

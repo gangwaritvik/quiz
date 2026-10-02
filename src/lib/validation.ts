@@ -484,12 +484,26 @@ export const questionFilterSchema = paginationSchema.extend({
 
 /** Filters for the manual grading queue. */
 export const gradingQueueSchema = paginationSchema.extend({
-  quizId: z.string().optional(),
+  /** A malformed id is ignored; ownership is still enforced by the route. */
+  quizId: cuid.optional().catch(undefined),
+  /** Student name or roll number. Oversized input is rejected, not truncated. */
+  q: z.string().trim().max(60).default(''),
+  /** oldest = longest-waiting first. Unknown values fall back rather than 422. */
+  sort: z.enum(['oldest', 'newest', 'student', 'quiz']).catch('oldest'),
   /** Include attempts whose outstanding answers have all been marked. */
   includeCompleted: z
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+});
+
+/** Filters for the integrity queue. `risk` is lowest integrity score first. */
+export const integrityQueueSchema = z.object({
+  status: z.enum(['all', 'needs-review', 'high-risk', 'normal']).catch('needs-review'),
+  reviewed: z.enum(['all', 'unreviewed', 'reviewed']).catch('unreviewed'),
+  quizId: cuid.optional().catch(undefined),
+  sort: z.enum(['risk', 'newest', 'oldest', 'student']).catch('risk'),
+  q: z.string().trim().max(60).default(''),
 });
 
 export const studentFilterSchema = paginationSchema.extend({
