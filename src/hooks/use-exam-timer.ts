@@ -44,6 +44,8 @@ export interface ExamTimer {
 export function useExamTimer(
   initial: TimerSync | null,
   onExpire?: (lastServerRemainingMs: number | null) => void,
+  /** Faculty have paused this attempt: hold the digits still until they resume. */
+  paused = false,
 ): ExamTimer {
   // The wall-clock instant, in *browser* time, at which the server's deadline
   // falls. Recomputed on every sync from the server's own remaining time.
@@ -52,10 +54,16 @@ export function useExamTimer(
   const [remainingMs, setRemainingMs] = React.useState(initial?.remainingMs ?? 0);
   const expiredRef = React.useRef(false);
   const onExpireRef = React.useRef(onExpire);
+  const pausedRef = React.useRef(paused);
+  const shownRef = React.useRef(initial?.remainingMs ?? 0);
 
   React.useEffect(() => {
     onExpireRef.current = onExpire;
   }, [onExpire]);
+
+  React.useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
 
   const sync = React.useCallback((next: TimerSync) => {
     // Remaining time is authoritative; the absolute timestamps are not used,
@@ -66,6 +74,7 @@ export function useExamTimer(
     lastServerRemainingRef.current = next.remainingMs;
 
     const remaining = Math.max(0, deadline - now);
+    shownRef.current = remaining;
     setRemainingMs(remaining);
     if (remaining > 0) expiredRef.current = false;
   }, []);
@@ -79,7 +88,14 @@ export function useExamTimer(
       const deadline = deadlineRef.current;
       if (deadline === null) return;
 
+      // Paused: slide the deadline along so the remaining time does not move.
+      if (pausedRef.current) {
+        deadlineRef.current = Date.now() + shownRef.current;
+        return;
+      }
+
       const next = Math.max(0, deadline - Date.now());
+      shownRef.current = next;
       setRemainingMs(next);
 
       if (next <= 0 && !expiredRef.current) {

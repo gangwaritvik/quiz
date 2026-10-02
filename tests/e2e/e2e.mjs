@@ -304,6 +304,57 @@ check('(i) quiz release horizon is the largest extension (180)', q3.maxExtension
 const audits = await prisma.auditLog.count({ where: { action: 'admin.time_extended' } });
 check('(i) every grant is audited', audits === 1 + 3 + granted, `audits=${audits} expected=${1 + 3 + granted}`);
 
+// ---------------- (k) broadcast notices and pause ----------------
+const a4 = st4.data.attemptId;
+const noticeUrl = `/api/admin/quizzes/${quiz3}/notices`;
+await fac2('(k) non-owner cannot send a notice', 'POST', noticeUrl, { message: 'hi' }, { expect: [403] });
+await s4('(k) student cannot send a notice', 'POST', noticeUrl, { message: 'hi' }, abuse);
+await fac('(k) empty notice refused', 'POST', noticeUrl, { message: '   ' }, { expect: [422] });
+await fac('(k) 501-character notice refused', 'POST', noticeUrl, { message: 'x'.repeat(501) }, { expect: [422] });
+const beforeNotice = (await s4('(k) state before any notice', 'GET', `/api/exam/${a4}/state`, undefined, { expect: [200] })).data;
+check('(k) no notices yet', Array.isArray(beforeNotice.notices) && beforeNotice.notices.length === 0);
+const sent = await fac('(k) send a notice', 'POST', noticeUrl, { message: 'Q4 should read: "three-way handshake".' }, { expect: [200] });
+check('(k) notice reports who is sitting', sent.data?.sitting >= 1, JSON.stringify(sent.data));
+const hbN = await s4('(k) heartbeat with cursor', 'POST', `/api/exam/${a4}/heartbeat`, { noticesSince: beforeNotice.timer.serverNow }, { expect: [200] });
+check('(k) heartbeat delivers the notice once', hbN.data?.notices?.length === 1 && hbN.data.notices[0].message.startsWith('Q4 should read'), JSON.stringify(hbN.data?.notices));
+const hbNone = await s4('(k) heartbeat without a cursor', 'POST', `/api/exam/${a4}/heartbeat`, {}, { expect: [200] });
+check('(k) no cursor means no notices', hbNone.data?.notices?.length === 0);
+const reload = (await s4('(k) a reload still sees the notice', 'GET', `/api/exam/${a4}/state`, undefined, { expect: [200] })).data;
+check('(k) state carries the notice', reload.notices?.length === 1);
+
+const pauseUrl = `/api/admin/attempts/${a4}/pause`;
+const short4 = reload.questions.find((q) => q.type === 'SHORT_ANSWER').attemptQuestionId;
+await fac2('(k) non-owner cannot pause', 'POST', pauseUrl, { action: 'pause' }, { expect: [403] });
+await s4('(k) student cannot pause', 'POST', pauseUrl, { action: 'pause' }, abuse);
+await fac('(k) resume when not paused refused', 'POST', pauseUrl, { action: 'resume' }, { expect: [409] });
+const paused = await fac('(k) pause', 'POST', pauseUrl, { action: 'pause' }, { expect: [200] });
+check('(k) pause reports paused', paused.data?.paused === true);
+await fac('(k) pausing twice refused', 'POST', pauseUrl, { action: 'pause' }, { expect: [409] });
+const h1 = (await s4('(k) heartbeat while paused', 'POST', `/api/exam/${a4}/heartbeat`, {}, { expect: [200] })).data;
+await sleep(2500);
+const h2 = (await s4('(k) heartbeat again while paused', 'POST', `/api/exam/${a4}/heartbeat`, {}, { expect: [200] })).data;
+check('(k) heartbeat says paused', h1.paused === true && h2.paused === true);
+check('(k) the clock is frozen', Math.abs(h1.timer.remainingMs - h2.timer.remainingMs) < 800, `${h1.timer.remainingMs} -> ${h2.timer.remainingMs}`);
+await s4('(k) answers are refused while paused', 'POST', `/api/exam/${a4}/answer`, { attemptQuestionId: short4, textResponse: 'while paused' }, { expect: [423] });
+await s4('(k) the review flag is refused while paused', 'POST', `/api/exam/${a4}/flag`, { attemptQuestionId: short4, markedForReview: true }, { expect: [423] });
+const livePaused = await fac('(k) live feed while paused', 'GET', '/api/admin/live', undefined, { expect: [200] });
+check('(k) live row shows paused', livePaused.data?.students.find((r) => r.attemptId === a4)?.paused === true);
+// a long pause: the raw deadline is far in the past, but a paused attempt must not be swept
+await prisma.quizAttempt.update({ where: { id: a4 }, data: { pausedAt: new Date(Date.now() - 10 * 60_000), expiresAt: new Date(Date.now() - 9 * 60_000) } });
+await fac('(k) live feed runs the sweep', 'GET', '/api/admin/live', undefined, { expect: [200] });
+const afterSweep = await prisma.quizAttempt.findUnique({ where: { id: a4 }, select: { status: true } });
+check('(k) a paused attempt is not auto-submitted', afterSweep.status === 'IN_PROGRESS', afterSweep.status);
+const dash4 = await s4('(k) dashboard keeps a paused exam', 'GET', '/api/student/dashboard', undefined, { expect: [200] });
+check('(k) dashboard still shows it in progress', dash4.data?.upcoming.some((q) => q.id === quiz3 && q.state === 'IN_PROGRESS'));
+const resumed = await fac('(k) resume', 'POST', pauseUrl, { action: 'resume' }, { expect: [200] });
+check('(k) resume gives back the time they had (about 1 min)', resumed.data?.paused === false && resumed.data.remainingMs > 30_000 && resumed.data.remainingMs < 90_000, JSON.stringify(resumed.data));
+const h3 = (await s4('(k) heartbeat after resume', 'POST', `/api/exam/${a4}/heartbeat`, {}, { expect: [200] })).data;
+check('(k) no longer paused', h3.paused === false && h3.timer.remainingMs > 30_000 && h3.timer.remainingMs < 90_000, String(h3.timer.remainingMs));
+await s4('(k) answers work again', 'POST', `/api/exam/${a4}/answer`, { attemptQuestionId: short4, textResponse: 'after resume' }, { expect: [200] });
+const pauseAudits = await prisma.auditLog.count({ where: { action: { in: ['admin.attempt_paused', 'admin.attempt_resumed'] } } });
+check('(k) pause and resume are audited', pauseAudits === 2, String(pauseAudits));
+check('(k) notices are audited', (await prisma.auditLog.count({ where: { action: 'admin.notice_sent' } })) === 1);
+
 // the window closes while 23CSE005 is still sitting on extra time
 const closeEnd3 = new Date(Date.now() - 1000).toISOString();
 // The quiz PATCH refuses edits while students are sitting, so let the clock run out in the DB.

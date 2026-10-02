@@ -6,12 +6,15 @@ import { ApiError } from '@/lib/api';
 import type { StudentSession } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { finalizeAttempt, remainingTime, SUBMIT_GRACE_MS } from '@/lib/exam';
+import { pauseAdjustedExpiresAt } from '@/lib/time-extension';
 import { recomputeIntegrityScore, severityForEvent } from '@/lib/integrity';
 import type { RequestContext } from '@/lib/session';
 
 export interface LiveAttempt {
   attempt: QuizAttempt & { quiz: Quiz };
   remaining: ReturnType<typeof remainingTime>;
+  /** Faculty have paused this attempt: the clock is frozen and writes are refused. */
+  paused: boolean;
 }
 
 /**
@@ -41,7 +44,7 @@ export async function loadLiveAttempt(
 
   if (attempt.status !== 'IN_PROGRESS') {
     if (options.allowSubmitted) {
-      return { attempt, remaining: remainingTime(attempt.expiresAt) };
+      return { attempt, remaining: remainingTime(attempt.expiresAt), paused: false };
     }
     throw new ApiError('ATTEMPT_EXPIRED', 'This attempt has already been submitted.');
   }
@@ -70,17 +73,42 @@ export async function loadLiveAttempt(
     }
   }
 
-  const remaining = remainingTime(attempt.expiresAt);
+  // While paused the deadline slips forward with the clock, so the remaining
+  // time stays constant and the expiry branch below cannot fire.
+  const effectiveExpiresAt = pauseAdjustedExpiresAt(attempt.expiresAt, attempt.pausedAt);
+  const remaining = remainingTime(effectiveExpiresAt);
   if (remaining.remainingMs <= 0) {
     // The clock ran out while the client was away; grade now so the student
     // cannot keep answering past the deadline.
-    if (Date.now() - attempt.expiresAt.getTime() > SUBMIT_GRACE_MS) {
+    if (Date.now() - effectiveExpiresAt.getTime() > SUBMIT_GRACE_MS) {
       await finalizeAttempt(attempt.id, 'AUTO_SUBMITTED');
       throw new ApiError('ATTEMPT_EXPIRED', 'Time is up — your exam has been submitted.');
     }
   }
 
-  return { attempt, remaining };
+  return { attempt, remaining, paused: attempt.pausedAt !== null };
+}
+
+/** A notice faculty sent to a quiz's students, as the exam page receives it. */
+export interface QuizNoticeView {
+  id: string;
+  message: string;
+  createdAt: string;
+}
+
+/**
+ * Notices for a quiz created at or after `since` (oldest first). The cursor is
+ * a server timestamp, so the student's clock never decides what they see; the
+ * client drops ones it already has by id.
+ */
+export async function loadNotices(quizId: string, since: Date, limit = 5): Promise<QuizNoticeView[]> {
+  const rows = await prisma.quizNotice.findMany({
+    where: { quizId, createdAt: { gte: since } },
+    orderBy: { createdAt: 'asc' },
+    take: limit,
+    select: { id: true, message: true, createdAt: true },
+  });
+  return rows.map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }));
 }
 
 /** Records an event that only the server may author. */

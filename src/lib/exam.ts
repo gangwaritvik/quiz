@@ -16,7 +16,7 @@ import {
 } from '@/lib/grading';
 import { recomputeIntegrityScore } from '@/lib/integrity';
 import { shouldApply } from '@/lib/offline-queue';
-import { computeExpiresAt, effectiveEndsAt } from '@/lib/time-extension';
+import { computeExpiresAt, effectiveEndsAt, pauseAdjustedExpiresAt } from '@/lib/time-extension';
 
 /**
  * The exam engine. Everything that decides *what a student sees* and *what a
@@ -266,7 +266,7 @@ export async function startAttempt(input: StartAttemptInput) {
   // window has closed, and their own clock decides whether they can continue.
   const live = existing.find((a) => a.status === 'IN_PROGRESS');
   if (live) {
-    if (remainingTime(live.expiresAt).expired) {
+    if (remainingTime(pauseAdjustedExpiresAt(live.expiresAt, live.pausedAt)).expired) {
       await finalizeAttempt(live.id, 'AUTO_SUBMITTED');
       throw new ApiError('ATTEMPT_EXPIRED', 'Your previous attempt expired and was submitted.');
     }
@@ -503,10 +503,15 @@ export interface SaveAnswerInput {
  * Shared by every answer mutation so the ownership, status and deadline checks
  * cannot drift apart between saving an option, saving text, and attaching a file.
  */
+/** Writes are refused while faculty have the attempt paused; the client keeps the answer and retries. */
+function pausedError() {
+  return new ApiError('PAUSED', 'Your exam is paused by your faculty. Your answer is kept and will be saved when it resumes.');
+}
+
 async function loadWritableAttempt(attemptId: string, studentId: string) {
   const attempt = await prisma.quizAttempt.findUnique({
     where: { id: attemptId },
-    select: { id: true, studentId: true, status: true, expiresAt: true },
+    select: { id: true, studentId: true, status: true, expiresAt: true, pausedAt: true },
   });
 
   if (!attempt) throw new ApiError('NOT_FOUND', 'Attempt not found.');
@@ -516,6 +521,7 @@ async function loadWritableAttempt(attemptId: string, studentId: string) {
   if (attempt.status !== 'IN_PROGRESS') {
     throw new ApiError('ATTEMPT_EXPIRED', 'This attempt has already been submitted.');
   }
+  if (attempt.pausedAt) throw pausedError();
   if (remainingTime(attempt.expiresAt).remainingMs <= 0) {
     await finalizeAttempt(attempt.id, 'AUTO_SUBMITTED');
     throw new ApiError('ATTEMPT_EXPIRED', 'Time is up — your exam has been submitted.');
@@ -533,10 +539,17 @@ async function loadWritableAttempt(attemptId: string, studentId: string) {
 async function lockWritableAttempt(tx: Prisma.TransactionClient, attemptId: string) {
   const now = new Date();
   const { count } = await tx.quizAttempt.updateMany({
-    where: { id: attemptId, status: 'IN_PROGRESS', expiresAt: { gt: now } },
+    where: { id: attemptId, status: 'IN_PROGRESS', expiresAt: { gt: now }, pausedAt: null },
     data: { lastSeenAt: now },
   });
   if (count !== 1) {
+    // Paused after the earlier check, or really over? The client reacts very
+    // differently (wait, versus submit), so say which.
+    const current = await tx.quizAttempt.findUnique({
+      where: { id: attemptId },
+      select: { status: true, pausedAt: true },
+    });
+    if (current?.status === 'IN_PROGRESS' && current.pausedAt) throw pausedError();
     throw new ApiError('ATTEMPT_EXPIRED', 'This attempt has already been submitted.');
   }
 }
@@ -1080,7 +1093,11 @@ export async function gradeAnswerManually(params: {
  */
 export async function sweepExpiredAttempts() {
   const stale = await prisma.quizAttempt.findMany({
-    where: { status: 'IN_PROGRESS', expiresAt: { lt: new Date(Date.now() - SUBMIT_GRACE_MS) } },
+    where: {
+      status: 'IN_PROGRESS',
+      pausedAt: null,
+      expiresAt: { lt: new Date(Date.now() - SUBMIT_GRACE_MS) },
+    },
     select: { id: true },
     take: 50,
   });

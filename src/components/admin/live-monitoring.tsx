@@ -2,7 +2,11 @@
 
 import {
   Clock3,
+  Megaphone,
   MonitorPlay,
+  MoreHorizontal,
+  Pause,
+  Play,
   RefreshCw,
   ShieldAlert,
   Wifi,
@@ -13,6 +17,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import { AddTimeDialog } from "@/components/admin/add-time-dialog";
+import { BroadcastDialog } from "@/components/admin/broadcast-dialog";
 import { ErrorState } from "@/components/shared/error-state";
 import {
   IntegrityBadge,
@@ -31,6 +36,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -62,6 +73,8 @@ interface LiveStudent {
   expiresAt: string;
   /** Minutes faculty have added to this attempt; 0 for none. */
   extraMinutes: number;
+  /** Faculty have stopped this attempt's clock. */
+  paused: boolean;
   startedAt: string;
   lastSeenAt: string;
   connection: "STABLE" | "UNSTABLE" | "OFFLINE";
@@ -114,6 +127,9 @@ export function LiveMonitoring() {
   const [releasing, setReleasing] = React.useState<LiveStudent | null>(null);
   const [releaseBusy, setReleaseBusy] = React.useState(false);
   const [addingTime, setAddingTime] = React.useState<LiveStudent | null>(null);
+  const [broadcasting, setBroadcasting] = React.useState(false);
+  const [pausing, setPausing] = React.useState<LiveStudent | null>(null);
+  const [pauseBusy, setPauseBusy] = React.useState(false);
   // The list refreshes while the dialog is open; read the newest end time from it.
   const addTimeTarget = addingTime
     ? (students.find((row) => row.attemptId === addingTime.attemptId) ?? addingTime)
@@ -143,6 +159,33 @@ export function LiveMonitoring() {
       );
     } finally {
       setReleaseBusy(false);
+    }
+  };
+
+  const setPaused = async (student: LiveStudent, action: "pause" | "resume") => {
+    setPauseBusy(true);
+    try {
+      await apiFetch(`/api/admin/attempts/${student.attemptId}/pause`, {
+        method: "POST",
+        body: { action },
+      });
+      toast.success(
+        action === "pause"
+          ? `${student.name}'s exam is paused. Their clock is stopped.`
+          : `${student.name}'s exam has resumed.`,
+      );
+      setPausing(null);
+      void refetch();
+    } catch (caught) {
+      toast.error(
+        caught instanceof ApiClientError
+          ? caught.message
+          : `We could not ${action} ${student.name}'s exam.`,
+      );
+      setPausing(null);
+      void refetch();
+    } finally {
+      setPauseBusy(false);
     }
   };
 
@@ -179,6 +222,12 @@ export function LiveMonitoring() {
                   </SelectContent>
                 </Select>
               </div>
+            ) : null}
+            {data && data.summary.active > 0 ? (
+              <Button variant="outline" onClick={() => setBroadcasting(true)}>
+                <Megaphone />
+                Message students
+              </Button>
             ) : null}
             <Button
               variant="outline"
@@ -276,6 +325,8 @@ export function LiveMonitoring() {
                 student={student}
                 onAddTime={() => setAddingTime(student)}
                 onLetBackIn={() => setReleasing(student)}
+                onPause={() => setPausing(student)}
+                onResume={() => void setPaused(student, "resume")}
               />
             ))}
           </ul>
@@ -314,6 +365,46 @@ export function LiveMonitoring() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <AlertDialog
+        open={pausing !== null}
+        onOpenChange={(open) => {
+          if (!open && !pauseBusy) setPausing(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="break-words">
+              Pause {pausing?.name}&apos;s exam?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Their clock stops and the paper is covered until you resume. When
+              you resume, they get back exactly the time they had. Their answers
+              are kept. Use this for a short interruption, such as a fire drill
+              or a problem you are sorting out in the room.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pauseBusy}
+              onClick={(event) => {
+                event.preventDefault();
+                if (pausing) void setPaused(pausing, "pause");
+              }}
+            >
+              Pause exam
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <BroadcastDialog
+        open={broadcasting}
+        onOpenChange={setBroadcasting}
+        quizzes={data?.quizzes ?? []}
+        defaultQuizId={quizFilter === "ALL" ? undefined : quizFilter}
+      />
+
       <AddTimeDialog
         target={addTimeTarget}
         onOpenChange={(open) => {
@@ -333,10 +424,14 @@ function LiveStudentRow({
   student,
   onAddTime,
   onLetBackIn,
+  onPause,
+  onResume,
 }: {
   student: LiveStudent;
   onAddTime: () => void;
   onLetBackIn: () => void;
+  onPause: () => void;
+  onResume: () => void;
 }) {
   const connection = CONNECTION_LABEL[student.connection];
   const ConnectionIcon = connection.icon;
@@ -344,13 +439,19 @@ function LiveStudentRow({
     student.totalQuestions > 0
       ? (student.answered / student.totalQuestions) * 100
       : 0;
-  const lowTime = student.remainingMs <= 5 * 60_000;
+  const lowTime = !student.paused && student.remainingMs <= 5 * 60_000;
 
   return (
     <li className={cn("grid gap-3 px-5 py-4 sm:grid-cols-2", ROW_GRID)}>
       <div className="min-w-0 sm:col-span-2 lg:col-span-1">
         <div className="flex min-w-0 items-center gap-2">
           <p className="truncate font-medium text-foreground">{student.name}</p>
+          {student.paused ? (
+            <Badge variant="warning" className="shrink-0">
+              <Pause aria-hidden />
+              Paused
+            </Badge>
+          ) : null}
           {student.extraMinutes > 0 ? (
             <Badge variant="muted" className="tabular shrink-0">
               <span aria-hidden>{extraBadge(student.extraMinutes)}</span>
@@ -388,7 +489,7 @@ function LiveStudentRow({
         {lowTime ? <Clock3 className="size-3.5" aria-hidden /> : null}
         {formatDuration(student.remainingMs / 1000)}
         <span className="font-sans text-xs font-normal text-muted-foreground">
-          left
+          {student.paused ? "held" : "left"}
         </span>
         {lowTime ? (
           <span className="sr-only">— under five minutes remaining</span>
@@ -444,14 +545,32 @@ function LiveStudentRow({
         >
           Add time
         </Button>
-        <Button
-          variant="secondary"
-          className="w-full sm:w-auto lg:w-full"
-          onClick={onLetBackIn}
-          aria-label={`Let ${student.name} back in`}
-        >
-          Let back in
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="secondary"
+              className="w-full sm:w-auto lg:w-full"
+              aria-label={`More actions for ${student.name}`}
+            >
+              <MoreHorizontal />
+              More
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {student.paused ? (
+              <DropdownMenuItem onSelect={onResume}>
+                <Play />
+                Resume exam
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem onSelect={onPause}>
+                <Pause />
+                Pause exam
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem onSelect={onLetBackIn}>Let back in</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </li>
   );

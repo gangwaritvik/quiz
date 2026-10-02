@@ -5,7 +5,7 @@ import { prisma } from '@/lib/db';
 import { assertAttemptOwner } from '@/lib/ownership';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 import { getRequestContext } from '@/lib/session';
-import { extendExpiresAt, extensionRefusal } from '@/lib/time-extension';
+import { extendExpiresAt, extensionRefusal, pauseAdjustedExpiresAt } from '@/lib/time-extension';
 import { extendAttemptSchema } from '@/lib/validation';
 
 export const runtime = 'nodejs';
@@ -46,6 +46,7 @@ export const POST = route(async (request: Request, { params }: Params) => {
         status: true,
         expiresAt: true,
         extraMinutes: true,
+        pausedAt: true,
         quizId: true,
         student: { select: { rollNumber: true } },
       },
@@ -53,7 +54,7 @@ export const POST = route(async (request: Request, { params }: Params) => {
     if (!attempt) throw new ApiError('NOT_FOUND', 'Attempt not found.');
 
     const now = new Date();
-    if (attempt.status !== 'IN_PROGRESS' || attempt.expiresAt <= now) {
+    if (attempt.status !== 'IN_PROGRESS' || pauseAdjustedExpiresAt(attempt.expiresAt, attempt.pausedAt, now) <= now) {
       throw new ApiError('CONFLICT', 'This attempt has already ended.');
     }
 

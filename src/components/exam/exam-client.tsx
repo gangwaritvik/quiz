@@ -9,6 +9,8 @@ import {
   Loader2,
   LogOut,
   MonitorX,
+  Megaphone,
+  Pause,
   ScreenShare,
   TimerOff,
   WifiOff,
@@ -100,11 +102,24 @@ interface ExamState {
   timer: TimerSync;
   /** Total faculty extension in minutes; absent means none. */
   extraMinutes?: number;
+  /** Faculty have paused this attempt. */
+  paused?: boolean;
+  /** Notices sent during this sitting. */
+  notices?: ExamNotice[];
+}
+
+/** A short message from faculty to everyone sitting the quiz. */
+interface ExamNotice {
+  id: string;
+  message: string;
+  createdAt: string;
 }
 
 interface HeartbeatResponse {
   timer: TimerSync;
   extraMinutes?: number;
+  paused?: boolean;
+  notices?: ExamNotice[];
 }
 
 interface SubmitResult {
@@ -160,6 +175,14 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
   const [screenShareStoppedCount, setScreenShareStoppedCount] = React.useState(0);
   const [multipleDisplaysDetected, setMultipleDisplaysDetected] = React.useState(false);
   const [uploadingId, setUploadingId] = React.useState<string | null>(null);
+  /** Faculty have paused this attempt: the paper is covered and the clock is held. */
+  const [paused, setPaused] = React.useState(false);
+  const pausedRef = React.useRef(false);
+  /** Notices from faculty still on screen, newest last. */
+  const [notices, setNotices] = React.useState<ExamNotice[]>([]);
+  const seenNoticeIds = React.useRef<Set<string>>(new Set());
+  /** Server timestamp of the newest notice or state fetch; the heartbeat asks for anything since. */
+  const noticeCursorRef = React.useRef<string | null>(null);
   /**
    * True while the browser window does not have focus. Drives the blocking
    * overlay that hides the exam paper whenever the student Alt+Tabs away or
@@ -223,16 +246,37 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
     [],
   );
 
+  // --- Pause and notices ---------------------------------------------------
+  const applyPause = React.useCallback((next: boolean) => {
+    pausedRef.current = next;
+    setPaused(next);
+  }, []);
+
+  /** Shows notices not seen before; the cursor only moves forward. */
+  const addNotices = React.useCallback((incoming: ExamNotice[]) => {
+    const fresh = incoming.filter((notice) => !seenNoticeIds.current.has(notice.id));
+    for (const notice of incoming) {
+      if (!noticeCursorRef.current || notice.createdAt > noticeCursorRef.current) {
+        noticeCursorRef.current = notice.createdAt;
+      }
+    }
+    if (fresh.length === 0) return;
+    for (const notice of fresh) seenNoticeIds.current.add(notice.id);
+    setNotices((current) => [...current, ...fresh].slice(-3));
+  }, []);
+
   /** One heartbeat: re-anchors the timer, notes any extension, returns the server's remaining ms. */
   const pingServer = React.useCallback(async () => {
     const result = await apiFetch<HeartbeatResponse>(`/api/exam/${attemptId}/heartbeat`, {
       method: 'POST',
-      body: {},
+      body: noticeCursorRef.current ? { noticesSince: noticeCursorRef.current } : {},
     });
     timerRef.current?.sync(result.timer);
     noteExtension(result, result.timer.remainingMs);
+    applyPause(Boolean(result.paused));
+    addNotices(result.notices ?? []);
     return result.timer.remainingMs;
-  }, [attemptId, noteExtension]);
+  }, [attemptId, noteExtension, applyPause, addNotices]);
 
   /**
    * Sends one answer with its draft sequence number, then acknowledges it. The
@@ -395,7 +439,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
     // The server's last word was already "no time left": nothing to confirm.
     if (lastServerRemainingMs !== null && lastServerRemainingMs <= 0) void submit(true);
     else void confirmThenSubmit();
-  });
+  }, paused);
   timerRef.current = timer;
 
   // --- Security monitoring -------------------------------------------------
@@ -547,6 +591,9 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
       });
 
       setState(result);
+      applyPause(Boolean(result.paused));
+      noticeCursorRef.current = result.timer.serverNow;
+      addNotices(result.notices ?? []);
       setQuestions(questionsWithDrafts);
       setPhase('active');
       noteExtension(result, result.timer.remainingMs);
@@ -570,7 +617,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
       setBlockedError(error);
       setPhase('blocked');
     }
-  }, [attemptId, router, noteExtension]);
+  }, [attemptId, router, noteExtension, applyPause, addNotices]);
 
   React.useEffect(() => {
     void load();
@@ -640,6 +687,13 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
           return;
         }
 
+        if (error?.code === 'PAUSED') {
+          // Faculty paused the attempt: keep the answer, it is sent on resume.
+          pendingSaves.current.set(attemptQuestionId, payload);
+          applyPause(true);
+          return;
+        }
+
         if (error && !error.isTransient && error.code !== 'RATE_LIMITED') {
           setBlockedError(error);
           setPhase('blocked');
@@ -660,12 +714,12 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
     },
     // No `timer` here: it changes every tick, which re-fired the retry effect
     // below (re-sending queued answers) four times a second.
-    [submit, postAnswer],
+    [submit, postAnswer, applyPause],
   );
 
   /** Sends every queued answer, one at a time; a second call while one runs does nothing. */
   const flushQueue = React.useCallback(async () => {
-    if (flushing.current) return;
+    if (flushing.current || pausedRef.current) return;
     flushing.current = true;
     try {
       for (const [attemptQuestionId, payload] of [...pendingSaves.current]) {
@@ -956,8 +1010,11 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
       <p className="sr-only" aria-live="polite" aria-atomic="true">
         {extension?.message ?? ''}
       </p>
+      <p className="sr-only" aria-live="polite" aria-atomic="true">
+        {notices.length > 0 ? `Message from your faculty: ${notices[notices.length - 1]!.message}` : ''}
+      </p>
 
-      {connectionLost || (extension && !extension.dismissed) ? (
+      {connectionLost || (extension && !extension.dismissed) || notices.length > 0 ? (
         <div className="sticky top-16 z-20">
           {connectionLost ? (
             <div className="border-b border-warning/30 bg-warning-subtle" role="status">
@@ -971,6 +1028,27 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
               </div>
             </div>
           ) : null}
+
+          {/* Faculty notices: neutral and static, dismissible, never modal. */}
+          {notices.map((notice) => (
+            <div key={notice.id} className="border-b border-border bg-muted">
+              <div className="mx-auto flex max-w-[1440px] items-start gap-2.5 px-4 py-2 text-sm text-foreground sm:px-6">
+                <Megaphone className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+                <p className="min-w-0 break-words">
+                  <span className="font-medium">From your faculty: </span>
+                  {notice.message}
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto shrink-0 transition-none"
+                  onClick={() => setNotices((current) => current.filter((n) => n.id !== notice.id))}
+                >
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          ))}
 
           {/* Neutral and static: it informs, it does not alarm. */}
           {extension && !extension.dismissed ? (
@@ -1098,6 +1176,22 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
               : `Could not reach the server yet. Retrying automatically (attempt ${
                   autoSubmitFailures + 1
                 }).`}
+          </p>
+        </ExamGate>
+      ) : null}
+
+      {/* Pause gate. Faculty stopped this attempt's clock; it clears by itself
+          at the next heartbeat after they resume. */}
+      {paused && phase === 'active' ? (
+        <ExamGate
+          titleId="paused-title"
+          tone="primary"
+          icon={Pause}
+          title="Your exam is paused"
+          description="Your faculty has paused your exam. Your timer is stopped and your answers are saved. This screen clears by itself when they resume."
+        >
+          <p role="status" className="mt-3 text-xs text-muted-foreground">
+            You do not need to do anything. Please stay on this page.
           </p>
         </ExamGate>
       ) : null}

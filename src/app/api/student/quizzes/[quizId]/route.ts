@@ -26,7 +26,7 @@ export const GET = route(async (_request: Request, { params }: Params) => {
           subject: { select: { name: true, code: true } },
           attempts: {
             where: { studentId: session.studentId },
-            select: { id: true, status: true, attemptNumber: true, expiresAt: true },
+            select: { id: true, status: true, attemptNumber: true, expiresAt: true, pausedAt: true },
             orderBy: { attemptNumber: 'desc' },
           },
         },
@@ -48,7 +48,7 @@ export const GET = route(async (_request: Request, { params }: Params) => {
 
   // A student on extra time can still be sitting after the window closes, and
   // must be able to get back in; their own clock decides, as on the server.
-  const canResume = latest?.status === 'IN_PROGRESS' && latest.expiresAt > now;
+  const canResume = latest?.status === 'IN_PROGRESS' && (latest.expiresAt > now || latest.pausedAt !== null);
 
   const blockedReason =
     quiz.status !== 'PUBLISHED'

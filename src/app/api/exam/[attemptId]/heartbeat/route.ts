@@ -1,9 +1,10 @@
-import { assertSameOrigin, ok, route } from '@/lib/api';
+import { assertSameOrigin, ok, parseBody, route } from '@/lib/api';
 import { requireStudent } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { loadLiveAttempt, recordServerEvent } from '@/lib/exam-guard';
+import { loadLiveAttempt, loadNotices, recordServerEvent } from '@/lib/exam-guard';
 import { RATE_LIMITS, enforceRateLimit } from '@/lib/rate-limit';
 import { getRequestContext } from '@/lib/session';
+import { heartbeatSchema } from '@/lib/validation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -28,7 +29,8 @@ export const POST = route(async (request: Request, { params }: Params) => {
 
   enforceRateLimit(RATE_LIMITS.examEvent, `heartbeat:${session.userId}:${attemptId}`);
 
-  const { attempt, remaining } = await loadLiveAttempt(attemptId, session, context);
+  const body = await parseBody(request, heartbeatSchema);
+  const { attempt, remaining, paused } = await loadLiveAttempt(attemptId, session, context);
 
   const gapMs = Date.now() - attempt.lastSeenAt.getTime();
   if (gapMs > MISSED_HEARTBEAT_MS) {
@@ -53,6 +55,10 @@ export const POST = route(async (request: Request, { params }: Params) => {
       serverNow: new Date().toISOString(),
     },
     extraMinutes: attempt.extraMinutes,
+    paused,
+    notices: body.noticesSince
+      ? await loadNotices(attempt.quizId, new Date(body.noticesSince))
+      : [],
     integrity: integrity ?? { score: 100, status: 'NORMAL' },
   });
 });

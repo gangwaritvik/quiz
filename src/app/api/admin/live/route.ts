@@ -3,6 +3,7 @@ import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { ownAttemptWhere, ownQuizWhere } from '@/lib/ownership';
 import { remainingTime, sweepExpiredAttempts } from '@/lib/exam';
+import { pauseAdjustedExpiresAt } from '@/lib/time-extension';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -79,8 +80,9 @@ export const GET = route(async (request: Request) => {
       // actually wants to see; navigation position is not tracked server-side.
       answered: answeredByAttempt.get(attempt.id) ?? 0,
       totalQuestions: attempt.quiz.questionCount,
-      remainingMs: remainingTime(attempt.expiresAt).remainingMs,
-      expiresAt: attempt.expiresAt.toISOString(),
+      remainingMs: remainingTime(pauseAdjustedExpiresAt(attempt.expiresAt, attempt.pausedAt)).remainingMs,
+      expiresAt: pauseAdjustedExpiresAt(attempt.expiresAt, attempt.pausedAt).toISOString(),
+      paused: attempt.pausedAt !== null,
       extraMinutes: attempt.extraMinutes,
       startedAt: attempt.startedAt.toISOString(),
       lastSeenAt: attempt.lastSeenAt.toISOString(),

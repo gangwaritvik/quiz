@@ -12,6 +12,7 @@ export type ApiErrorCode =
   | 'SESSION_EXPIRED'
   | 'DEVICE_MISMATCH'
   | 'ATTEMPT_EXPIRED'
+  | 'PAUSED'
   | 'QUIZ_UNAVAILABLE'
   | 'CSRF'
   | 'SERVER_ERROR'

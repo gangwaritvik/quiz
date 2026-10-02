@@ -28,7 +28,15 @@ export const GET = route(async () => {
           // Past the window only while this student is still sitting on extra time.
           OR: [
             { endsAt: { gt: now } },
-            { attempts: { some: { studentId, status: 'IN_PROGRESS', expiresAt: { gt: now } } } },
+            {
+              attempts: {
+                some: {
+                  studentId,
+                  status: 'IN_PROGRESS',
+                  OR: [{ expiresAt: { gt: now } }, { pausedAt: { not: null } }],
+                },
+              },
+            },
           ],
         },
       },

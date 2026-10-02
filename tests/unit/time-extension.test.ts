@@ -8,6 +8,7 @@ import {
   effectiveEndsAt,
   extendExpiresAt,
   extensionRefusal,
+  pauseAdjustedExpiresAt,
 } from '@/lib/time-extension';
 
 const MIN = 60_000;
@@ -105,5 +106,27 @@ describe('resultsVisibility with extensions', () => {
     assert.equal(resultsVisibility(q, at('2026-10-05T12:10:00Z')).results, false);
     assert.equal(resultsVisibility(q, at('2026-10-05T12:10:00Z')).answers, false);
     assert.equal(resultsVisibility(q, at('2026-10-05T12:30:00Z')).results, true);
+  });
+});
+
+describe('pauseAdjustedExpiresAt', () => {
+  const deadline = at('2026-10-05T11:00:00Z');
+
+  test('an attempt that is not paused keeps its deadline', () => {
+    assert.equal(pauseAdjustedExpiresAt(deadline, null, at('2026-10-05T10:50:00Z')), deadline);
+  });
+
+  test('a paused attempt keeps the same time remaining however long the pause lasts', () => {
+    const pausedAt = at('2026-10-05T10:30:00Z');
+    const remainingAt = (now: string) =>
+      pauseAdjustedExpiresAt(deadline, pausedAt, at(now)).getTime() - at(now).getTime();
+    assert.equal(remainingAt('2026-10-05T10:30:00Z'), 30 * MIN);
+    assert.equal(remainingAt('2026-10-05T10:45:00Z'), 30 * MIN);
+    assert.equal(remainingAt('2026-10-05T13:00:00Z'), 30 * MIN);
+  });
+
+  test('a pause that starts in the future (clock skew) does not move the deadline backwards', () => {
+    const d = pauseAdjustedExpiresAt(deadline, at('2026-10-05T10:31:00Z'), at('2026-10-05T10:30:00Z'));
+    assert.equal(d.getTime(), deadline.getTime());
   });
 });

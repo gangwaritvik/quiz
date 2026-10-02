@@ -3,7 +3,7 @@ import { audit } from '@/lib/audit';
 import { requireStudent } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { finalizeAttempt, remainingTime, resultsVisibility } from '@/lib/exam';
-import { effectiveEndsAt } from '@/lib/time-extension';
+import { effectiveEndsAt, pauseAdjustedExpiresAt } from '@/lib/time-extension';
 import { loadLiveAttempt } from '@/lib/exam-guard';
 import { getRequestContext } from '@/lib/session';
 import { submitExamSchema } from '@/lib/validation';
@@ -32,7 +32,7 @@ export const POST = route(async (request: Request, { params }: Params) => {
     await parseBody(request, submitExamSchema);
   }
 
-  const expired = remainingTime(attempt.expiresAt).expired;
+  const expired = remainingTime(pauseAdjustedExpiresAt(attempt.expiresAt, attempt.pausedAt)).expired;
   const finalized = await finalizeAttempt(
     attemptId,
     expired ? 'AUTO_SUBMITTED' : 'SUBMITTED',

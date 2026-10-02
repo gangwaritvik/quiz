@@ -1,7 +1,7 @@
 import { ok, route } from '@/lib/api';
 import { requireStudent } from '@/lib/auth';
 import { getAttemptPaper } from '@/lib/exam';
-import { loadLiveAttempt } from '@/lib/exam-guard';
+import { loadLiveAttempt, loadNotices } from '@/lib/exam-guard';
 import { getRequestContext } from '@/lib/session';
 
 export const runtime = 'nodejs';
@@ -23,7 +23,7 @@ export const GET = route(async (_request: Request, { params }: Params) => {
   const context = await getRequestContext();
   const { attemptId } = await params;
 
-  const { attempt, remaining } = await loadLiveAttempt(attemptId, session, context);
+  const { attempt, remaining, paused } = await loadLiveAttempt(attemptId, session, context);
   const { questions } = await getAttemptPaper(attemptId, session.studentId);
 
   return ok({
@@ -60,5 +60,8 @@ export const GET = route(async (_request: Request, { params }: Params) => {
     // Total faculty-granted extra time, already inside `timer.expiresAt`. The
     // client uses a rise in this to tell the student their time was extended.
     extraMinutes: attempt.extraMinutes,
+    paused,
+    // Notices sent during this sitting, so a reload does not hide one.
+    notices: await loadNotices(attempt.quizId, attempt.startedAt),
   });
 });

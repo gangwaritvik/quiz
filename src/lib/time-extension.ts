@@ -55,3 +55,17 @@ export function extensionRefusal(currentExtra: number, minutes: number): string 
 export function extendExpiresAt(expiresAt: Date, minutes: number): Date {
   return new Date(expiresAt.getTime() + minutes * MINUTE_MS);
 }
+
+/**
+ * The deadline an attempt effectively has right now. While faculty have it
+ * paused the clock is frozen, so the deadline slips forward by however long it
+ * has been paused; on resume that slip is written into `expiresAt` for good.
+ */
+export function pauseAdjustedExpiresAt(
+  expiresAt: Date,
+  pausedAt: Date | null | undefined,
+  now = new Date(),
+): Date {
+  if (!pausedAt) return expiresAt;
+  return new Date(expiresAt.getTime() + Math.max(0, now.getTime() - pausedAt.getTime()));
+}

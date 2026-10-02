@@ -198,6 +198,21 @@ export const assignQuizSchema = z.object({
   studentIds: z.array(cuid).max(2000),
 });
 
+/** Heartbeat body; `noticesSince` is the server timestamp of the newest notice already shown. */
+export const heartbeatSchema = z.object({
+  noticesSince: z.string().datetime({ offset: true }).optional(),
+});
+
+/** Faculty broadcast to everyone sitting a quiz. */
+export const sendNoticeSchema = z.object({
+  message: z.string().trim().min(1, 'Write a message').max(500, 'Keep it under 500 characters'),
+});
+
+/** Pause or resume one running attempt. */
+export const pauseAttemptSchema = z.object({
+  action: z.enum(['pause', 'resume']),
+});
+
 /** Live grant: add time to one running attempt. */
 export const extendAttemptSchema = z.object({
   minutes: z.number().int().min(1).max(MAX_EXTENSION_MINUTES),

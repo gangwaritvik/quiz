@@ -30,6 +30,11 @@ export type AuditAction =
   | 'admin.assignment_updated'
   /** Faculty added time to a running attempt, or set a student's extra time before they began. */
   | 'admin.time_extended'
+  /** Faculty paused or resumed one student's running attempt. */
+  | 'admin.attempt_paused'
+  | 'admin.attempt_resumed'
+  /** Faculty broadcast a notice to a quiz's students. */
+  | 'admin.notice_sent'
   | 'admin.media_uploaded'
   /** Manual marking changes a student's score after the fact, so it is logged. */
   | 'admin.answer_graded';

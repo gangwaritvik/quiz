@@ -363,6 +363,7 @@ model Quiz {
   author      Admin?           @relation("QuizAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   attempts    QuizAttempt[]
   assignments QuizAssignment[]
+  notices     QuizNotice[]
   questions   QuizQuestion[]
 
   @@index([status, startsAt])
@@ -425,13 +426,17 @@ model QuizAttempt {
   attemptNumber Int @default(1)
 
   // Authoritative exam clock. `expiresAt` is computed once, server-side.
-  startedAt    DateTime  @default(now())
-  expiresAt    DateTime
+  startedAt     DateTime  @default(now())
+  expiresAt     DateTime
   /// Total extra minutes applied to this attempt (pre-start accommodation plus
   /// any added while it was running). Already included in `expiresAt`.
-  extraMinutes Int       @default(0)
-  submittedAt  DateTime?
-  lastSeenAt   DateTime  @default(now())
+  extraMinutes  Int       @default(0)
+  /// Set while faculty have paused this attempt: the clock is frozen and the
+  /// deadline moves forward by the pause length on resume.
+  pausedAt      DateTime?
+  pausedTotalMs Int       @default(0)
+  submittedAt   DateTime?
+  lastSeenAt    DateTime  @default(now())
 
   deviceHash String?
   ipHash     String?
@@ -717,4 +722,18 @@ model AuditLog {
   @@index([userId, createdAt])
   @@index([action, createdAt])
   @@map("audit_logs")
+}
+
+/// A short message faculty send to everyone sitting a quiz ("Q4 should read...").
+model QuizNotice {
+  id        String   @id @default(cuid())
+  quizId    String
+  authorId  String?
+  message   String
+  createdAt DateTime @default(now())
+
+  quiz Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+
+  @@index([quizId, createdAt])
+  @@map("quiz_notices")
 }
