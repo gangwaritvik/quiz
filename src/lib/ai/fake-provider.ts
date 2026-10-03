@@ -31,6 +31,19 @@ export const fakeProvider: AiProvider = {
       .join('\n');
   },
 
+  /** Hashed bag of words: texts sharing most words come out close, others do not. */
+  async embed(texts) {
+    return texts.map((text) => {
+      const vector = new Array<number>(64).fill(0);
+      for (const w of text.toLowerCase().match(/[a-z0-9]+/g) ?? []) {
+        let h = 0;
+        for (const c of w) h = (h * 31 + c.charCodeAt(0)) % 64;
+        vector[h]! += 1;
+      }
+      return vector;
+    });
+  },
+
   async generate({ request, inline }) {
     const questions: unknown[] = [];
     let n = 0;

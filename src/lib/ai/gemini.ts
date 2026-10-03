@@ -18,6 +18,7 @@ function ai(): GoogleGenAI {
 /** Used when the main model stays overloaded: lighter, also on the free tier. */
 const DEFAULT_FALLBACK_MODEL = 'gemini-flash-lite-latest';
 
+const embedModel = () => process.env.GEMINI_EMBED_MODEL || 'gemini-embedding-001';
 const model = () => process.env.GEMINI_MODEL || DEFAULT_MODEL;
 const models = () => [
   ...new Set([model(), process.env.GEMINI_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL]),
@@ -162,6 +163,27 @@ export const geminiProvider: AiProvider = {
       );
       return response.text ?? '';
     } catch (error) {
+      explain(error);
+    }
+  },
+
+  async embed(texts) {
+    try {
+      const vectors: number[][] = [];
+      for (let i = 0; i < texts.length; i += 100) {
+        const response = await withRetry(() =>
+          ai().models.embedContent({
+            model: embedModel(),
+            contents: texts.slice(i, i + 100),
+            config: { taskType: 'SEMANTIC_SIMILARITY', outputDimensionality: 768 },
+          }),
+        );
+        for (const entry of response.embeddings ?? []) vectors.push(entry.values ?? []);
+      }
+      if (vectors.length !== texts.length) throw new AiError('Google returned too few embeddings.');
+      return vectors;
+    } catch (error) {
+      if (error instanceof AiError) throw error;
       explain(error);
     }
   },

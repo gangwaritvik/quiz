@@ -322,6 +322,36 @@ export function isNearDuplicate(a: string, b: string): boolean {
   return shared / (left.size + right.size - shared) >= 0.8;
 }
 
+/** The text that stands for a question when comparing meaning. */
+export function questionSignature(q: {
+  text: string;
+  assertionText?: string | null;
+  reasonText?: string | null;
+}): string {
+  return [q.text, q.assertionText, q.reasonText]
+    .map((part) => (part ?? '').trim())
+    .filter(Boolean)
+    .join(' ');
+}
+
+/**
+ * Cosine similarity at or above which two questions count as the same one,
+ * however they are worded. Tuned on real Gemini embeddings.
+ */
+export const SEMANTIC_DUPLICATE = 0.91;
+
+export function cosine(a: number[], b: number[]): number {
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < Math.min(a.length, b.length); i += 1) {
+    dot += a[i]! * b[i]!;
+    normA += a[i]! * a[i]!;
+    normB += b[i]! * b[i]!;
+  }
+  return normA === 0 || normB === 0 ? 0 : dot / Math.sqrt(normA * normB);
+}
+
 export interface AcceptedDraft {
   body: DraftBody;
   source: DraftSource;

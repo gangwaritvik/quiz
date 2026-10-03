@@ -20,6 +20,7 @@ import {
   validateModelOutput,
 } from '@/lib/ai/question-generation';
 import { ApiError } from '@/lib/api';
+import { type SemanticGuard, createSemanticGuard } from '@/lib/ai/similarity';
 import { prisma } from '@/lib/db';
 import { questionFieldsFromInput, questionOptionsFromInput } from '@/lib/questions';
 import { createQuestionSchema } from '@/lib/validation';
@@ -36,6 +37,7 @@ interface JobContext {
   store: string | null;
   materialIds: string[];
   inline?: { bytes: Uint8Array; mimeType: string };
+  guard: SemanticGuard;
 }
 
 async function loadContext(job: {
@@ -82,6 +84,7 @@ async function loadContext(job: {
     store: subject.fileSearchStore,
     materialIds: materials.map((material) => material.id),
     inline,
+    guard: await createSemanticGuard(job.subjectId),
   };
 }
 
@@ -130,9 +133,11 @@ async function generateBatch(ctx: JobContext, batch: DifficultyCounts, types: Ai
     topicIdByName: new Map(ctx.topics.map((topic) => [topic.name.toLowerCase(), topic.id])),
     existing: avoid,
   });
+  const { kept, dropped } = await ctx.guard.filter(outcome.drafts);
   return {
     ...outcome,
-    drafts: outcome.drafts.map((draft) => ({ ...draft, source: attachSource(draft, sources, ctx) })),
+    dropped: outcome.dropped + dropped,
+    drafts: kept.map((draft) => ({ ...draft, source: attachSource(draft, sources, ctx) })),
   };
 }
 
@@ -237,8 +242,11 @@ export async function regenerateDraft(draftId: string) {
     ...ctx.existing,
     ...siblings.map((sibling) => String((sibling.payload as { text?: string }).text ?? '')),
   ];
-  const outcome = await generateBatch(ctx, batch, [type], avoid);
-  const fresh = outcome.drafts[0];
+  // A different question, not a rewording of the old one: try a few times.
+  let fresh: Awaited<ReturnType<typeof generateBatch>>['drafts'][number] | undefined;
+  for (let attempt = 0; attempt < 3 && !fresh; attempt += 1) {
+    fresh = (await generateBatch(ctx, batch, [type], avoid)).drafts[0];
+  }
   if (!fresh) throw new AiError('The AI could not produce a different question this time. Try again.');
 
   return prisma.questionDraft.update({

@@ -23,6 +23,8 @@ export interface AiProvider {
   deleteDocument(documentName: string): Promise<void>;
   /** OCR: page-marked Markdown for a PDF of scanned pages, or an image. */
   transcribe(input: { bytes: Uint8Array; mimeType: string; pages: number[] }): Promise<string>;
+  /** Meaning-vectors for short texts, one per input, in order. */
+  embed(texts: string[]): Promise<number[][]>;
   /** One structured generation call; `json` is untrusted and validated by the caller. */
   generate(input: {
     prompt: string;

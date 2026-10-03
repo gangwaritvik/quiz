@@ -206,6 +206,16 @@ model Topic {
   @@map("topics")
 }
 
+/// Cached meaning-vector of a bank question, for the AI's "is this a repeat?"
+/// check. `key` is a hash of the text it was made from, so an edited question
+/// is simply embedded again.
+model QuestionEmbedding {
+  questionId String   @id
+  key        String
+  vector     Float[]
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+}
+
 model Question {
   id            String       @id @default(cuid())
   /// May contain LaTeX between $…$ (inline) or $$…$$ (display). Stored raw and
@@ -220,6 +230,7 @@ model Question {
   topicId       String?
   authorId      String?
   usageCount    Int          @default(0)
+  embedding     QuestionEmbedding?
   active        Boolean      @default(true)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt

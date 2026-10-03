@@ -97,6 +97,7 @@ There is currently no test script in `package.json` and no committed automated t
 | `GEMINI_API_KEY` | For AI questions | Free Google AI Studio key; without it the AI feature is hidden |
 | `GEMINI_MODEL` | Optional | Defaults to `gemini-flash-latest` |
 | `GEMINI_FALLBACK_MODEL` | Optional | Used when the main model stays overloaded; defaults to `gemini-flash-lite-latest` |
+| `GEMINI_EMBED_MODEL` | Optional | Embedding model for the "same meaning" duplicate check; defaults to `gemini-embedding-001` |
 | `AI_PROVIDER` | Tests only | `fake` answers instantly without calling Google (the e2e server sets it) |
 
 Keep `.env` and uploaded media out of source control. `var/` is ignored. A database backup without the matching upload directory is incomplete because answer and question media are stored on disk, not in PostgreSQL.

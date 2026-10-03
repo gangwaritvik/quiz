@@ -5,8 +5,11 @@ import {
   type MapContext,
   buildPrompt,
   generationParamsSchema,
+  SEMANTIC_DUPLICATE,
+  cosine,
   isNearDuplicate,
   planBatches,
+  questionSignature,
   splitByMix,
   validateModelOutput,
 } from '@/lib/ai/question-generation';
@@ -248,5 +251,25 @@ describe('material text', () => {
     assert.match(doc, /--- Page 2 ---\nHandwritten notes/);
     assert.match(doc, /--- Page 3 ---\nClosing/);
     assert.match(buildCompanion([''], new Map()), /no readable text/);
+  });
+});
+
+describe('meaning comparison', () => {
+  test('cosine: same direction 1, orthogonal 0, empty 0', () => {
+    assert.ok(Math.abs(cosine([1, 2, 3], [2, 4, 6]) - 1) < 1e-9);
+    assert.equal(cosine([1, 0], [0, 1]), 0);
+    assert.equal(cosine([0, 0], [1, 1]), 0);
+  });
+
+  test('threshold sits between related-but-different and paraphrased questions', () => {
+    assert.ok(SEMANTIC_DUPLICATE > 0.85 && SEMANTIC_DUPLICATE < 0.95);
+  });
+
+  test('assertion-reason signature includes both statements', () => {
+    assert.equal(
+      questionSignature({ text: 'Assertion-reason', assertionText: 'A', reasonText: 'R' }),
+      'Assertion-reason A R',
+    );
+    assert.equal(questionSignature({ text: ' Q ', assertionText: null }), 'Q');
   });
 });
