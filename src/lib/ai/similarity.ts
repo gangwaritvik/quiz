@@ -3,6 +3,7 @@ import 'server-only';
 import { createHash } from 'node:crypto';
 
 import { type AiProvider, getProvider } from '@/lib/ai/provider';
+import { ApiError } from '@/lib/api';
 import {
   type AcceptedDraft,
   SEMANTIC_DUPLICATE,
@@ -15,7 +16,8 @@ import { prisma } from '@/lib/db';
 const BANK_LIMIT = 500;
 const PENDING_LIMIT = 100;
 
-const keyOf = (signature: string) => createHash('sha1').update(signature).digest('hex');
+/** The model is part of the key, so vectors from another embedding model are never compared. */
+const keyOf = (model: string, signature: string) => createHash('sha1').update(`${model}\n${signature}`).digest('hex');
 
 interface Known {
   /** What to show a teacher when a new question matches this one. */
@@ -27,16 +29,17 @@ interface Known {
  * The subject's bank as vectors. Each question is embedded once and cached
  * (re-embedded when its text changes); `extra` texts are embedded alongside.
  */
-async function loadBank(provider: AiProvider, subjectId: string, extra: string[] = []) {
+async function loadBank(provider: AiProvider, subjectId: string, extra: string[] = [], excludeId?: string) {
   const bank = await prisma.question.findMany({
-    where: { subjectId, active: true },
+    // Questions private to one quiz are not the bank.
+    where: { subjectId, active: true, adHoc: false, ...(excludeId ? { id: { not: excludeId } } : {}) },
     select: { id: true, text: true, assertionText: true, reasonText: true, embedding: true },
     orderBy: { createdAt: 'desc' },
     take: BANK_LIMIT,
   });
   const rows = bank.map((question) => {
     const signature = questionSignature(question);
-    return { id: question.id, label: question.text, signature, key: keyOf(signature), cached: question.embedding };
+    return { id: question.id, label: question.text, signature, key: keyOf(provider.embedModel, signature), cached: question.embedding };
   });
   const stale = rows.filter((row) => !row.cached || row.cached.key !== row.key);
 
@@ -66,15 +69,39 @@ const nearest = (vector: number[], known: Known[]) =>
  * For each text, the bank question it repeats in meaning, or null. Fails open
  * (all null) if embedding is unavailable, so accepting never gets stuck on it.
  */
-export async function findSimilarInBank(subjectId: string, signatures: string[]): Promise<Array<string | null>> {
+export async function findSimilarInBank(
+  subjectId: string,
+  signatures: string[],
+  excludeId?: string,
+): Promise<Array<string | null>> {
   if (signatures.length === 0) return [];
   try {
     const provider = await getProvider();
-    const { bank, extra } = await loadBank(provider, subjectId, signatures);
+    const { bank, extra } = await loadBank(provider, subjectId, signatures, excludeId);
     return extra.map((vector) => nearest(vector, bank)?.label ?? null);
   } catch (error) {
     console.warn('[ai] meaning check unavailable', error);
     return signatures.map(() => null);
+  }
+}
+
+/**
+ * Refuses (409, naming the question) when the bank already holds one of the
+ * same meaning, unless the teacher chose to add it anyway.
+ */
+export async function assertNoBankRepeat(input: {
+  subjectId: string;
+  question: { text: string; assertionText?: string | null; reasonText?: string | null };
+  allowSimilar?: boolean;
+  /** The question being edited, which must not count as a repeat of itself. */
+  excludeId?: string;
+}) {
+  if (input.allowSimilar) return;
+  const [similar] = await findSimilarInBank(input.subjectId, [questionSignature(input.question)], input.excludeId);
+  if (similar) {
+    throw new ApiError('CONFLICT', `The bank already has a question that means the same: “${similar.slice(0, 140)}”.`, {
+      similar: [similar],
+    });
   }
 }
 

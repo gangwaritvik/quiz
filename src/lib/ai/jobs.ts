@@ -21,7 +21,7 @@ import {
   validateModelOutput,
 } from '@/lib/ai/question-generation';
 import { ApiError } from '@/lib/api';
-import { type SemanticGuard, createSemanticGuard, findSimilarInBank } from '@/lib/ai/similarity';
+import { type SemanticGuard, assertNoBankRepeat, createSemanticGuard, findSimilarInBank } from '@/lib/ai/similarity';
 import { prisma } from '@/lib/db';
 import { questionFieldsFromInput, questionOptionsFromInput } from '@/lib/questions';
 import {
@@ -349,14 +349,7 @@ export async function acceptDraft(input: {
     if (!topic) throw new ApiError('VALIDATION', 'That topic does not belong to the subject.');
   }
 
-  if (!input.allowSimilar) {
-    const [similar] = await findSimilarInBank(body.subjectId, [questionSignature(body)]);
-    if (similar) {
-      throw new ApiError('CONFLICT', `The bank already has a question that means the same: “${similar.slice(0, 140)}”.`, {
-        similar: [similar],
-      });
-    }
-  }
+  await assertNoBankRepeat({ subjectId: body.subjectId, question: body, allowSimilar: input.allowSimilar });
 
   return prisma.$transaction(async (tx) => {
     const claim = await tx.questionDraft.updateMany({

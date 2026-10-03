@@ -87,6 +87,9 @@ const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
 
 export const geminiProvider: AiProvider = {
   name: 'gemini',
+  get embedModel() {
+    return embedModel();
+  },
 
   async createStore(displayName) {
     try {

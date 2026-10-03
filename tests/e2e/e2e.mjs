@@ -701,6 +701,27 @@ check('(p) topic=none returns only topicless questions, matching the count', qsN
   await fac('(q) the teacher can still accept a flagged draft after looking at it', 'POST', `/api/admin/ai/drafts/${done3.drafts[3].id}/accept`, undefined, { expect: [200] });
   check('(q) quizzes built from AI batches are audited', (await prisma.auditLog.count({ where: { action: 'admin.quiz_created', entityId: { in: [quizOnly.quizId, both.quizId] } } })) === 2);
 
+  // Hand-written questions get the same meaning check as AI drafts.
+  const handBody = { subjectId: subj.id, text: q1.text, type: 'MCQ_SINGLE', difficulty: 'EASY', marks: 1, negativeMarks: 0, options: [{ text: 'Yes', isCorrect: true }, { text: 'No', isCorrect: false }] };
+  const refused = await fac('(q) a hand-written repeat of a bank question is refused', 'POST', '/api/admin/questions', handBody, { expect: [409] });
+  check('(q) the refusal names the question it repeats', refused.text.includes('means the same'), refused.text.slice(0, 160));
+  const twinQ = (await fac('(q) the teacher can add the repeat anyway', 'POST', '/api/admin/questions', { ...handBody, allowSimilar: true }, { expect: [200] })).data;
+  await fac('(q) editing only the marks of a twin is not nagged', 'PATCH', `/api/admin/questions/${twinQ.questionId}`, { ...handBody, marks: 2 }, { expect: [200] });
+  const banked2Text = (await prisma.question.findUnique({ where: { id: banked2.questionId } })).text;
+  await fac('(q) rewording a question into a repeat is refused', 'PATCH', `/api/admin/questions/${twinQ.questionId}`, { ...handBody, text: banked2Text }, { expect: [409] });
+
+  // Moving a quiz-only question into the bank later.
+  const privateQ = qz1.questions.find((l) => l.question.adHoc).questionId;
+  await fac2('(q) another faculty member cannot move my question to the bank', 'POST', `/api/admin/questions/${privateQ}/add-to-bank`, {}, { expect: [403] });
+  await fac('(q) move a quiz-only question into the bank', 'POST', `/api/admin/questions/${privateQ}/add-to-bank`, {}, { expect: [200] });
+  check('(q) it is now in the bank and still on the quiz', (await prisma.question.findUnique({ where: { id: privateQ } })).adHoc === false && (await prisma.quizQuestion.count({ where: { quizId: quizOnly.quizId, questionId: privateQ } })) === 1);
+  await fac('(q) it cannot be added twice', 'POST', `/api/admin/questions/${privateQ}/add-to-bank`, {}, { expect: [409] });
+  const quizView = (await fac('(q) the quiz shows which questions are in the bank', 'GET', `/api/admin/quizzes/${quizOnly.quizId}`, undefined, { expect: [200] })).data;
+  check('(q) every question on it is now flagged as in the bank', quizView.questions.length === 2 && quizView.questions.every((qq) => qq.inBank === true));
+  const repeatQ = qz2.questions.find((l) => l.question.adHoc).questionId;
+  await fac('(q) a quiz-only repeat of a bank question is stopped', 'POST', `/api/admin/questions/${repeatQ}/add-to-bank`, {}, { expect: [409] });
+  await fac('(q) unless the teacher insists', 'POST', `/api/admin/questions/${repeatQ}/add-to-bank`, { allowSimilar: true }, { expect: [200] });
+
   await fac2('(q) another faculty member cannot delete the material', 'DELETE', `/api/admin/materials/${mDocx.id}`, undefined, { expect: [403] });
   await fac('(q) delete a material', 'DELETE', `/api/admin/materials/${mDocx.id}`, undefined, { expect: [200] });
   check('(q) a deleted material is gone', (await prisma.studyMaterial.count({ where: { id: mDocx.id } })) === 0);

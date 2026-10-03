@@ -402,6 +402,8 @@ export const createQuestionSchema = questionBodySchema
   .extend({
     subjectId: cuid,
     topicId: cuid.optional().or(z.literal('')),
+    /** The teacher saw that the bank has a question of the same meaning and still wants this one. */
+    allowSimilar: z.boolean().optional(),
   })
   .superRefine(refineQuestionBody);
 

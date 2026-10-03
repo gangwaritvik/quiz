@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 
+import { assertNoBankRepeat } from '@/lib/ai/similarity';
 import { ApiError, assertSameOrigin, ok, parseBody, parseQuery, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
@@ -75,6 +76,8 @@ export const POST = route(async (request: Request) => {
     });
     if (!topic) throw new ApiError('VALIDATION', 'That topic does not belong to the subject.');
   }
+
+  await assertNoBankRepeat({ subjectId: body.subjectId, question: body, allowSimilar: body.allowSimilar });
 
   const question = await prisma.question.create({
     data: {

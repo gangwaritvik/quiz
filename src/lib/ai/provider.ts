@@ -11,6 +11,8 @@ import type { CheckAnswer, CheckItem } from '@/lib/ai/verification';
  */
 export interface AiProvider {
   name: 'gemini' | 'fake';
+  /** Which embedding model makes the vectors; cached vectors are only reused for the same one. */
+  readonly embedModel: string;
   /** The subject's File Search store, created if it does not exist yet. */
   createStore(displayName: string): Promise<string>;
   /** Indexes one file into a store; resolves once it is searchable. */

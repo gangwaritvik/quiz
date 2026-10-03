@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ApiClientError, apiFetch } from '@/lib/client/api';
+import { sendUnlessRepeat } from '@/lib/client/confirm-similar';
 import { hasMath } from '@/lib/math';
 import {
   QUESTION_TYPE_HINT,
@@ -309,12 +310,14 @@ export function QuestionEditor({
 
       if (onSubmit) {
         await onSubmit(body);
-      } else if (question) {
-        await apiFetch(`/api/admin/questions/${question.id}`, { method: 'PATCH', body });
-        toast.success('Question updated.');
       } else {
-        await apiFetch('/api/admin/questions', { method: 'POST', body });
-        toast.success('Question added to the bank.');
+        const saved = await sendUnlessRepeat((allowSimilar) =>
+          question
+            ? apiFetch(`/api/admin/questions/${question.id}`, { method: 'PATCH', body: { ...body, allowSimilar } })
+            : apiFetch('/api/admin/questions', { method: 'POST', body: { ...body, allowSimilar } }),
+        );
+        if (!saved) return; // the teacher chose not to add a repeat
+        toast.success(question ? 'Question updated.' : 'Question added to the bank.');
       }
 
       onSaved();

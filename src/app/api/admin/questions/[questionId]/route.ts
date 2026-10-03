@@ -1,3 +1,5 @@
+import { assertNoBankRepeat } from '@/lib/ai/similarity';
+import { questionSignature } from '@/lib/ai/question-generation';
 import { ApiError, assertSameOrigin, ok, parseBody, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
@@ -54,6 +56,16 @@ export const PATCH = route(async (request: Request, { params }: Params) => {
       'CONFLICT',
       'This question is on a paper that is currently being attempted. Edit it once those exams finish.',
     );
+  }
+
+  // Only a change of wording can create a repeat; fixing marks on an old twin must not nag.
+  if (questionSignature(existing) !== questionSignature(body)) {
+    await assertNoBankRepeat({
+      subjectId: body.subjectId,
+      question: body,
+      allowSimilar: body.allowSimilar,
+      excludeId: questionId,
+    });
   }
 
   await prisma.$transaction(async (tx) => {

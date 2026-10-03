@@ -42,6 +42,7 @@ import { Label } from '@/components/ui/label';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import { useApi } from '@/hooks/use-api';
 import { ApiClientError, apiFetch } from '@/lib/client/api';
+import { sendUnlessRepeat } from '@/lib/client/confirm-similar';
 import { QUESTION_TYPE_LABEL, type QuestionTypeValue } from '@/lib/question-types';
 import { cn } from '@/lib/utils';
 
@@ -85,16 +86,9 @@ interface JobResponse {
  * meaning the server says so, and the teacher decides whether to add it anyway.
  */
 async function acceptIntoBank(draftId: string, question?: unknown): Promise<boolean> {
-  const send = (allowSimilar: boolean) =>
-    apiFetch(`/api/admin/ai/drafts/${draftId}/accept`, { method: 'POST', body: { question, allowSimilar } });
-  try {
-    await send(false);
-  } catch (caught) {
-    if (!(caught instanceof ApiClientError) || !caught.details?.similar) throw caught;
-    if (!window.confirm(`${caught.message}\n\nAdd it to the bank anyway?`)) return false;
-    await send(true);
-  }
-  return true;
+  return sendUnlessRepeat((allowSimilar) =>
+    apiFetch(`/api/admin/ai/drafts/${draftId}/accept`, { method: 'POST', body: { question, allowSimilar } }),
+  );
 }
 
 /**

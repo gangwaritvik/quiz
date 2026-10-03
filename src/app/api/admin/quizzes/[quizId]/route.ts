@@ -102,6 +102,7 @@ export const GET = route(async (_request: Request, { params }: Params) => {
     // behind requireAdmin; no student-facing route ever includes `isCorrect`.
     questions: quiz.questions.map(({ question, position }) => ({
       id: question.id,
+      inBank: !question.adHoc,
       position,
       text: question.text,
       type: question.type,

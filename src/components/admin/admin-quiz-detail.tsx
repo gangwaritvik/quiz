@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   Clock,
   FileQuestion,
+  LibraryBig,
   Lock,
   Pencil,
   Save,
@@ -56,6 +57,7 @@ import {
 } from '@/components/ui/table';
 import { useApi } from '@/hooks/use-api';
 import { ApiClientError, apiFetch } from '@/lib/client/api';
+import { sendUnlessRepeat } from '@/lib/client/confirm-similar';
 import { formatDateTime } from '@/lib/utils';
 
 interface QuizDetail {
@@ -549,6 +551,7 @@ function QuestionsTab({
   const [draft, setDraft] = React.useState<InstantQuestion[]>([]);
   const [showErrors, setShowErrors] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
+  const [banking, setBanking] = React.useState<string | null>(null);
 
   if (quiz.sourceMode === 'POOL') {
     return (
@@ -591,6 +594,23 @@ function QuestionsTab({
       </div>
     );
   }
+
+  const addToBank = async (questionId: string) => {
+    setBanking(questionId);
+    try {
+      const added = await sendUnlessRepeat((allowSimilar) =>
+        apiFetch(`/api/admin/questions/${questionId}/add-to-bank`, { method: 'POST', body: { allowSimilar } }),
+      );
+      if (added) {
+        toast.success('Added to the question bank. It stays on this quiz too.');
+        onSaved();
+      }
+    } catch (caught) {
+      toast.error(caught instanceof ApiClientError ? caught.message : 'We could not add it to the bank.');
+    } finally {
+      setBanking(null);
+    }
+  };
 
   const startEditing = () => {
     setDraft(
@@ -690,6 +710,22 @@ function QuestionsTab({
                   <span className="tabular text-xs text-muted-foreground">
                     {question.marks} mark{question.marks === 1 ? '' : 's'}
                   </span>
+                  {question.id && question.inBank === false ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="ml-auto"
+                      loading={banking === question.id}
+                      onClick={() => void addToBank(question.id!)}
+                    >
+                      <LibraryBig />
+                      Add to the bank
+                    </Button>
+                  ) : question.inBank ? (
+                    <Badge variant="outline" className="ml-auto">
+                      In the bank
+                    </Badge>
+                  ) : null}
                 </div>
 
                 <MathText

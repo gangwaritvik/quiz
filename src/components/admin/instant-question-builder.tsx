@@ -119,6 +119,9 @@ function fixedOptions(texts: readonly string[]): InstantOption[] {
 
 /** One question as the quiz detail route returns it. */
 export interface SavedQuestion {
+  id?: string;
+  /** False for a question that belongs to this quiz alone. */
+  inBank?: boolean;
   text: string;
   type: string;
   marks: number;

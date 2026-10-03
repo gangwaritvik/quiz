@@ -14,6 +14,7 @@ const word = () => randomBytes(3).toString('hex');
 
 export const fakeProvider: AiProvider = {
   name: 'fake',
+  embedModel: 'fake-bag-of-words',
 
   async createStore(displayName) {
     return `fileSearchStores/fake-${displayName.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
