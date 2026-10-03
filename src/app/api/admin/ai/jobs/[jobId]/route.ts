@@ -34,7 +34,14 @@ export const GET = route(async (_request: Request, { params }: Params) => {
       },
       drafts: {
         orderBy: { createdAt: 'asc' },
-        select: { id: true, status: true, payload: true, source: true, questionId: true },
+        select: {
+          id: true,
+          status: true,
+          payload: true,
+          source: true,
+          questionId: true,
+          question: { select: { adHoc: true } },
+        },
       },
     },
   });

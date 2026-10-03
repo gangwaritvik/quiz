@@ -27,22 +27,25 @@ export const POST = route(async (request: Request, { params }: Params) => {
 
   const raw = await request.text();
   let edited: unknown;
+  let allowSimilar = false;
   if (raw.trim()) {
     try {
-      edited = (JSON.parse(raw) as { question?: unknown }).question;
+      const parsed = JSON.parse(raw) as { question?: unknown; allowSimilar?: unknown };
+      edited = parsed.question;
+      allowSimilar = parsed.allowSimilar === true;
     } catch {
       edited = undefined;
     }
   }
 
-  const question = await acceptDraft({ draftId, adminId: session.adminId, edited });
+  const question = await acceptDraft({ draftId, adminId: session.adminId, edited, allowSimilar });
   await audit({
     action: 'admin.ai_draft_accepted',
     userId: session.userId,
     entityType: 'Question',
     entityId: question.id,
     context,
-    metadata: { draftId, edited: edited !== undefined },
+    metadata: { draftId, edited: edited !== undefined, allowSimilar },
   });
   return ok({ questionId: question.id });
 });

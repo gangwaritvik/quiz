@@ -661,6 +661,38 @@ check('(p) topic=none returns only topicless questions, matching the count', qsN
   const dashS = await stu('(q) student dashboard', 'GET', '/api/student/dashboard', undefined, { expect: [200] });
   check('(q) no draft ids or excerpts reach a student', !done.drafts.some((d) => dashS.text.includes(d.id)) && !dashS.text.includes('Fake OCR'));
 
+  // Meaning check on accept: the bank already has q1's text, so the same question again is stopped.
+  const [p1, p2] = pageDone.drafts;
+  const twin = { ...p1.payload, text: q1.text };
+  const stopped = await fac('(q) a repeat of a bank question is stopped on accept', 'POST', `/api/admin/ai/drafts/${p1.id}/accept`, { question: twin }, { expect: [409] });
+  check('(q) the refusal names the question it repeats', stopped.text.includes('means the same'), stopped.text.slice(0, 200));
+  await fac('(q) the teacher can add it anyway', 'POST', `/api/admin/ai/drafts/${p1.id}/accept`, { question: twin, allowSimilar: true }, { expect: [200] });
+
+  // A quiz straight from a batch.
+  const win = { startsAt: new Date(Date.now() + 3600_000).toISOString(), endsAt: new Date(Date.now() + 7200_000).toISOString() };
+  await fac('(q) a quiz window that ends before it starts is refused', 'POST', `/api/admin/ai/jobs/${pageJob.id}/quiz`, { title: 'Bad window', durationMinutes: 20, addToBank: false, startsAt: win.endsAt, endsAt: win.startsAt }, { expect: [422] });
+  await fac2('(q) another faculty member cannot build a quiz from the batch', 'POST', `/api/admin/ai/jobs/${pageJob.id}/quiz`, { title: 'Not mine', durationMinutes: 20, addToBank: false, ...win }, { expect: [403] });
+  await stu('(q) a student cannot build a quiz from a batch', 'POST', `/api/admin/ai/jobs/${pageJob.id}/quiz`, { title: 'Not mine', durationMinutes: 20, addToBank: false, ...win }, { expect: [401, 403] });
+  const aiBefore = await prisma.question.count({ where: { subjectId: subj.id, adHoc: false, aiGenerated: true } });
+  const quizOnly = (await fac('(q) build a quiz-only quiz from a batch', 'POST', `/api/admin/ai/jobs/${pageJob.id}/quiz`, { title: 'AI quiz (not in bank)', durationMinutes: 20, addToBank: false, ...win }, { expect: [200] })).data;
+  const qz1 = await prisma.quiz.findUnique({ where: { id: quizOnly.quizId }, include: { questions: { include: { question: true }, orderBy: { position: 'asc' } } } });
+  check('(q) it is a draft fixed-paper quiz with the batch as its paper', qz1?.status === 'DRAFT' && qz1.sourceMode === 'FIXED' && qz1.questionCount === 2 && qz1.questions.length === 2 && qz1.totalMarks === 4, JSON.stringify(quizOnly));
+  check('(q) a new question stays out of the bank, one already banked is reused', qz1.questions.filter((l) => l.question.adHoc).length === 1 && qz1.questions.some((l) => l.questionId === (qz1.questions.find((x) => !x.question.adHoc)?.questionId)));
+  check('(q) quiz-only questions do not reach the bank', (await prisma.question.count({ where: { subjectId: subj.id, adHoc: false, aiGenerated: true } })) === aiBefore);
+
+  const job3 = (await fac('(q) start a batch for a bank-and-quiz test', 'POST', '/api/admin/ai/jobs', { subjectId: subj.id, materialIds: [mText.id], params: { ...params, count: 3, types: ['MCQ_SINGLE'] } }, { expect: [200] })).data;
+  const done3 = await waitFor(async () => {
+    const j = (await fac('(q) poll that batch', 'GET', `/api/admin/ai/jobs/${job3.id}`, undefined, {})).data;
+    return j.status === 'DONE' || j.status === 'FAILED' ? j : null;
+  });
+  // One of its drafts repeats a bank question word for word.
+  await prisma.questionDraft.update({ where: { id: done3.drafts[0].id }, data: { payload: { ...done3.drafts[0].payload, text: q1.text } } });
+  const both = (await fac('(q) build a quiz that also adds to the bank', 'POST', `/api/admin/ai/jobs/${job3.id}/quiz`, { title: 'AI quiz (and bank)', durationMinutes: 15, addToBank: true, ...win }, { expect: [200] })).data;
+  check('(q) new questions join the bank, a repeat stays on the quiz only', both.questions === 3 && both.toBank === 2 && both.quizOnly === 1 && both.repeats === 1, JSON.stringify(both));
+  const qz2 = await prisma.quiz.findUnique({ where: { id: both.quizId }, include: { questions: { include: { question: true } } } });
+  check('(q) the quiz holds all three, two of them also in the bank', qz2.questions.length === 3 && qz2.questions.filter((l) => !l.question.adHoc).length === 2);
+  check('(q) quizzes built from AI batches are audited', (await prisma.auditLog.count({ where: { action: 'admin.quiz_created', entityId: { in: [quizOnly.quizId, both.quizId] } } })) === 2);
+
   await fac2('(q) another faculty member cannot delete the material', 'DELETE', `/api/admin/materials/${mDocx.id}`, undefined, { expect: [403] });
   await fac('(q) delete a material', 'DELETE', `/api/admin/materials/${mDocx.id}`, undefined, { expect: [200] });
   check('(q) a deleted material is gone', (await prisma.studyMaterial.count({ where: { id: mDocx.id } })) === 0);

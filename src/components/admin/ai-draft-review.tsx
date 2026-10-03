@@ -6,6 +6,7 @@ import {
   CheckCheck,
   CheckCircle2,
   FileText,
+  ClipboardList,
   Loader2,
   Pencil,
   RefreshCw,
@@ -14,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { toast } from 'sonner';
 
@@ -23,7 +25,18 @@ import { MathText } from '@/components/shared/math-text';
 import { PageHeader, PageShell } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import { useApi } from '@/hooks/use-api';
 import { ApiClientError, apiFetch } from '@/lib/client/api';
@@ -50,6 +63,8 @@ interface Draft {
   payload: DraftPayload;
   source: { materialId?: string; page?: number; excerpt?: string } | null;
   questionId: string | null;
+  /** For an accepted draft: false when it joined a quiz only, not the bank. */
+  question?: { adHoc: boolean } | null;
 }
 
 interface JobResponse {
@@ -64,6 +79,23 @@ interface JobResponse {
 }
 
 /**
+ * Accepts a draft into the bank. If the bank already has a question of the same
+ * meaning the server says so, and the teacher decides whether to add it anyway.
+ */
+async function acceptIntoBank(draftId: string, question?: unknown): Promise<boolean> {
+  const send = (allowSimilar: boolean) =>
+    apiFetch(`/api/admin/ai/drafts/${draftId}/accept`, { method: 'POST', body: { question, allowSimilar } });
+  try {
+    await send(false);
+  } catch (caught) {
+    if (!(caught instanceof ApiClientError) || !caught.details?.similar) throw caught;
+    if (!window.confirm(`${caught.message}\n\nAdd it to the bank anyway?`)) return false;
+    await send(true);
+  }
+  return true;
+}
+
+/**
  * The review list for one AI batch. Nothing here is in the bank until the
  * teacher accepts it; each draft shows its answer key and the passage it came
  * from, so it can be checked against the material rather than trusted.
@@ -75,6 +107,7 @@ export function AiDraftReview({ jobId }: { jobId: string }) {
   });
   const [editing, setEditing] = React.useState<Draft | null>(null);
   const [acceptingAll, setAcceptingAll] = React.useState(false);
+  const [quizOpen, setQuizOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (data) setRunning(data.status === 'QUEUED' || data.status === 'RUNNING');
@@ -102,6 +135,7 @@ export function AiDraftReview({ jobId }: { jobId: string }) {
 
   const pending = data.drafts.filter((draft) => draft.status === 'PENDING');
   const accepted = data.drafts.filter((draft) => draft.status === 'ACCEPTED').length;
+  const usable = pending.length + data.drafts.filter((draft) => draft.status === 'ACCEPTED' && !draft.question?.adHoc).length;
   const visible = data.drafts.filter((draft) => draft.status !== 'DISCARDED');
   const topicName = (id?: string) => data.subject.topics.find((topic) => topic.id === id)?.name;
   const materialTitle = (id?: string) => data.materials.find((material) => material.id === id)?.title;
@@ -114,7 +148,7 @@ export function AiDraftReview({ jobId }: { jobId: string }) {
       });
       toast.success(
         `${result.accepted} question${result.accepted === 1 ? '' : 's'} added to the bank` +
-          (result.skipped > 0 ? `; ${result.skipped} need a fix first.` : '.'),
+          (result.skipped > 0 ? `; ${result.skipped} skipped (invalid, or the bank already has them).` : '.'),
       );
       await refetch();
     } catch (caught) {
@@ -155,11 +189,19 @@ export function AiDraftReview({ jobId }: { jobId: string }) {
         title="AI drafts"
         description={`${data.subject.name} · from ${data.materials.map((material) => material.title).join(', ') || 'your material'}. Check each question against the material before accepting it.`}
         actions={
-          pending.length > 0 ? (
-            <Button loading={acceptingAll} onClick={() => void acceptAll()}>
-              <CheckCheck />
-              Accept all {pending.length}
-            </Button>
+          !running && usable > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={() => setQuizOpen(true)}>
+                <ClipboardList />
+                Create quiz
+              </Button>
+              {pending.length > 0 ? (
+                <Button loading={acceptingAll} onClick={() => void acceptAll()}>
+                  <CheckCheck />
+                  Add all {pending.length} to the bank
+                </Button>
+              ) : null}
+            </div>
           ) : null
         }
       />
@@ -220,10 +262,20 @@ export function AiDraftReview({ jobId }: { jobId: string }) {
         title="Edit and accept"
         submitLabel="Accept into the bank"
         onSubmit={async (body) => {
-          await apiFetch(`/api/admin/ai/drafts/${editing!.id}/accept`, { method: 'POST', body: { question: body } });
+          if (!(await acceptIntoBank(editing!.id, body))) {
+            throw new ApiClientError('CONFLICT', 'Not added to the bank.', 409);
+          }
           toast.success('Question added to the bank.');
         }}
         onSaved={() => void refetch()}
+      />
+
+      <QuizFromDraftsDialog
+        open={quizOpen}
+        onOpenChange={setQuizOpen}
+        jobId={jobId}
+        subjectName={data.subject.name}
+        count={usable}
       />
     </PageShell>
   );
@@ -252,7 +304,9 @@ function DraftCard({
     setBusy(kind);
     try {
       if (kind === 'discard') await apiFetch(`/api/admin/ai/drafts/${draft.id}`, { method: 'DELETE' });
-      else await apiFetch(`/api/admin/ai/drafts/${draft.id}/${kind}`, { method: 'POST' });
+      else if (kind === 'accept') {
+        if (!(await acceptIntoBank(draft.id))) return;
+      } else await apiFetch(`/api/admin/ai/drafts/${draft.id}/${kind}`, { method: 'POST' });
       if (kind === 'accept') toast.success('Added to the bank.');
       if (kind === 'regenerate') toast.success('Replaced with a new question.');
       onChanged();
@@ -282,7 +336,7 @@ function DraftCard({
         {done ? (
           <Badge variant="success" className="ml-auto">
             <CheckCircle2 aria-hidden />
-            In the bank
+            {draft.question?.adHoc ? 'In a quiz only' : 'In the bank'}
           </Badge>
         ) : null}
       </div>
@@ -383,5 +437,152 @@ function DraftCard({
         </div>
       ) : null}
     </li>
+  );
+}
+
+/** `datetime-local` needs `YYYY-MM-DDTHH:mm` in local time. */
+const localInput = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+
+/**
+ * Builds a draft quiz straight from the batch. The teacher only names it and
+ * sets the window; students, security and publishing are done on the quiz page.
+ */
+function QuizFromDraftsDialog({
+  open,
+  onOpenChange,
+  jobId,
+  subjectName,
+  count,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  jobId: string;
+  subjectName: string;
+  count: number;
+}) {
+  const router = useRouter();
+  const [title, setTitle] = React.useState(`${subjectName} quiz`);
+  const [duration, setDuration] = React.useState(String(Math.max(10, Math.ceil(count * 1.5))));
+  const [startsAt, setStartsAt] = React.useState('');
+  const [endsAt, setEndsAt] = React.useState('');
+  const [addToBank, setAddToBank] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const start = new Date(Date.now() + 30 * 60_000);
+    start.setSeconds(0, 0);
+    setStartsAt(localInput(start));
+    setEndsAt(localInput(new Date(start.getTime() + 2 * 60 * 60_000)));
+    setTitle(`${subjectName} quiz`);
+    setDuration(String(Math.max(10, Math.ceil(count * 1.5))));
+    setError(null);
+  }, [open, subjectName, count]);
+
+  const create = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await apiFetch<{ quizId: string; questions: number; toBank: number; repeats: number; skipped: number }>(
+        `/api/admin/ai/jobs/${jobId}/quiz`,
+        {
+          method: 'POST',
+          body: {
+            title,
+            durationMinutes: Number(duration),
+            startsAt: new Date(startsAt).toISOString(),
+            endsAt: new Date(endsAt).toISOString(),
+            addToBank,
+          },
+        },
+      );
+      toast.success(
+        `Quiz saved as a draft with ${result.questions} questions` +
+          (addToBank ? `; ${result.toBank} added to the bank` : '') +
+          (result.repeats > 0 ? `, ${result.repeats} kept out because the bank has them already` : '') +
+          '.',
+      );
+      router.push(`/admin/quizzes/${result.quizId}`);
+    } catch (caught) {
+      setError(caught instanceof ApiClientError ? caught.message : 'We could not create the quiz.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={busy ? undefined : onOpenChange}>
+      <DialogContent hideClose={busy} className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Create a quiz from these {count} questions</DialogTitle>
+          <DialogDescription>
+            It is saved as a draft. Next you pick students and security settings, then publish.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="ai-quiz-title" required>
+              Quiz name
+            </Label>
+            <Input id="ai-quiz-title" value={title} onChange={(event) => setTitle(event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ai-quiz-duration" required>
+              Minutes
+            </Label>
+            <Input
+              id="ai-quiz-duration"
+              type="number"
+              min={1}
+              max={360}
+              value={duration}
+              onChange={(event) => setDuration(event.target.value)}
+            />
+          </div>
+          <div className="hidden sm:block" />
+          <div className="space-y-2">
+            <Label htmlFor="ai-quiz-start" required>
+              Opens
+            </Label>
+            <Input id="ai-quiz-start" type="datetime-local" value={startsAt} onChange={(event) => setStartsAt(event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ai-quiz-end" required>
+              Closes
+            </Label>
+            <Input id="ai-quiz-end" type="datetime-local" value={endsAt} onChange={(event) => setEndsAt(event.target.value)} />
+          </div>
+        </div>
+
+        <div className="flex items-start gap-3 rounded-md border border-border p-3">
+          <Checkbox id="ai-quiz-bank" checked={addToBank} onCheckedChange={(on) => setAddToBank(on === true)} className="mt-0.5" />
+          <label htmlFor="ai-quiz-bank" className="cursor-pointer text-sm">
+            <span className="font-medium">Also add the questions to the {subjectName} bank</span>
+            <span className="mt-0.5 block text-muted-foreground">
+              {addToBank
+                ? 'Questions the bank already has in other words stay on this quiz only.'
+                : 'The questions belong to this quiz alone and never appear in the bank.'}
+            </span>
+          </label>
+        </div>
+
+        {error ? (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+
+        <DialogFooter>
+          <Button variant="outline" disabled={busy} onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button loading={busy} onClick={() => void create()}>
+            <ClipboardList />
+            Create quiz
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

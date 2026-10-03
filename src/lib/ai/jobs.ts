@@ -16,14 +16,15 @@ import {
   buildPrompt,
   generationParamsSchema,
   planBatches,
+  questionSignature,
   splitByMix,
   validateModelOutput,
 } from '@/lib/ai/question-generation';
 import { ApiError } from '@/lib/api';
-import { type SemanticGuard, createSemanticGuard } from '@/lib/ai/similarity';
+import { type SemanticGuard, createSemanticGuard, findSimilarInBank } from '@/lib/ai/similarity';
 import { prisma } from '@/lib/db';
 import { questionFieldsFromInput, questionOptionsFromInput } from '@/lib/questions';
-import { createQuestionSchema } from '@/lib/validation';
+import { createQuestionSchema, quizSecuritySchema } from '@/lib/validation';
 
 /** A job still "running" after this was cut off (e.g. a server restart). */
 const STALE_MS = 10 * 60_000;
@@ -263,7 +264,13 @@ export async function regenerateDraft(draftId: string) {
  * edits. Validated exactly like a hand-written question. The draft is claimed
  * first, so a double click creates one question, not two.
  */
-export async function acceptDraft(input: { draftId: string; adminId: string; edited?: unknown }) {
+export async function acceptDraft(input: {
+  draftId: string;
+  adminId: string;
+  edited?: unknown;
+  /** Add it even though the bank already has a question of the same meaning. */
+  allowSimilar?: boolean;
+}) {
   const draft = await prisma.questionDraft.findUniqueOrThrow({
     where: { id: input.draftId },
     include: { job: { select: { subjectId: true } } },
@@ -281,6 +288,15 @@ export async function acceptDraft(input: { draftId: string; adminId: string; edi
   if (body.topicId) {
     const topic = await prisma.topic.findFirst({ where: { id: body.topicId, subjectId: body.subjectId } });
     if (!topic) throw new ApiError('VALIDATION', 'That topic does not belong to the subject.');
+  }
+
+  if (!input.allowSimilar) {
+    const [similar] = await findSimilarInBank(body.subjectId, [questionSignature(body)]);
+    if (similar) {
+      throw new ApiError('CONFLICT', `The bank already has a question that means the same: “${similar.slice(0, 140)}”.`, {
+        similar: [similar],
+      });
+    }
   }
 
   return prisma.$transaction(async (tx) => {
@@ -305,4 +321,125 @@ export async function acceptDraft(input: { draftId: string; adminId: string; edi
     });
     return question;
   });
+}
+
+/**
+ * Builds a fixed-paper quiz (saved as a draft) from a batch: its waiting drafts
+ * become questions, and drafts already in the bank are linked. With `addToBank`
+ * the new questions also join the bank, except ones that repeat a bank question
+ * in meaning; those stay on this quiz only. Without it every new question is
+ * private to the quiz, like one written in the quiz builder.
+ */
+export async function createQuizFromDrafts(input: {
+  jobId: string;
+  adminId: string;
+  title: string;
+  durationMinutes: number;
+  startsAt: Date;
+  endsAt: Date;
+  addToBank: boolean;
+}) {
+  const job = await prisma.generationJob.findUniqueOrThrow({
+    where: { id: input.jobId },
+    select: { subjectId: true },
+  });
+  const drafts = await prisma.questionDraft.findMany({
+    where: { jobId: input.jobId, status: { in: ['PENDING', 'ACCEPTED'] } },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+  });
+
+  const linked = await prisma.question.findMany({
+    // A question private to another quiz is not reused here (deleting that quiz would remove it).
+    where: { id: { in: drafts.flatMap((draft) => (draft.questionId ? [draft.questionId] : [])) }, active: true, adHoc: false },
+    select: { id: true, marks: true },
+  });
+  const linkedById = new Map(linked.map((question) => [question.id, question]));
+
+  type Body = ReturnType<typeof createQuestionSchema.parse>;
+  type Entry = { draftId: string; existing: { id: string; marks: number } } | { draftId: string; body: Body };
+  const entries: Entry[] = [];
+  let skipped = 0;
+  for (const draft of drafts) {
+    if (draft.status === 'ACCEPTED') {
+      const existing = draft.questionId ? linkedById.get(draft.questionId) : undefined;
+      if (existing) entries.push({ draftId: draft.id, existing });
+      else skipped += 1;
+      continue;
+    }
+    const parsed = createQuestionSchema.safeParse({ ...(draft.payload as object), subjectId: job.subjectId });
+    const topicOk =
+      parsed.success &&
+      (!parsed.data.topicId ||
+        (await prisma.topic.findFirst({ where: { id: parsed.data.topicId, subjectId: job.subjectId } })) !== null);
+    if (!parsed.success || !topicOk) {
+      skipped += 1;
+      continue;
+    }
+    entries.push({ draftId: draft.id, body: parsed.data });
+  }
+  if (entries.length === 0) {
+    throw new ApiError('VALIDATION', 'There are no usable questions in this batch to build a quiz from.');
+  }
+
+  const fresh = entries.filter((entry): entry is { draftId: string; body: Body } => 'body' in entry);
+  const similar = input.addToBank
+    ? await findSimilarInBank(job.subjectId, fresh.map((entry) => questionSignature(entry.body)))
+    : fresh.map(() => null);
+  const quizOnly = new Set(fresh.filter((_, i) => !input.addToBank || similar[i]).map((entry) => entry.draftId));
+
+  const totalMarks = entries.reduce((sum, entry) => sum + ('body' in entry ? entry.body.marks : entry.existing.marks), 0);
+  const quiz = await prisma.$transaction(async (tx) => {
+    const created = await tx.quiz.create({
+      data: {
+        title: input.title,
+        subjectId: job.subjectId,
+        authorId: input.adminId,
+        status: 'DRAFT',
+        sourceMode: 'FIXED',
+        durationMinutes: input.durationMinutes,
+        questionCount: entries.length,
+        totalMarks,
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        ...quizSecuritySchema.parse({}),
+      },
+      select: { id: true },
+    });
+    for (const [position, entry] of entries.entries()) {
+      let questionId: string;
+      if ('existing' in entry) questionId = entry.existing.id;
+      else {
+        const question = await tx.question.create({
+          data: {
+            ...questionFieldsFromInput(entry.body),
+            subjectId: job.subjectId,
+            authorId: input.adminId,
+            aiGenerated: true,
+            adHoc: quizOnly.has(entry.draftId),
+            options: { create: questionOptionsFromInput(entry.body) },
+          },
+          select: { id: true },
+        });
+        questionId = question.id;
+        const claim = await tx.questionDraft.updateMany({
+          where: { id: entry.draftId, status: 'PENDING' },
+          data: { status: 'ACCEPTED', questionId },
+        });
+        if (claim.count !== 1) {
+          throw new ApiError('CONFLICT', 'A draft changed while the quiz was being built. Try again.');
+        }
+      }
+      await tx.quizQuestion.create({ data: { quizId: created.id, questionId, position } });
+    }
+    return created;
+  });
+
+  return {
+    quizId: quiz.id,
+    questions: entries.length,
+    toBank: fresh.length - quizOnly.size,
+    quizOnly: quizOnly.size,
+    repeats: similar.filter(Boolean).length,
+    skipped,
+  };
 }

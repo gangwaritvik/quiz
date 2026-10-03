@@ -475,6 +475,20 @@ export const createQuizSchema = z
     path: ['endsAt'],
   });
 
+/** A draft quiz built from one AI batch; students, security and publishing come after. */
+export const createQuizFromDraftsSchema = z
+  .object({
+    title: z.string().trim().min(3, 'Quiz name is required').max(120),
+    durationMinutes: z.coerce.number().int().min(1).max(360),
+    startsAt: z.string().datetime({ offset: true }),
+    endsAt: z.string().datetime({ offset: true }),
+    addToBank: z.boolean().default(true),
+  })
+  .refine((data) => new Date(data.endsAt) > new Date(data.startsAt), {
+    message: 'End date must be after the start date',
+    path: ['endsAt'],
+  });
+
 /** Replaces the written paper of a fixed-mode quiz, in order. */
 export const replaceQuizQuestionsSchema = z.object({
   questions: z.array(instantQuestionSchema).min(1, 'A quiz needs at least one question').max(100),
