@@ -168,6 +168,53 @@ export const geminiProvider: AiProvider = {
 
   async generate({ prompt, schema, retrieval, inline }) {
     try {
+      // With JSON output switched on, Gemini skips the file search and writes from
+      // the subject name alone. So the passages are fetched first, as plain text.
+      let passages: string | undefined;
+      let sources: RetrievedSource[] = [];
+      if (retrieval) {
+        const found = await onAnyModel((name) =>
+          ai().models.generateContent({
+            model: name,
+            contents: [
+              'Search the study material and copy out, word for word, the passages needed for the task below.',
+              'Put "--- Page N ---" before each passage when the page is known. Do not write the questions yourself.',
+              'Use only what the material says, even if it does not match the subject name.',
+              '',
+              'Task:',
+              prompt,
+            ].join('\n'),
+            config: {
+              temperature: 0,
+              tools: [
+                {
+                  fileSearch: {
+                    fileSearchStoreNames: [retrieval.store],
+                    metadataFilter: retrieval.materialIds
+                      .map((id) => `material_id="${id}"`)
+                      .join(' OR '),
+                  },
+                },
+              ],
+            },
+          }),
+        );
+        passages = found.text?.trim();
+        if (!passages) throw new AiError('Nothing relevant was found in the chosen material.');
+        sources = (found.candidates?.[0]?.groundingMetadata?.groundingChunks ?? []).flatMap(
+          (chunk) => {
+            const context = chunk.retrievedContext;
+            if (!context) return [];
+            const materialId = context.customMetadata?.find(
+              (entry) => entry.key === 'material_id',
+            )?.stringValue;
+            return [{ materialId, page: context.pageNumber, text: context.text }];
+          },
+        );
+        // The passages themselves, so a quote can be traced even without grounding data.
+        sources.push({ text: passages });
+      }
+
       const response = await onAnyModel((name) =>
         ai().models.generateContent({
           model: name,
@@ -178,6 +225,7 @@ export const geminiProvider: AiProvider = {
                 ...(inline
                   ? [{ inlineData: { data: base64(inline.bytes), mimeType: inline.mimeType } }]
                   : []),
+                ...(passages ? [{ text: `Study material:\n${passages}` }] : []),
                 { text: prompt },
               ],
             },
@@ -186,34 +234,9 @@ export const geminiProvider: AiProvider = {
             temperature: 0.7,
             responseMimeType: 'application/json',
             responseJsonSchema: schema,
-            ...(retrieval
-              ? {
-                  tools: [
-                    {
-                      fileSearch: {
-                        fileSearchStoreNames: [retrieval.store],
-                        metadataFilter: retrieval.materialIds
-                          .map((id) => `material_id="${id}"`)
-                          .join(' OR '),
-                      },
-                    },
-                  ],
-                }
-              : {}),
           },
         }),
       );
-
-      const sources: RetrievedSource[] = (
-        response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? []
-      ).flatMap((chunk) => {
-        const context = chunk.retrievedContext;
-        if (!context) return [];
-        const materialId = context.customMetadata?.find(
-          (entry) => entry.key === 'material_id',
-        )?.stringValue;
-        return [{ materialId, page: context.pageNumber, text: context.text }];
-      });
 
       let json: unknown = null;
       try {
