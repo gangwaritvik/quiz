@@ -330,7 +330,7 @@ function DraftCard({
       {payload.explanation ? (
         <p className="mt-3 text-sm text-muted-foreground">
           <span className="font-medium text-foreground">Why: </span>
-          {payload.explanation}
+          <MathText text={payload.explanation} />
         </p>
       ) : null}
 
@@ -340,7 +340,11 @@ function DraftCard({
           <span>
             {materialTitle ?? 'Source'}
             {draft.source.page ? `, page ${draft.source.page}` : ''}
-            {draft.source.excerpt ? `: “${draft.source.excerpt}”` : ''}
+            {draft.source.excerpt ? (
+              <>
+                : “<MathText text={draft.source.excerpt} />”
+              </>
+            ) : null}
           </span>
         </p>
       ) : null}
