@@ -1,6 +1,7 @@
 import 'server-only';
 
 import type { AiQuestionType, DifficultyCounts } from '@/lib/ai/question-generation';
+import type { CheckAnswer, CheckItem } from '@/lib/ai/verification';
 
 /**
  * The one seam between SecureQuiz and a language model. Everything else in
@@ -25,6 +26,8 @@ export interface AiProvider {
   transcribe(input: { bytes: Uint8Array; mimeType: string; pages: number[] }): Promise<string>;
   /** Meaning-vectors for short texts, one per input, in order. */
   embed(texts: string[]): Promise<number[][]>;
+  /** A second, independent reading: answers each item from its own passage. */
+  check(items: CheckItem[]): Promise<CheckAnswer[]>;
   /** One structured generation call; `json` is untrusted and validated by the caller. */
   generate(input: {
     prompt: string;

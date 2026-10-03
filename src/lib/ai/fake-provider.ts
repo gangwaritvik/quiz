@@ -31,6 +31,11 @@ export const fakeProvider: AiProvider = {
       .join('\n');
   },
 
+  /** No second opinion: e2e drafts must not be flagged by chance. */
+  async check(items) {
+    return items.map((item) => ({ id: item.id, canAnswer: false }));
+  },
+
   /** Hashed bag of words: texts sharing most words come out close, others do not. */
   async embed(texts) {
     return texts.map((text) => {
@@ -57,7 +62,8 @@ export const fakeProvider: AiProvider = {
           topic: 'Transport Layer',
           explanation: 'Stated in the material.',
           sourcePage: inline ? 1 : 2,
-          sourceQuote: 'the transport layer provides reliable delivery',
+          // Words that really appear in the e2e fixtures, so quote checking finds them.
+          sourceQuote: inline ? 'TCP gives reliable ordered delivery' : 'the transport layer provides reliable delivery',
         };
         if (type === 'TRUE_FALSE') questions.push({ ...common, type, text, answerTrue: n % 2 === 0 });
         else if (type === 'ASSERTION_REASON')

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { Prisma } from '@prisma/client';
 
 import { buildCompanion, scannedPageNumbers, splitTranscript, batchPages } from '@/lib/ai/material-text';
+import { officeTextPages } from '@/lib/ai/office-text';
 import { extractPages, readPageTexts } from '@/lib/ai/pdf-pages';
 import { AiError, getProvider } from '@/lib/ai/provider';
 import { prisma } from '@/lib/db';
@@ -82,6 +83,32 @@ export async function readMaterialFile(storageKey: string): Promise<Uint8Array> 
 export async function deleteMaterialFile(storageKey: string) {
   if (!/^[a-f0-9]{32}\.[a-z]+$/.test(storageKey)) return;
   await unlink(path.join(ROOT, storageKey)).catch(() => undefined);
+}
+
+/**
+ * The material's own text, one entry per page (a slide for PowerPoint, one
+ * entry for Word), for checking the AI's quotes. Empty when it cannot be read.
+ */
+export async function materialPages(material: {
+  storageKey: string;
+  ocrText: string | null;
+}): Promise<string[]> {
+  try {
+    if (material.ocrText) {
+      // Page-marked: "--- Page N ---" then that page's text.
+      const pages: string[] = [];
+      const parts = material.ocrText.split(/^-{3}\s*Page\s+(\d+)\s*-{3}\s*$/im);
+      for (let i = 1; i + 1 < parts.length; i += 2) pages[Number(parts[i]) - 1] = parts[i + 1]!;
+      return Array.from(pages, (page) => page ?? '');
+    }
+    const bytes = await readMaterialFile(material.storageKey);
+    const kind = detectMaterial(Buffer.from(bytes))?.kind;
+    if (kind === 'pdf') return await readPageTexts(bytes);
+    if (kind === 'docx' || kind === 'pptx') return officeTextPages(bytes, kind);
+  } catch (error) {
+    console.warn('[ai] could not read material text for checking', error);
+  }
+  return [];
 }
 
 /** The subject's store, created on first use. Two uploads at once agree on one. */

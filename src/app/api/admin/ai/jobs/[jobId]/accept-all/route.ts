@@ -1,4 +1,5 @@
 import { acceptDraft } from '@/lib/ai/jobs';
+import { isFlagged } from '@/lib/ai/verification';
 import { ApiError, assertSameOrigin, ok, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
@@ -25,13 +26,19 @@ export const POST = route(async (request: Request, { params }: Params) => {
 
   const pending = await prisma.questionDraft.findMany({
     where: { jobId, status: 'PENDING' },
-    select: { id: true },
+    select: { id: true, source: true },
     orderBy: { createdAt: 'asc' },
   });
 
   let accepted = 0;
   let skipped = 0;
+  let held = 0;
   for (const draft of pending) {
+    // Flagged drafts wait for the teacher to look at them one by one.
+    if (isFlagged(draft.source as Parameters<typeof isFlagged>[0])) {
+      held += 1;
+      continue;
+    }
     try {
       const question = await acceptDraft({ draftId: draft.id, adminId: session.adminId });
       accepted += 1;
@@ -49,5 +56,5 @@ export const POST = route(async (request: Request, { params }: Params) => {
     }
   }
 
-  return ok({ accepted, skipped });
+  return ok({ accepted, skipped, held });
 });

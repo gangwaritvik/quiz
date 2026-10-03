@@ -568,7 +568,7 @@ check('(p) topic=none returns only topicless questions, matching the count', qsN
   const meta = (await fac('(q) meta', 'GET', '/api/admin/meta', undefined, { expect: [200] })).data;
   const subj = meta.subjects[0];
   const textPdf = await makePdf([
-    'The transport layer provides process to process delivery between applications.',
+    'The transport layer provides reliable delivery between applications.',
     'TCP gives reliable ordered delivery; UDP is connectionless and has low overhead.',
     'Congestion control uses slow start and congestion avoidance to adapt the window.',
   ]);
@@ -620,6 +620,8 @@ check('(p) topic=none returns only topicless questions, matching the count', qsN
   check('(q) the batch finishes with exactly the drafts asked for', done?.status === 'DONE' && done.drafts.length === 7, JSON.stringify(done?.stats));
   check('(q) invalid model output is dropped and counted', (done?.stats?.dropped ?? 0) >= 1);
   check('(q) drafts carry the marks and a source', done.drafts.every((d) => d.payload.marks === 2 && d.payload.negativeMarks === 0.5 && d.source?.excerpt));
+  check('(q) every quote was found in the material and its page corrected to where it really is', done.drafts.every((d) => d.source?.quote === 'exact' && d.source.page === 1), JSON.stringify(done.drafts.map((d) => [d.source?.quote, d.source?.page])));
+  check('(q) a second reading ran and could not tell, so nothing is flagged', done.drafts.every((d) => d.source?.check === 'unclear'));
   check('(q) drafts cover the requested types', new Set(done.drafts.map((d) => d.payload.type)).size >= 4, JSON.stringify(done.drafts.map((d) => d.payload.type)));
 
   const pageJob = (await fac('(q) start a page-range batch', 'POST', '/api/admin/ai/jobs', { subjectId: subj.id, materialIds: [mText.id], params: { ...params, count: 2, focus: { mode: 'pages', from: 2, to: 3 } } }, { expect: [200] })).data;
@@ -627,6 +629,7 @@ check('(p) topic=none returns only topicless questions, matching the count', qsN
     const j = (await fac('(q) poll the page batch', 'GET', `/api/admin/ai/jobs/${pageJob.id}`, undefined, {})).data;
     return j.status === 'DONE' || j.status === 'FAILED' ? j : null;
   });
+  check('(q) page-range quotes are found inside the range', pageDone?.drafts.every((d) => d.source?.quote === 'exact' && d.source.page === 2), JSON.stringify(pageDone?.drafts.map((d) => [d.source?.quote, d.source?.page])));
   check('(q) a page-range batch works on one PDF', pageDone?.status === 'DONE' && pageDone.drafts.length === 2 && pageDone.drafts.every((d) => d.source?.materialId === mText.id));
 
   await fac2('(q) another faculty member cannot see the batch', 'GET', `/api/admin/ai/jobs/${job.id}`, undefined, { expect: [403] });
@@ -680,17 +683,22 @@ check('(p) topic=none returns only topicless questions, matching the count', qsN
   check('(q) a new question stays out of the bank, one already banked is reused', qz1.questions.filter((l) => l.question.adHoc).length === 1 && qz1.questions.some((l) => l.questionId === (qz1.questions.find((x) => !x.question.adHoc)?.questionId)));
   check('(q) quiz-only questions do not reach the bank', (await prisma.question.count({ where: { subjectId: subj.id, adHoc: false, aiGenerated: true } })) === aiBefore);
 
-  const job3 = (await fac('(q) start a batch for a bank-and-quiz test', 'POST', '/api/admin/ai/jobs', { subjectId: subj.id, materialIds: [mText.id], params: { ...params, count: 3, types: ['MCQ_SINGLE'] } }, { expect: [200] })).data;
+  const job3 = (await fac('(q) start a batch for a bank-and-quiz test', 'POST', '/api/admin/ai/jobs', { subjectId: subj.id, materialIds: [mText.id], params: { ...params, count: 4, types: ['MCQ_SINGLE'] } }, { expect: [200] })).data;
   const done3 = await waitFor(async () => {
     const j = (await fac('(q) poll that batch', 'GET', `/api/admin/ai/jobs/${job3.id}`, undefined, {})).data;
     return j.status === 'DONE' || j.status === 'FAILED' ? j : null;
   });
   // One of its drafts repeats a bank question word for word.
   await prisma.questionDraft.update({ where: { id: done3.drafts[0].id }, data: { payload: { ...done3.drafts[0].payload, text: q1.text } } });
+  // Another has a quote that is nowhere in the material: it is flagged and held back.
+  await prisma.questionDraft.update({ where: { id: done3.drafts[3].id }, data: { source: { ...done3.drafts[3].source, quote: 'missing' } } });
   const both = (await fac('(q) build a quiz that also adds to the bank', 'POST', `/api/admin/ai/jobs/${job3.id}/quiz`, { title: 'AI quiz (and bank)', durationMinutes: 15, addToBank: true, ...win }, { expect: [200] })).data;
-  check('(q) new questions join the bank, a repeat stays on the quiz only', both.questions === 3 && both.toBank === 2 && both.quizOnly === 1 && both.repeats === 1, JSON.stringify(both));
+  check('(q) new questions join the bank, a repeat stays on the quiz only', both.questions === 3 && both.toBank === 2 && both.quizOnly === 1 && both.repeats === 1 && both.held === 1, JSON.stringify(both));
   const qz2 = await prisma.quiz.findUnique({ where: { id: both.quizId }, include: { questions: { include: { question: true } } } });
   check('(q) the quiz holds all three, two of them also in the bank', qz2.questions.length === 3 && qz2.questions.filter((l) => !l.question.adHoc).length === 2);
+  const heldAll = (await fac('(q) add-all leaves a flagged draft for review', 'POST', `/api/admin/ai/jobs/${job3.id}/accept-all`, undefined, { expect: [200] })).data;
+  check('(q) a flagged draft is held back, not added', heldAll.accepted === 0 && heldAll.held === 1, JSON.stringify(heldAll));
+  await fac('(q) the teacher can still accept a flagged draft after looking at it', 'POST', `/api/admin/ai/drafts/${done3.drafts[3].id}/accept`, undefined, { expect: [200] });
   check('(q) quizzes built from AI batches are audited', (await prisma.auditLog.count({ where: { action: 'admin.quiz_created', entityId: { in: [quizOnly.quizId, both.quizId] } } })) === 2);
 
   await fac2('(q) another faculty member cannot delete the material', 'DELETE', `/api/admin/materials/${mDocx.id}`, undefined, { expect: [403] });

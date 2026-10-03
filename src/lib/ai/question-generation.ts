@@ -11,6 +11,8 @@
 
 import { z } from 'zod';
 
+import type { AnswerCheck, QuoteStatus } from '@/lib/ai/verification';
+
 import { ASSERTION_REASON_OPTIONS, TRUE_FALSE_OPTIONS } from '@/lib/grading';
 import { instantQuestionSchema } from '@/lib/validation';
 
@@ -219,7 +221,8 @@ export function buildPrompt(input: PromptInput): string {
     '- No "all of the above" or "none of the above". No trick wording.',
     '- Write mathematics as LaTeX between $...$.',
     '- "explanation": one or two sentences on why the answer is right, citing the material.',
-    '- "sourcePage": the page the answer comes from, if known. "sourceQuote": a short exact quote (under 30 words) supporting the answer.',
+    '- "sourcePage": the page the answer comes from, if known. "sourceQuote": a short quote (under 30 words) copied exactly from the material, supporting the answer.',
+    '- If a formula or sentence in the material looks garbled or cut off, do not write a question that depends on it.',
     ...(avoid.length > 0 ? ['', 'Do not repeat or rephrase these existing questions:', ...avoid] : []),
   ].join('\n');
 }
@@ -228,6 +231,10 @@ export interface DraftSource {
   materialId?: string;
   page?: number;
   excerpt?: string;
+  /** Was the quote found in the material's own text? */
+  quote?: QuoteStatus;
+  /** Does a second reading of the passage reach the key's answer? */
+  check?: AnswerCheck;
 }
 
 /** The create-question body (without subject) a draft carries. */

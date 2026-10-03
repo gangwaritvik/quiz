@@ -2,7 +2,7 @@ import 'server-only';
 
 import type { Prisma } from '@prisma/client';
 
-import { readMaterialFile } from '@/lib/ai/materials';
+import { materialPages, readMaterialFile } from '@/lib/ai/materials';
 import { extractPages, pageRange } from '@/lib/ai/pdf-pages';
 import { AiError, type RetrievedSource, getProvider } from '@/lib/ai/provider';
 import {
@@ -24,6 +24,13 @@ import { ApiError } from '@/lib/api';
 import { type SemanticGuard, createSemanticGuard, findSimilarInBank } from '@/lib/ai/similarity';
 import { prisma } from '@/lib/db';
 import { questionFieldsFromInput, questionOptionsFromInput } from '@/lib/questions';
+import {
+  type CheckItem,
+  compareAnswer,
+  isFlagged,
+  locateQuote,
+  toCheckItem,
+} from '@/lib/ai/verification';
 import { createQuestionSchema, quizSecuritySchema } from '@/lib/validation';
 
 /** A job still "running" after this was cut off (e.g. a server restart). */
@@ -39,6 +46,8 @@ interface JobContext {
   materialIds: string[];
   inline?: { bytes: Uint8Array; mimeType: string };
   guard: SemanticGuard;
+  /** The materials' own text by id, one entry per page, for checking quotes. */
+  pages: Map<string, string[]>;
 }
 
 async function loadContext(job: {
@@ -60,7 +69,7 @@ async function loadContext(job: {
     }),
     prisma.studyMaterial.findMany({
       where: { id: { in: job.materialIds }, status: 'READY' },
-      select: { id: true, storageKey: true, mimeType: true },
+      select: { id: true, storageKey: true, mimeType: true, ocrText: true },
     }),
   ]);
   if (materials.length === 0) throw new AiError('None of the chosen materials is ready any more.');
@@ -86,6 +95,7 @@ async function loadContext(job: {
     materialIds: materials.map((material) => material.id),
     inline,
     guard: await createSemanticGuard(job.subjectId),
+    pages: new Map(await Promise.all(materials.map(async (material) => [material.id, await materialPages(material)] as const))),
   };
 }
 
@@ -106,6 +116,57 @@ function attachSource(draft: AcceptedDraft, sources: RetrievedSource[], ctx: Job
     source.page ??= match.page;
   }
   return source;
+}
+
+/** The most of a passage a second reading is shown. */
+const PASSAGE_CHARS = 4000;
+
+/**
+ * Looks up each draft's quote in the material's own text (correcting the page
+ * to where it really is), then has the answer re-derived from that page. The
+ * results go on the draft so the review screen can flag what needs a closer
+ * look. Never blocks a draft: a check that cannot run just leaves it unmarked.
+ */
+async function verifyDrafts(drafts: Array<{ body: AcceptedDraft['body']; source: DraftSource }>, ctx: JobContext) {
+  const range = ctx.params.focus.mode === 'pages' ? { from: ctx.params.focus.from, to: ctx.params.focus.to } : undefined;
+  const items: CheckItem[] = [];
+
+  for (const [index, draft] of drafts.entries()) {
+    const { source } = draft;
+    const candidates = source.materialId ? [source.materialId] : ctx.materialIds;
+    const readable = candidates.filter((id) => (ctx.pages.get(id) ?? []).some((page) => page.trim()));
+    if (!source.excerpt) {
+      source.quote = 'missing';
+      continue;
+    }
+    if (readable.length === 0) {
+      source.quote = 'unchecked';
+      continue;
+    }
+    let passage = '';
+    source.quote = 'missing';
+    for (const id of readable) {
+      const found = locateQuote(source.excerpt, ctx.pages.get(id)!, range);
+      if (!found) continue;
+      source.materialId = id;
+      source.page = found.page;
+      source.quote = found.exact ? 'exact' : 'close';
+      passage = ctx.pages.get(id)![found.page - 1]!.slice(0, PASSAGE_CHARS);
+      break;
+    }
+    if (passage) items.push(toCheckItem(draft.body, index, passage));
+  }
+
+  if (items.length === 0) return;
+  try {
+    const answers = await (await getProvider()).check(items);
+    for (const item of items) {
+      const verdict = compareAnswer(drafts[item.id]!.body, answers.find((answer) => answer.id === item.id));
+      if (verdict) drafts[item.id]!.source.check = verdict;
+    }
+  } catch (error) {
+    console.warn('[ai] second reading unavailable', error);
+  }
 }
 
 /** One model call: `batch` questions of the job's types, validated and de-duplicated. */
@@ -135,11 +196,9 @@ async function generateBatch(ctx: JobContext, batch: DifficultyCounts, types: Ai
     existing: avoid,
   });
   const { kept, dropped } = await ctx.guard.filter(outcome.drafts);
-  return {
-    ...outcome,
-    dropped: outcome.dropped + dropped,
-    drafts: kept.map((draft) => ({ ...draft, source: attachSource(draft, sources, ctx) })),
-  };
+  const drafts = kept.map((draft) => ({ ...draft, source: attachSource(draft, sources, ctx) }));
+  await verifyDrafts(drafts, ctx);
+  return { ...outcome, dropped: outcome.dropped + dropped, drafts };
 }
 
 /** Runs a job to the end. Never throws: the outcome is recorded on the job. */
@@ -359,11 +418,17 @@ export async function createQuizFromDrafts(input: {
   type Entry = { draftId: string; existing: { id: string; marks: number } } | { draftId: string; body: Body };
   const entries: Entry[] = [];
   let skipped = 0;
+  let held = 0;
   for (const draft of drafts) {
     if (draft.status === 'ACCEPTED') {
       const existing = draft.questionId ? linkedById.get(draft.questionId) : undefined;
       if (existing) entries.push({ draftId: draft.id, existing });
       else skipped += 1;
+      continue;
+    }
+    // A flagged draft goes onto a paper only after the teacher has reviewed and accepted it.
+    if (isFlagged(draft.source as Parameters<typeof isFlagged>[0])) {
+      held += 1;
       continue;
     }
     const parsed = createQuestionSchema.safeParse({ ...(draft.payload as object), subjectId: job.subjectId });
@@ -441,5 +506,6 @@ export async function createQuizFromDrafts(input: {
     quizOnly: quizOnly.size,
     repeats: similar.filter(Boolean).length,
     skipped,
+    held,
   };
 }

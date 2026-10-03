@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  AlertTriangle,
   ArrowLeft,
   Check,
   CheckCheck,
@@ -19,6 +20,7 @@ import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { toast } from 'sonner';
 
+import { type AnswerCheck, type QuoteStatus, isFlagged } from '@/lib/ai/verification';
 import { QuestionEditor, type QuestionRecord } from '@/components/admin/question-editor';
 import { ErrorState } from '@/components/shared/error-state';
 import { MathText } from '@/components/shared/math-text';
@@ -61,7 +63,7 @@ interface Draft {
   id: string;
   status: 'PENDING' | 'ACCEPTED' | 'DISCARDED';
   payload: DraftPayload;
-  source: { materialId?: string; page?: number; excerpt?: string } | null;
+  source: { materialId?: string; page?: number; excerpt?: string; quote?: QuoteStatus; check?: AnswerCheck } | null;
   questionId: string | null;
   /** For an accepted draft: false when it joined a quiz only, not the bank. */
   question?: { adHoc: boolean } | null;
@@ -135,7 +137,8 @@ export function AiDraftReview({ jobId }: { jobId: string }) {
 
   const pending = data.drafts.filter((draft) => draft.status === 'PENDING');
   const accepted = data.drafts.filter((draft) => draft.status === 'ACCEPTED').length;
-  const usable = pending.length + data.drafts.filter((draft) => draft.status === 'ACCEPTED' && !draft.question?.adHoc).length;
+  const held = pending.filter((draft) => isFlagged(draft.source)).length;
+  const usable = pending.length - held + data.drafts.filter((draft) => draft.status === 'ACCEPTED' && !draft.question?.adHoc).length;
   const visible = data.drafts.filter((draft) => draft.status !== 'DISCARDED');
   const topicName = (id?: string) => data.subject.topics.find((topic) => topic.id === id)?.name;
   const materialTitle = (id?: string) => data.materials.find((material) => material.id === id)?.title;
@@ -143,12 +146,14 @@ export function AiDraftReview({ jobId }: { jobId: string }) {
   const acceptAll = async () => {
     setAcceptingAll(true);
     try {
-      const result = await apiFetch<{ accepted: number; skipped: number }>(`/api/admin/ai/jobs/${jobId}/accept-all`, {
+      const result = await apiFetch<{ accepted: number; skipped: number; held: number }>(`/api/admin/ai/jobs/${jobId}/accept-all`, {
         method: 'POST',
       });
       toast.success(
         `${result.accepted} question${result.accepted === 1 ? '' : 's'} added to the bank` +
-          (result.skipped > 0 ? `; ${result.skipped} skipped (invalid, or the bank already has them).` : '.'),
+          (result.skipped > 0 ? `; ${result.skipped} skipped (invalid, or the bank already has them)` : '') +
+          (result.held > 0 ? `; ${result.held} flagged for a closer look, left for you to review` : '') +
+          '.',
       );
       await refetch();
     } catch (caught) {
@@ -195,10 +200,10 @@ export function AiDraftReview({ jobId }: { jobId: string }) {
                 <ClipboardList />
                 Create quiz
               </Button>
-              {pending.length > 0 ? (
+              {pending.length - held > 0 ? (
                 <Button loading={acceptingAll} onClick={() => void acceptAll()}>
                   <CheckCheck />
-                  Add all {pending.length} to the bank
+                  Add {pending.length - held} to the bank
                 </Button>
               ) : null}
             </div>
@@ -220,6 +225,7 @@ export function AiDraftReview({ jobId }: { jobId: string }) {
             <span className="font-medium text-foreground">{data.stats?.created ?? data.drafts.length} drafts</span>
             {data.stats?.dropped ? ` · ${data.stats.dropped} dropped by the checks (invalid or repeated)` : ''}
             {accepted > 0 ? ` · ${accepted} accepted` : ''}
+            {held > 0 ? ` · ${held} flagged, check ${held === 1 ? 'it' : 'them'} first` : ''}
             {data.error ? ` · ${data.error}` : ''}
           </p>
         )}
@@ -276,6 +282,7 @@ export function AiDraftReview({ jobId }: { jobId: string }) {
         jobId={jobId}
         subjectName={data.subject.name}
         count={usable}
+        held={held}
       />
     </PageShell>
   );
@@ -403,6 +410,8 @@ function DraftCard({
         </p>
       ) : null}
 
+      <DraftChecks source={draft.source} />
+
       {!done ? (
         <div className="mt-4 flex flex-wrap gap-2">
           <Button size="sm" loading={busy === 'accept'} disabled={busy !== null} onClick={() => void act('accept')}>
@@ -453,12 +462,14 @@ function QuizFromDraftsDialog({
   jobId,
   subjectName,
   count,
+  held,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   jobId: string;
   subjectName: string;
   count: number;
+  held: number;
 }) {
   const router = useRouter();
   const [title, setTitle] = React.useState(`${subjectName} quiz`);
@@ -517,6 +528,9 @@ function QuizFromDraftsDialog({
           <DialogTitle>Create a quiz from these {count} questions</DialogTitle>
           <DialogDescription>
             It is saved as a draft. Next you pick students and security settings, then publish.
+            {held > 0
+              ? ` ${held} flagged question${held === 1 ? ' is' : 's are'} left out until you review ${held === 1 ? 'it' : 'them'}.`
+              : ''}
           </DialogDescription>
         </DialogHeader>
 
@@ -584,5 +598,31 @@ function QuizFromDraftsDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** What the checks found about a draft's source, so the teacher knows where to look first. */
+function DraftChecks({ source }: { source: Draft['source'] }) {
+  if (!source) return null;
+  const items: Array<{ ok: boolean | null; text: string }> = [];
+  if (source.quote === 'exact') items.push({ ok: true, text: 'Quote found in the material' });
+  else if (source.quote === 'close') items.push({ ok: true, text: 'Quote closely matches the material' });
+  else if (source.quote === 'missing') items.push({ ok: false, text: 'Quote not found in the material' });
+  else if (source.quote === 'unchecked') items.push({ ok: null, text: 'Quote could not be checked' });
+  if (source.check === 'agrees') items.push({ ok: true, text: 'Answer re-derived from the page and matches' });
+  else if (source.check === 'differs') items.push({ ok: false, text: 'A second reading gives a different answer: check the key' });
+  if (items.length === 0) return null;
+
+  return (
+    <ul className="mt-3 flex flex-wrap gap-2" aria-label="Checks on this question">
+      {items.map((item) => (
+        <li key={item.text}>
+          <Badge variant={item.ok === null ? 'muted' : item.ok ? 'success' : 'warning'}>
+            {item.ok === false ? <AlertTriangle aria-hidden /> : item.ok ? <CheckCircle2 aria-hidden /> : null}
+            {item.text}
+          </Badge>
+        </li>
+      ))}
+    </ul>
   );
 }

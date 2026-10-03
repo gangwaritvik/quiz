@@ -3,6 +3,7 @@ import 'server-only';
 import { GoogleGenAI } from '@google/genai';
 
 import { AiError, type AiProvider, type RetrievedSource } from '@/lib/ai/provider';
+import { CHECK_SCHEMA, type CheckAnswer, buildCheckPrompt } from '@/lib/ai/verification';
 
 /** A Flash model on the free tier. Override with GEMINI_MODEL if Google renames it. */
 const DEFAULT_MODEL = 'gemini-flash-latest';
@@ -184,6 +185,23 @@ export const geminiProvider: AiProvider = {
       return vectors;
     } catch (error) {
       if (error instanceof AiError) throw error;
+      explain(error);
+    }
+  },
+
+  async check(items) {
+    try {
+      const response = await onAnyModel((name) =>
+        ai().models.generateContent({
+          model: name,
+          contents: buildCheckPrompt(items),
+          config: { temperature: 0, responseMimeType: 'application/json', responseJsonSchema: CHECK_SCHEMA },
+        }),
+      );
+      const parsed = JSON.parse(response.text ?? '{}') as { answers?: CheckAnswer[] };
+      return Array.isArray(parsed.answers) ? parsed.answers : [];
+    } catch (error) {
+      if (error instanceof SyntaxError) return []; // an unreadable reply is simply "no second opinion"
       explain(error);
     }
   },
