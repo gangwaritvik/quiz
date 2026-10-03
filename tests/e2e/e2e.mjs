@@ -537,6 +537,143 @@ const subjWithQs = metaNow.subjects.find((sub) => sub.pool.total > 0);
 const qsNoTopic = (await fac('(p) questions without a topic', 'GET', `/api/admin/questions?subjectId=${subjWithQs.id}&topicId=none&pageSize=100`, undefined, { expect: [200] })).data;
 check('(p) topic=none returns only topicless questions, matching the count', qsNoTopic.questions.every((qq) => qq.topic === null) && qsNoTopic.total === subjWithQs.noTopic, `${qsNoTopic.total} vs ${subjWithQs.noTopic}`);
 
+// (q) AI question generation (AI_PROVIDER=fake): materials, OCR, jobs, drafts, review, scoping
+{
+  const { PDFDocument, StandardFonts } = await import('pdf-lib');
+  const makePdf = async (pages) => {
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    for (const text of pages) {
+      const page = doc.addPage([400, 400]);
+      if (text) page.drawText(text, { x: 20, y: 300, size: 10, font });
+      else page.drawRectangle({ x: 50, y: 50, width: 200, height: 200 }); // a "scanned" page: no text layer
+    }
+    return Buffer.from(await doc.save());
+  };
+  const upload = (who, step, subjectId, bytes, name, expect) => {
+    const form = new FormData();
+    form.append('file', new Blob([bytes]), name);
+    return who(step, 'POST', `/api/admin/subjects/${subjectId}/materials`, undefined, { raw: form, expect });
+  };
+  const waitFor = async (fn, ms = 30_000) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      const value = await fn();
+      if (value) return value;
+      await sleep(400);
+    }
+    return null;
+  };
+
+  const meta = (await fac('(q) meta', 'GET', '/api/admin/meta', undefined, { expect: [200] })).data;
+  const subj = meta.subjects[0];
+  const textPdf = await makePdf([
+    'The transport layer provides process to process delivery between applications.',
+    'TCP gives reliable ordered delivery; UDP is connectionless and has low overhead.',
+    'Congestion control uses slow start and congestion avoidance to adapt the window.',
+  ]);
+  const scannedPdf = await makePdf(['This first page has a real text layer that is long enough.', '', '']);
+  const docx = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from('....word/document.xml....'), Buffer.alloc(64)]);
+  const exe = Buffer.concat([Buffer.from('MZ'), Buffer.alloc(200)]);
+
+  const listUrl = `/api/admin/subjects/${subj.id}/materials`;
+  const empty = (await fac('(q) materials list starts empty', 'GET', listUrl, undefined, { expect: [200] })).data;
+  check('(q) the feature is on under the fake provider', empty.enabled === true);
+
+  const mText = (await upload(fac, '(q) upload a text PDF', subj.id, textPdf, 'chapter.pdf', [200])).data;
+  const mScan = (await upload(fac, '(q) upload a scanned PDF', subj.id, scannedPdf, 'scan.pdf', [200])).data;
+  const mPng = (await upload(fac, '(q) upload a photo of notes', subj.id, PNG, 'notes.png', [200])).data;
+  const mDocx = (await upload(fac, '(q) upload a Word file', subj.id, docx, 'notes.docx', [200])).data;
+  await upload(fac, '(q) a renamed .exe is refused', subj.id, exe, 'evil.pdf', [422]);
+  await upload(stu, '(q) a student cannot upload material', subj.id, textPdf, 'x.pdf', [401, 403]);
+
+  const ready = await waitFor(async () => {
+    const list = (await fac('(q) poll materials', 'GET', listUrl, undefined, {})).data;
+    return list.materials.length === 4 && list.materials.every((m) => m.status === 'READY') ? list : null;
+  });
+  check('(q) all four materials become ready', ready !== null, JSON.stringify(ready?.materials.map((m) => m.status)));
+  const scanRow = await prisma.studyMaterial.findUnique({ where: { id: mScan.id } });
+  check('(q) OCR ran only on the two scanned pages', scanRow.scannedPages === 2 && scanRow.pageCount === 3, `${scanRow.scannedPages}/${scanRow.pageCount}`);
+  check('(q) the OCR text is page-marked and keeps the real page', /--- Page 1 ---\nThis first page/.test(scanRow.ocrText ?? '') && /Fake OCR text for page 2/.test(scanRow.ocrText ?? '') && /Fake OCR text for page 3/.test(scanRow.ocrText ?? ''));
+  const pngRow = await prisma.studyMaterial.findUnique({ where: { id: mPng.id } });
+  check('(q) a photo is read by OCR', pngRow.scannedPages === 1 && /Fake OCR text for page 1/.test(pngRow.ocrText ?? ''));
+  const textRow = await prisma.studyMaterial.findUnique({ where: { id: mText.id } });
+  check('(q) a text PDF needs no OCR', textRow.scannedPages === 0 && textRow.ocrText === null && textRow.pageCount === 3);
+  const subjRow = await prisma.subject.findUnique({ where: { id: subj.id } });
+  check('(q) one File Search store per subject', !!subjRow.fileSearchStore && (await prisma.studyMaterial.count({ where: { subjectId: subj.id, geminiDocument: null } })) === 0);
+
+  await fac2('(q) another faculty member cannot read the material', 'GET', `/api/admin/materials/${mText.id}`, undefined, { expect: [403] });
+  const otherList = (await fac2('(q) nor see it listed', 'GET', listUrl, undefined, { expect: [200] })).data;
+  check('(q) materials are private to their owner', otherList.materials.length === 0);
+
+  const params = { count: 7, mix: { EASY: 30, MEDIUM: 50, HARD: 20 }, types: ['MCQ_SINGLE', 'TRUE_FALSE', 'ASSERTION_REASON', 'SHORT_ANSWER', 'MCQ_MULTI'], bloom: ['REMEMBER', 'APPLY'], marks: 2, negativeMarks: 0.5, focus: { mode: 'topic', query: 'congestion control' }, topicId: null };
+  await fac('(q) a bad mix is refused', 'POST', '/api/admin/ai/jobs', { subjectId: subj.id, materialIds: [mText.id], params: { ...params, mix: { EASY: 10, MEDIUM: 10, HARD: 10 } } }, { expect: [422] });
+  await fac('(q) page focus needs exactly one PDF', 'POST', '/api/admin/ai/jobs', { subjectId: subj.id, materialIds: [mText.id, mDocx.id], params: { ...params, focus: { mode: 'pages', from: 1, to: 2 } } }, { expect: [422] });
+  await fac('(q) pages past the end are refused', 'POST', '/api/admin/ai/jobs', { subjectId: subj.id, materialIds: [mText.id], params: { ...params, focus: { mode: 'pages', from: 2, to: 9 } } }, { expect: [422] });
+  await fac2('(q) another faculty member cannot use the material', 'POST', '/api/admin/ai/jobs', { subjectId: subj.id, materialIds: [mText.id], params }, { expect: [403] });
+
+  const job = (await fac('(q) start a topic-focused batch', 'POST', '/api/admin/ai/jobs', { subjectId: subj.id, materialIds: [mText.id, mScan.id], params }, { expect: [200] })).data;
+  const done = await waitFor(async () => {
+    const j = (await fac('(q) poll the batch', 'GET', `/api/admin/ai/jobs/${job.id}`, undefined, {})).data;
+    return j.status === 'DONE' || j.status === 'FAILED' ? j : null;
+  });
+  check('(q) the batch finishes with exactly the drafts asked for', done?.status === 'DONE' && done.drafts.length === 7, JSON.stringify(done?.stats));
+  check('(q) invalid model output is dropped and counted', (done?.stats?.dropped ?? 0) >= 1);
+  check('(q) drafts carry the marks and a source', done.drafts.every((d) => d.payload.marks === 2 && d.payload.negativeMarks === 0.5 && d.source?.excerpt));
+  check('(q) drafts cover the requested types', new Set(done.drafts.map((d) => d.payload.type)).size >= 4, JSON.stringify(done.drafts.map((d) => d.payload.type)));
+
+  const pageJob = (await fac('(q) start a page-range batch', 'POST', '/api/admin/ai/jobs', { subjectId: subj.id, materialIds: [mText.id], params: { ...params, count: 2, focus: { mode: 'pages', from: 2, to: 3 } } }, { expect: [200] })).data;
+  const pageDone = await waitFor(async () => {
+    const j = (await fac('(q) poll the page batch', 'GET', `/api/admin/ai/jobs/${pageJob.id}`, undefined, {})).data;
+    return j.status === 'DONE' || j.status === 'FAILED' ? j : null;
+  });
+  check('(q) a page-range batch works on one PDF', pageDone?.status === 'DONE' && pageDone.drafts.length === 2 && pageDone.drafts.every((d) => d.source?.materialId === mText.id));
+
+  await fac2('(q) another faculty member cannot see the batch', 'GET', `/api/admin/ai/jobs/${job.id}`, undefined, { expect: [403] });
+  await stu('(q) a student cannot see the batch', 'GET', `/api/admin/ai/jobs/${job.id}`, undefined, { expect: [401, 403] });
+  const [d1, d2, d3, d4] = done.drafts;
+  await fac2('(q) another faculty member cannot accept a draft', 'POST', `/api/admin/ai/drafts/${d1.id}/accept`, undefined, { expect: [403] });
+  await stu('(q) a student cannot accept a draft', 'POST', `/api/admin/ai/drafts/${d1.id}/accept`, undefined, { expect: [401, 403] });
+
+  const banked = (await fac('(q) accept a draft', 'POST', `/api/admin/ai/drafts/${d1.id}/accept`, undefined, { expect: [200] })).data;
+  await fac('(q) accepting twice is refused', 'POST', `/api/admin/ai/drafts/${d1.id}/accept`, undefined, { expect: [409] });
+  const q1 = await prisma.question.findUnique({ where: { id: banked.questionId }, include: { options: true } });
+  check('(q) the accepted question is in the bank, marked AI', q1?.aiGenerated === true && q1.subjectId === subj.id && q1.marks === 2 && q1.active && !q1.adHoc);
+
+  const edited = { ...d2.payload, text: 'Edited by the teacher: ' + d2.payload.text };
+  const banked2 = (await fac('(q) edit then accept', 'POST', `/api/admin/ai/drafts/${d2.id}/accept`, { question: edited }, { expect: [200] })).data;
+  check('(q) the edit is what reaches the bank', (await prisma.question.findUnique({ where: { id: banked2.questionId } })).text.startsWith('Edited by the teacher'));
+  await fac('(q) an edit that breaks the question is refused', 'POST', `/api/admin/ai/drafts/${d3.id}/accept`, { question: { ...d3.payload, text: 'x' } }, { expect: [422] });
+
+  const before = `${d3.payload.text} ${d3.payload.assertionText ?? ''}`;
+  const regen = (await fac('(q) regenerate one draft', 'POST', `/api/admin/ai/drafts/${d3.id}/regenerate`, undefined, { expect: [200] })).data;
+  check('(q) regenerating replaces it with a different question of the same difficulty', `${regen.payload.text} ${regen.payload.assertionText ?? ''}` !== before && regen.payload.difficulty === d3.payload.difficulty);
+  await fac('(q) discard a draft', 'DELETE', `/api/admin/ai/drafts/${d4.id}`, undefined, { expect: [200] });
+  await fac('(q) a discarded draft cannot be accepted', 'POST', `/api/admin/ai/drafts/${d4.id}/accept`, undefined, { expect: [409] });
+
+  const all = (await fac('(q) accept all the rest', 'POST', `/api/admin/ai/jobs/${job.id}/accept-all`, undefined, { expect: [200] })).data;
+  check('(q) accept-all takes every remaining draft', all.accepted === 4 && all.skipped === 0, JSON.stringify(all));
+  const bankList = (await fac('(q) the bank lists them', 'GET', `/api/admin/questions?subjectId=${subj.id}&pageSize=100`, undefined, { expect: [200] })).data;
+  check('(q) accepted drafts show in the bank as AI-drafted', bankList.questions.filter((qq) => qq.aiGenerated).length === 6);
+  check('(q) drafts and AI routes are audited', (await prisma.auditLog.count({ where: { action: 'admin.ai_draft_accepted' } })) === 6 && (await prisma.auditLog.count({ where: { action: 'admin.material_uploaded' } })) === 4);
+
+  // Nothing about drafts leaks to students: no student route mentions them.
+  const dashS = await stu('(q) student dashboard', 'GET', '/api/student/dashboard', undefined, { expect: [200] });
+  check('(q) no draft ids or excerpts reach a student', !done.drafts.some((d) => dashS.text.includes(d.id)) && !dashS.text.includes('Fake OCR'));
+
+  await fac2('(q) another faculty member cannot delete the material', 'DELETE', `/api/admin/materials/${mDocx.id}`, undefined, { expect: [403] });
+  await fac('(q) delete a material', 'DELETE', `/api/admin/materials/${mDocx.id}`, undefined, { expect: [200] });
+  check('(q) a deleted material is gone', (await prisma.studyMaterial.count({ where: { id: mDocx.id } })) === 0);
+
+  // The generation budget: 15 batches an hour per teacher (2 used above, plus 1 regenerate).
+  let limited = false;
+  for (let i = 0; i < 16 && !limited; i += 1) {
+    const r = await fac('(q) generation rate limit', 'POST', '/api/admin/ai/jobs', { subjectId: subj.id, materialIds: [mText.id], params: { ...params, count: 1 } }, {});
+    limited = r.status === 429;
+  }
+  check('(q) the generation budget is enforced', limited);
+}
+
 ids = { quizId, attemptId, quiz2, a2, a3, quiz3, a5, a6 };
 } catch (e) {
   log(`FAIL crash    ${e.stack ?? e}`);

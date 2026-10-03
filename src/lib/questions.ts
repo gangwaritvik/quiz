@@ -90,6 +90,7 @@ export function serializeAdminQuestion(question: AdminQuestion) {
     topic: question.topic?.name ?? null,
     topicId: question.topicId,
     usageCount: question.usageCount,
+    aiGenerated: question.aiGenerated,
     imageAssetId: question.imageAssetId,
     imageUrl: question.imageAssetId ? `/api/media/${question.imageAssetId}` : null,
     assertionText: question.assertionText,

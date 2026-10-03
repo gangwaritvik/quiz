@@ -99,7 +99,7 @@ try {
   say(`starting next start on :${PORT}`);
   server = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'start', '-p', String(PORT)], {
     cwd: ROOT, stdio: 'ignore',
-    env: { ...dbEnv, NODE_ENV: 'production', UPLOAD_DIR: tmpUploads, OTP_DEV_MODE: 'true', OTP_DEV_MODE_ALLOW_IN_PRODUCTION: 'i-understand-this-is-insecure' },
+    env: { ...dbEnv, NODE_ENV: 'production', UPLOAD_DIR: tmpUploads, OTP_DEV_MODE: 'true', OTP_DEV_MODE_ALLOW_IN_PRODUCTION: 'i-understand-this-is-insecure', AI_PROVIDER: 'fake' },
   });
   for (let i = 0; ; i += 1) {
     if (server.exitCode !== null) throw new Error(`next start exited early (code ${server.exitCode})`);

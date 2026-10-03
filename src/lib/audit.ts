@@ -42,6 +42,11 @@ export type AuditAction =
   /** Faculty broadcast a notice to a quiz's students. */
   | 'admin.notice_sent'
   | 'admin.media_uploaded'
+  | 'admin.material_uploaded'
+  | 'admin.material_deleted'
+  | 'admin.ai_job_created'
+  | 'admin.ai_draft_accepted'
+  | 'admin.ai_draft_discarded'
   /** Manual marking changes a student's score after the fact, so it is logged. */
   | 'admin.answer_graded';
 

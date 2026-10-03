@@ -51,6 +51,9 @@ export const RATE_LIMITS = {
   // Uploads are far heavier than a JSON write, so they get their own, tighter
   // budget rather than sharing the generic ones.
   upload: { name: 'media:upload', limit: 40, windowMs: 10 * 60_000 },
+  // AI calls spend a shared free Google quota: a few batches an hour each.
+  aiGenerate: { name: 'ai:generate', limit: 15, windowMs: 60 * 60_000 },
+  aiUpload: { name: 'ai:upload', limit: 20, windowMs: 60 * 60_000 },
 } satisfies Record<string, RateLimitRule>;
 
 export interface RateLimitResult {

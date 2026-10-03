@@ -80,6 +80,15 @@ interface QuestionEditorProps {
   question: QuestionRecord | null;
   subjects: Subject[];
   onSaved: () => void;
+  /**
+   * Replaces the save: the editor validates and builds the body, the caller
+   * decides where it goes (e.g. accepting an AI draft). Throw to show an error.
+   */
+  onSubmit?: (body: Record<string, unknown>) => Promise<void>;
+  /** Overrides the dialog title. */
+  title?: string;
+  /** Overrides the save button's label. */
+  submitLabel?: string;
 }
 
 interface DraftOption {
@@ -112,6 +121,9 @@ export function QuestionEditor({
   question,
   subjects,
   onSaved,
+  onSubmit,
+  title,
+  submitLabel,
 }: QuestionEditorProps) {
   const [text, setText] = React.useState('');
   const [type, setType] = React.useState<QuestionTypeValue>('MCQ_SINGLE');
@@ -295,7 +307,9 @@ export function QuestionEditor({
         })),
       };
 
-      if (question) {
+      if (onSubmit) {
+        await onSubmit(body);
+      } else if (question) {
         await apiFetch(`/api/admin/questions/${question.id}`, { method: 'PATCH', body });
         toast.success('Question updated.');
       } else {
@@ -318,7 +332,7 @@ export function QuestionEditor({
     <Dialog open={open} onOpenChange={saving ? undefined : onOpenChange}>
       <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <DialogTitle>{question ? 'Edit question' : 'Add question'}</DialogTitle>
+          <DialogTitle>{title ?? (question ? 'Edit question' : 'Add question')}</DialogTitle>
           <DialogDescription>
             The correct answer is stored server-side and is never sent to a student&apos;s browser.
           </DialogDescription>
@@ -731,7 +745,7 @@ export function QuestionEditor({
             Cancel
           </Button>
           <Button onClick={() => void save()} loading={saving}>
-            {question ? 'Save changes' : 'Add question'}
+            {submitLabel ?? (question ? 'Save changes' : 'Add question')}
           </Button>
         </DialogFooter>
       </DialogContent>

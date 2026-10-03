@@ -52,3 +52,25 @@ export async function assertAnswerOwner(answerId: string, adminId: string) {
   });
   check(answer ? answer.attempt.quiz.authorId : undefined, adminId, 'answer');
 }
+
+/** Study material is private to the teacher who uploaded it. */
+export async function assertMaterialOwner(materialId: string, adminId: string) {
+  const material = await prisma.studyMaterial.findUnique({
+    where: { id: materialId },
+    select: { ownerId: true },
+  });
+  check(material ? material.ownerId : undefined, adminId, 'study material');
+}
+
+export async function assertJobOwner(jobId: string, adminId: string) {
+  const job = await prisma.generationJob.findUnique({ where: { id: jobId }, select: { authorId: true } });
+  check(job ? job.authorId : undefined, adminId, 'generation');
+}
+
+export async function assertDraftOwner(draftId: string, adminId: string) {
+  const draft = await prisma.questionDraft.findUnique({
+    where: { id: draftId },
+    select: { job: { select: { authorId: true } } },
+  });
+  check(draft ? draft.job.authorId : undefined, adminId, 'draft');
+}

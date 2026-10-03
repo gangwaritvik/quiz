@@ -85,6 +85,8 @@ model Admin {
   authoredQuestions Question[]        @relation("QuestionAuthor")
   reviews           IntegrityReview[]
   gradedAnswers     Answer[]          @relation("AnswerGrader")
+  studyMaterials    StudyMaterial[]
+  generationJobs    GenerationJob[]
 
   @@map("admins")
 }
@@ -177,9 +179,15 @@ model Subject {
   code      String   @unique
   createdAt DateTime @default(now())
 
-  questions Question[]
-  quizzes   Quiz[]
-  topics    Topic[]
+  /// Gemini File Search store holding this subject's study material, made on
+  /// first upload. Null until then.
+  fileSearchStore String?
+
+  questions      Question[]
+  quizzes        Quiz[]
+  topics         Topic[]
+  studyMaterials StudyMaterial[]
+  generationJobs GenerationJob[]
 
   @@map("subjects")
 }
@@ -250,6 +258,9 @@ model Question {
   /// quiz never pollutes the reusable question bank.
   adHoc Boolean @default(false)
 
+  /// Drafted by the AI from study material and accepted by a teacher.
+  aiGenerated Boolean @default(false)
+
   subject          Subject           @relation(fields: [subjectId], references: [id], onDelete: Restrict)
   topic            Topic?            @relation(fields: [topicId], references: [id], onDelete: SetNull)
   author           Admin?            @relation("QuestionAuthor", fields: [authorId], references: [id], onDelete: SetNull)
@@ -257,6 +268,7 @@ model Question {
   options          Option[]
   attemptQuestions AttemptQuestion[]
   quizLinks        QuizQuestion[]
+  aiDrafts         QuestionDraft[]
 
   @@index([subjectId, difficulty, active])
   @@index([topicId])
@@ -770,4 +782,103 @@ model ResultAppeal {
   @@index([attemptId])
   @@index([status, createdAt])
   @@map("result_appeals")
+}
+
+// ---------------------------------------------------------------------------
+// AI question generation from study material
+// ---------------------------------------------------------------------------
+
+enum MaterialStatus {
+  OCR
+  PROCESSING
+  READY
+  FAILED
+}
+
+/// A teacher's study material (PDF, Word, PowerPoint or a photo of notes),
+/// indexed into the subject's Gemini File Search store.
+model StudyMaterial {
+  id             String         @id @default(cuid())
+  subjectId      String
+  ownerId        String
+  title          String
+  originalName   String
+  mimeType       String
+  byteSize       Int
+  /// Server-generated path under UPLOAD_DIR; our own copy, used for page ranges.
+  storageKey     String         @unique
+  pageCount      Int?
+  /// Pages that had no text layer and were read by OCR.
+  scannedPages   Int            @default(0)
+  /// What the AI reads when OCR was needed: page-marked Markdown.
+  ocrText        String?
+  /// `{ done, total }` while OCR runs.
+  progress       Json?
+  geminiDocument String?
+  status         MaterialStatus @default(PROCESSING)
+  error          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  owner   Admin   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([subjectId, ownerId])
+  @@map("study_materials")
+}
+
+enum GenerationStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+}
+
+/// One "Generate with AI" request and its settings.
+model GenerationJob {
+  id          String           @id @default(cuid())
+  subjectId   String
+  authorId    String
+  materialIds String[]
+  params      Json
+  status      GenerationStatus @default(QUEUED)
+  error       String?
+  /// `{ asked, created, dropped }`
+  stats       Json?
+  createdAt   DateTime         @default(now())
+  finishedAt  DateTime?
+
+  subject Subject         @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  author  Admin           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  drafts  QuestionDraft[]
+
+  @@index([authorId, createdAt])
+  @@map("generation_jobs")
+}
+
+enum DraftStatus {
+  PENDING
+  ACCEPTED
+  DISCARDED
+}
+
+/// A generated question waiting for a teacher. Never visible to students; it
+/// becomes a bank question only when accepted.
+model QuestionDraft {
+  id         String      @id @default(cuid())
+  jobId      String
+  status     DraftStatus @default(PENDING)
+  /// Same shape as the create-question body, minus subject.
+  payload    Json
+  /// `{ materialId?, page?, excerpt? }`
+  source     Json?
+  questionId String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  job      GenerationJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  question Question?     @relation(fields: [questionId], references: [id], onDelete: SetNull)
+
+  @@index([jobId, status])
+  @@map("question_drafts")
 }

@@ -94,6 +94,9 @@ There is currently no test script in `package.json` and no committed automated t
 | `UPLOAD_DIR` | Recommended | Private storage root for question and answer images; defaults to `./var/uploads` |
 | `RESEND_API_KEY` | Production email | Enables Resend OTP delivery |
 | `OTP_FROM_EMAIL` | Production email | Sender identity, ideally on a verified domain |
+| `GEMINI_API_KEY` | For AI questions | Free Google AI Studio key; without it the AI feature is hidden |
+| `GEMINI_MODEL` | Optional | Defaults to `gemini-flash-latest` |
+| `AI_PROVIDER` | Tests only | `fake` answers instantly without calling Google (the e2e server sets it) |
 
 Keep `.env` and uploaded media out of source control. `var/` is ignored. A database backup without the matching upload directory is incomplete because answer and question media are stored on disk, not in PostgreSQL.
 
@@ -140,7 +143,8 @@ Important ownership boundaries:
 
 - `/admin`: overview dashboard.
 - `/admin/students`: student management and import.
-- `/admin/questions`: question bank, editor, import, and media.
+- `/admin/questions`: question bank (pick a subject first), editor, import, media, study material and AI generation.
+- `/admin/questions/ai/[jobId]`: review AI drafts (accept, edit, regenerate, discard).
 - `/admin/quizzes`: quiz list, creation, editing, assignment, and duplication.
 - `/admin/grading`: manual marking queue.
 - `/admin/results`: result release and analysis.
@@ -173,6 +177,10 @@ Faculty controls on **Live exams**: add time, pause/resume one student (the serv
 ### Quiz view and marking
 
 The quiz view has Attempts, Assigned (editable, by student or section), Questions, Extra time and Item analysis tabs. Quiz-wide marking (`negativeMarkingPct`, `multiPartialCredit`) overrides per-question settings when set. A faculty member can grant one student another attempt at a single-attempt quiz (`QuizAssignment.extraAttempts`, `src/lib/attempt-policy.ts`); class averages count each student's best attempt. Students can ask for a released result to be re-checked (`ResultAppeal`); faculty answer from **Appeals** and may change marks, including on auto-graded answers.
+
+### AI question generation
+
+In a subject's bank a teacher uploads study material (PDF, DOCX, PPTX, JPG/PNG, up to 25 MB). Our copy stays in `UPLOAD_DIR/materials`. PDF pages without a text layer, and photos, are read by Gemini (OCR) into page-marked text (`StudyMaterial.ocrText`). The material is then indexed into the subject's Gemini File Search store (`Subject.fileSearchStore`, one per subject, filtered by `material_id`). "Generate with AI" starts a `GenerationJob` (count, difficulty mix, types, Bloom's levels, marks, focus: whole / topic / page range of one PDF). It runs in-process and writes `QuestionDraft`s that passed the same validation as hand-written questions and are not near-duplicates of the bank. Nothing reaches students until a teacher accepts a draft; accepted questions carry `aiGenerated`. Code: `src/lib/ai/*` (pure logic in `question-generation.ts` and `material-text.ts`; `provider.ts` is the seam, with `gemini.ts` and `fake-provider.ts`). Materials and jobs are private to their owner.
 
 ### Results and integrity
 

@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { CsvImportDialog } from '@/components/admin/csv-import-dialog';
 import { FilterBar, FilterSearch, FilterSelect } from '@/components/admin/filter-select';
 import { QuestionEditor, type QuestionRecord } from '@/components/admin/question-editor';
+import { StudyMaterials } from '@/components/admin/study-materials';
 import { ErrorState } from '@/components/shared/error-state';
 import { MathText } from '@/components/shared/math-text';
 import { PageHeader, PageShell } from '@/components/shared/page-header';
@@ -62,6 +63,7 @@ interface QuestionListItem extends QuestionRecord {
   subject: string;
   topic: string | null;
   usageCount: number;
+  aiGenerated?: boolean;
 }
 
 interface QuestionsResponse {
@@ -401,6 +403,8 @@ function SubjectBank({
         }
       />
 
+      <StudyMaterials subject={{ id: subject.id, name: subject.name }} topics={subject.topics} />
+
       <div className="mt-8 grid gap-8 lg:grid-cols-[14rem_minmax(0,1fr)]">
         {/* Topics: a list down the side on wide screens, a row that scrolls on narrow ones. */}
         <nav aria-label={`Topics in ${subject.name}`} className="min-w-0">
@@ -732,6 +736,7 @@ function QuestionFacts({ question }: { question: QuestionListItem }) {
       {' · '}
       {question.marks} mark{question.marks === 1 ? '' : 's'}
       {question.negativeMarks > 0 ? ` · −${question.negativeMarks} negative` : ''}
+      {question.aiGenerated ? ' · AI-drafted, reviewed' : ''}
     </>
   );
 }
