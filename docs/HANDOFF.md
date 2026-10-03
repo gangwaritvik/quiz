@@ -96,6 +96,7 @@ There is currently no test script in `package.json` and no committed automated t
 | `OTP_FROM_EMAIL` | Production email | Sender identity, ideally on a verified domain |
 | `GEMINI_API_KEY` | For AI questions | Free Google AI Studio key; without it the AI feature is hidden |
 | `GEMINI_MODEL` | Optional | Defaults to `gemini-flash-latest` |
+| `GEMINI_FALLBACK_MODEL` | Optional | Used when the main model stays overloaded; defaults to `gemini-flash-lite-latest` |
 | `AI_PROVIDER` | Tests only | `fake` answers instantly without calling Google (the e2e server sets it) |
 
 Keep `.env` and uploaded media out of source control. `var/` is ignored. A database backup without the matching upload directory is incomplete because answer and question media are stored on disk, not in PostgreSQL.

@@ -1,4 +1,4 @@
-import { deleteMaterialFile } from '@/lib/ai/materials';
+import { deleteMaterialFile, processMaterial } from '@/lib/ai/materials';
 import { AiError, getProvider } from '@/lib/ai/provider';
 import { ApiError, assertSameOrigin, ok, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
@@ -75,5 +75,22 @@ export const DELETE = route(async (request: Request, { params }: Params) => {
     entityId: materialId,
     context,
   });
+  return ok({ id: materialId });
+});
+
+/** Tries a failed material again (e.g. after Google was briefly overloaded). */
+export const POST = route(async (request: Request, { params }: Params) => {
+  assertSameOrigin(request);
+  const session = await requireAdmin();
+  const { materialId } = await params;
+  enforceRateLimit(RATE_LIMITS.aiUpload, `ai-upload:${session.userId}`);
+  await assertMaterialOwner(materialId, session.adminId);
+
+  const claimed = await prisma.studyMaterial.updateMany({
+    where: { id: materialId, status: 'FAILED' },
+    data: { status: 'PROCESSING', error: null },
+  });
+  if (claimed.count !== 1) throw new ApiError('CONFLICT', 'Only a failed file can be retried.');
+  void processMaterial(materialId);
   return ok({ id: materialId });
 });

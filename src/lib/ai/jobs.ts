@@ -89,6 +89,12 @@ async function loadContext(job: {
 function attachSource(draft: AcceptedDraft, sources: RetrievedSource[], ctx: JobContext): DraftSource {
   const source = { ...draft.source };
   if (!source.materialId && ctx.materialIds.length === 1) source.materialId = ctx.materialIds[0];
+  // With a page range the model only saw those pages, numbered from 1.
+  const focus = ctx.params.focus;
+  if (focus.mode === 'pages' && source.page) {
+    const page = focus.from + source.page - 1;
+    source.page = page >= focus.from && page <= focus.to ? page : undefined;
+  }
   const quote = source.excerpt?.toLowerCase().slice(0, 40);
   const match = quote ? sources.find((entry) => entry.text?.toLowerCase().includes(quote)) : undefined;
   if (match) {

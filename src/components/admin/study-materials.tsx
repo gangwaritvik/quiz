@@ -8,6 +8,7 @@ import {
   FileText,
   Loader2,
   Presentation,
+  RotateCcw,
   ScanText,
   Sparkles,
   Trash2,
@@ -148,6 +149,15 @@ export function StudyMaterials({
     }
   };
 
+  const retry = async (material: Material) => {
+    try {
+      await apiFetch(`/api/admin/materials/${material.id}`, { method: 'POST' });
+      await refetch();
+    } catch (caught) {
+      toast.error(caught instanceof ApiClientError ? caught.message : 'We could not retry it.');
+    }
+  };
+
   const remove = async (material: Material) => {
     try {
       await apiFetch(`/api/admin/materials/${material.id}`, { method: 'DELETE' });
@@ -233,6 +243,12 @@ export function StudyMaterials({
                 </div>
                 <MaterialStatus material={material} />
                 <div className="flex gap-1">
+                  {material.status === 'FAILED' ? (
+                    <Button variant="ghost" size="sm" onClick={() => void retry(material)}>
+                      <RotateCcw />
+                      Try again
+                    </Button>
+                  ) : null}
                   {material.scannedPages > 0 ? (
                     <Button variant="ghost" size="sm" onClick={() => setViewing(material)}>
                       <ScanText />

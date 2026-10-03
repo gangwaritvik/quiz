@@ -15,14 +15,55 @@ function ai(): GoogleGenAI {
   return client;
 }
 
+/** Used when the main model stays overloaded: lighter, also on the free tier. */
+const DEFAULT_FALLBACK_MODEL = 'gemini-flash-lite-latest';
+
 const model = () => process.env.GEMINI_MODEL || DEFAULT_MODEL;
+const models = () => [
+  ...new Set([model(), process.env.GEMINI_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL]),
+];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Google's free tier often answers "overloaded" (503) or "slow down" (429) for
+ * a moment. Those are retried a few times with a growing pause; anything else
+ * fails at once.
+ */
+const isTransient = (error: unknown) =>
+  [429, 500, 503, 504].includes((error as { status?: number })?.status ?? 0);
+
+async function withRetry<T>(call: () => Promise<T>): Promise<T> {
+  const pauses = [2000, 5000, 12000];
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await call();
+    } catch (error) {
+      if (!isTransient(error) || attempt >= pauses.length) throw error;
+      await sleep(pauses[attempt]!);
+    }
+  }
+}
+
+/** Retries on the main model, then once more on the fallback if it is still overloaded. */
+async function onAnyModel<T>(call: (model: string) => Promise<T>): Promise<T> {
+  const list = models();
+  for (let i = 0; ; i += 1) {
+    try {
+      return await withRetry(() => call(list[i]!));
+    } catch (error) {
+      if (!isTransient(error) || i + 1 >= list.length) throw error;
+      console.warn(`[ai] ${list[i]} overloaded, falling back to ${list[i + 1]}`);
+    }
+  }
+}
 
 /** Turns Google's errors into something a teacher can act on. */
 function explain(error: unknown): never {
   const status = (error as { status?: number })?.status;
   const message = error instanceof Error ? error.message : String(error);
+  // The teacher gets the plain sentence; the server log keeps Google's own words.
+  console.error('[ai] gemini error', status, message.slice(0, 500));
   if (status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(message)) {
     throw new AiError("Google's free AI quota is used up for now. Try again in a few minutes.");
   }
@@ -30,7 +71,9 @@ function explain(error: unknown): never {
     throw new AiError('Google refused the Gemini API key. Check GEMINI_API_KEY on the server.');
   }
   if (status === 404 && /model/i.test(message)) {
-    throw new AiError(`The model "${model()}" is not available. Set GEMINI_MODEL to a current Flash model.`);
+    throw new AiError(
+      `The model "${model()}" is not available. Set GEMINI_MODEL to a current Flash model.`,
+    );
   }
   if (status !== undefined && status >= 500) {
     throw new AiError('Google AI is having trouble right now. Try again shortly.');
@@ -74,7 +117,9 @@ export const geminiProvider: AiProvider = {
         operation = (await ai().operations.get({ operation })) as typeof operation;
       }
       if (operation.error) {
-        throw new AiError(`Google could not index this file: ${JSON.stringify(operation.error).slice(0, 200)}`);
+        throw new AiError(
+          `Google could not index this file: ${JSON.stringify(operation.error).slice(0, 200)}`,
+        );
       }
       const name = operation.response?.documentName;
       if (!name) throw new AiError('Google did not return a document name.');
@@ -103,13 +148,18 @@ export const geminiProvider: AiProvider = {
       'For a diagram or figure write [figure: one-line description]. Do not summarise, translate or add anything.',
     ].join('\n');
     try {
-      const response = await ai().models.generateContent({
-        model: model(),
-        contents: [
-          { role: 'user', parts: [{ inlineData: { data: base64(bytes), mimeType } }, { text: prompt }] },
-        ],
-        config: { temperature: 0 },
-      });
+      const response = await onAnyModel((name) =>
+        ai().models.generateContent({
+          model: name,
+          contents: [
+            {
+              role: 'user',
+              parts: [{ inlineData: { data: base64(bytes), mimeType } }, { text: prompt }],
+            },
+          ],
+          config: { temperature: 0 },
+        }),
+      );
       return response.text ?? '';
     } catch (error) {
       explain(error);
@@ -118,45 +168,50 @@ export const geminiProvider: AiProvider = {
 
   async generate({ prompt, schema, retrieval, inline }) {
     try {
-      const response = await ai().models.generateContent({
-        model: model(),
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              ...(inline ? [{ inlineData: { data: base64(inline.bytes), mimeType: inline.mimeType } }] : []),
-              { text: prompt },
-            ],
-          },
-        ],
-        config: {
-          temperature: 0.7,
-          responseMimeType: 'application/json',
-          responseJsonSchema: schema,
-          ...(retrieval
-            ? {
-                tools: [
-                  {
-                    fileSearch: {
-                      fileSearchStoreNames: [retrieval.store],
-                      metadataFilter: retrieval.materialIds
-                        .map((id) => `material_id="${id}"`)
-                        .join(' OR '),
+      const response = await onAnyModel((name) =>
+        ai().models.generateContent({
+          model: name,
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                ...(inline
+                  ? [{ inlineData: { data: base64(inline.bytes), mimeType: inline.mimeType } }]
+                  : []),
+                { text: prompt },
+              ],
+            },
+          ],
+          config: {
+            temperature: 0.7,
+            responseMimeType: 'application/json',
+            responseJsonSchema: schema,
+            ...(retrieval
+              ? {
+                  tools: [
+                    {
+                      fileSearch: {
+                        fileSearchStoreNames: [retrieval.store],
+                        metadataFilter: retrieval.materialIds
+                          .map((id) => `material_id="${id}"`)
+                          .join(' OR '),
+                      },
                     },
-                  },
-                ],
-              }
-            : {}),
-        },
-      });
+                  ],
+                }
+              : {}),
+          },
+        }),
+      );
 
       const sources: RetrievedSource[] = (
         response.candidates?.[0]?.groundingMetadata?.groundingChunks ?? []
       ).flatMap((chunk) => {
         const context = chunk.retrievedContext;
         if (!context) return [];
-        const materialId = context.customMetadata?.find((entry) => entry.key === 'material_id')
-          ?.stringValue;
+        const materialId = context.customMetadata?.find(
+          (entry) => entry.key === 'material_id',
+        )?.stringValue;
         return [{ materialId, page: context.pageNumber, text: context.text }];
       });
 
