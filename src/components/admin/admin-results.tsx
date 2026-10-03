@@ -5,7 +5,6 @@ import {
   BarChart3,
   ChevronRight,
   Download,
-  Search,
   SearchX,
   ShieldAlert,
   X,
@@ -14,17 +13,19 @@ import Link from 'next/link';
 import * as React from 'react';
 import { toast } from 'sonner';
 
-import { FilterSelect } from '@/components/admin/filter-select';
+import {
+  FilterBar,
+  FilterSearch,
+  FilterSelect,
+  FilterToggle,
+} from '@/components/admin/filter-select';
 import { ErrorState } from '@/components/shared/error-state';
 import { IntegrityBadge, type IntegrityStatus } from '@/components/shared/integrity-badge';
 import { PageHeader, PageShell } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { SkeletonRows } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import {
   Table,
   TableBody,
@@ -229,31 +230,18 @@ export function AdminResults() {
         </div>
       ) : (
         <>
-          <div
-            role="search"
-            aria-label="Filter results"
-            className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end"
-          >
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="results-search">Search</Label>
-              <div className="relative">
-                <Search
-                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden
-                />
-                <Input
-                  id="results-search"
-                  type="search"
-                  value={search}
-                  maxLength={60}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Student name, roll number or quiz"
-                  className="pl-9"
-                />
-              </div>
-            </div>
+          <FilterBar label="Filter results">
+            <FilterSearch
+              id="results-search"
+              label="Search"
+              value={search}
+              maxLength={60}
+              onChange={setSearch}
+              placeholder="Search student, roll number or quiz"
+            />
 
             <FilterSelect
+              compact
               id="results-subject"
               label="Subject"
               value={subjectId || ALL}
@@ -269,6 +257,8 @@ export function AdminResults() {
             />
 
             <FilterSelect
+              compact
+              className="sm:w-56"
               id="results-quiz"
               label="Quiz"
               value={selectedQuizId || ALL}
@@ -280,6 +270,7 @@ export function AdminResults() {
             />
 
             <FilterSelect
+              compact
               id="results-section"
               label="Section"
               value={section || ALL}
@@ -293,16 +284,14 @@ export function AdminResults() {
               ]}
             />
 
-            <div className="flex min-h-10 items-center gap-3">
-              <Switch id="results-flagged" checked={flagged} onCheckedChange={setFlagged} />
-              <Label htmlFor="results-flagged" className="cursor-pointer text-sm font-normal">
-                Flagged for review only
-              </Label>
-            </div>
+            <FilterToggle pressed={flagged} onPressedChange={setFlagged} icon={<ShieldAlert />}>
+              Flagged only
+            </FilterToggle>
 
-            <div className={cn(!(filtered || selectedQuizId) && 'hidden')}>
+            {filtered || selectedQuizId ? (
               <Button
                 variant="ghost"
+                size="sm"
                 onClick={() => {
                   clearFilters();
                   setSelectedQuizId('');
@@ -311,8 +300,8 @@ export function AdminResults() {
                 <X />
                 Clear
               </Button>
-            </div>
-          </div>
+            ) : null}
+          </FilterBar>
 
           <div
             aria-busy={loading || undefined}

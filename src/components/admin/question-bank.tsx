@@ -8,7 +8,6 @@ import {
   FileQuestion,
   Pencil,
   Plus,
-  Search,
   SearchX,
   SignalHigh,
   SignalLow,
@@ -22,7 +21,7 @@ import * as React from 'react';
 import { toast } from 'sonner';
 
 import { CsvImportDialog } from '@/components/admin/csv-import-dialog';
-import { FilterSelect } from '@/components/admin/filter-select';
+import { FilterBar, FilterSearch, FilterSelect } from '@/components/admin/filter-select';
 import { QuestionEditor, type QuestionRecord } from '@/components/admin/question-editor';
 import { ErrorState } from '@/components/shared/error-state';
 import { MathText } from '@/components/shared/math-text';
@@ -40,8 +39,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { SkeletonRows } from '@/components/ui/skeleton';
 import {
   Table,
@@ -436,30 +433,17 @@ function SubjectBank({
         </nav>
 
         <div className="min-w-0">
-          <div
-            role="search"
-            aria-label="Filter questions"
-            className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.6fr)_repeat(2,minmax(0,1fr))] lg:items-end"
-          >
-            <div className="space-y-2 sm:col-span-2 lg:col-span-1">
-              <Label htmlFor="question-search">Search</Label>
-              <div className="relative">
-                <Search
-                  className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-                  aria-hidden
-                />
-                <Input
-                  id="question-search"
-                  type="search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search question text"
-                  className="pl-9"
-                />
-              </div>
-            </div>
+          <FilterBar label="Filter questions" className="mt-0">
+            <FilterSearch
+              id="question-search"
+              label="Search"
+              value={search}
+              onChange={setSearch}
+              placeholder="Search question text"
+            />
 
             <FilterSelect
+              compact
               id="filter-difficulty"
               label="Difficulty"
               value={difficulty}
@@ -476,6 +460,7 @@ function SubjectBank({
             />
 
             <FilterSelect
+              compact
               id="filter-type"
               label="Type"
               value={type}
@@ -491,7 +476,7 @@ function SubjectBank({
                 })),
               ]}
             />
-          </div>
+          </FilterBar>
 
           {initialLoading ? (
             <SkeletonRows rows={6} className="mt-6" />

@@ -7,7 +7,6 @@ import {
   ListChecks,
   PenLine,
   RefreshCw,
-  Search,
   SearchX,
   X,
 } from 'lucide-react';
@@ -15,13 +14,12 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
 
-import { FilterSelect } from '@/components/admin/filter-select';
+import { FilterBar, FilterSearch, FilterSelect } from '@/components/admin/filter-select';
 import { ErrorState } from '@/components/shared/error-state';
 import { PageHeader, PageShell } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton, SkeletonRows } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
@@ -272,31 +270,18 @@ function GradingQueueView() {
         </div>
       </div>
 
-      <div
-        role="search"
-        aria-label="Filter the marking queue"
-        className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end"
-      >
-        <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="queue-search">Search</Label>
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-            <Input
-              id="queue-search"
-              type="search"
-              value={search}
-              maxLength={60}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Student name or roll number"
-              className="pl-9"
-            />
-          </div>
-        </div>
+      <FilterBar label="Filter the marking queue">
+        <FilterSearch
+          id="queue-search"
+          label="Search"
+          value={search}
+          maxLength={60}
+          onChange={setSearch}
+          placeholder="Search student name or roll number"
+        />
 
         <FilterSelect
+          compact
           id="queue-subject"
           label="Subject"
           value={subjectId || ALL}
@@ -311,6 +296,8 @@ function GradingQueueView() {
         />
 
         <FilterSelect
+          compact
+          className="sm:w-56"
           id="queue-quiz"
           label="Quiz"
           value={quizId || ALL}
@@ -325,6 +312,7 @@ function GradingQueueView() {
         />
 
         <FilterSelect
+          compact
           id="queue-section"
           label="Section"
           value={sectionParam || ALL}
@@ -336,6 +324,7 @@ function GradingQueueView() {
         />
 
         <FilterSelect
+          compact
           id="queue-sort"
           label="Sort by"
           value={sort}
@@ -346,15 +335,13 @@ function GradingQueueView() {
           }))}
         />
 
-        <div className={cn('sm:col-span-2 lg:col-span-1', !dirty && 'hidden')}>
-          {dirty ? (
-            <Button variant="ghost" onClick={clearFilters}>
-              <X />
-              Clear
-            </Button>
-          ) : null}
-        </div>
-      </div>
+        {dirty ? (
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
+            <X />
+            Clear
+          </Button>
+        ) : null}
+      </FilterBar>
 
       {initialLoading ? (
         <SkeletonRows rows={5} className="mt-5" />
