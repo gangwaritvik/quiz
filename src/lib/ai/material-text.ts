@@ -64,3 +64,40 @@ export function buildCompanion(pageTexts: string[], ocr: Map<number, string>): s
     })
     .join('\n\n');
 }
+
+export interface SliceMaterial {
+  title: string;
+  /** One entry per page, in order. */
+  pages: string[];
+}
+
+/** Most text sent to the model for one batch. */
+export const MAX_SLICE_CHARS = 100_000;
+
+/**
+ * The text for batch `index` of `count`: the pages of all chosen materials,
+ * cut into `count` consecutive windows, so a job asking for many questions
+ * covers the whole material instead of whatever a search ranks first. Pages
+ * carry a `--- title · page N ---` line. Empty when no page has readable text.
+ */
+export function sliceForBatch(
+  materials: SliceMaterial[],
+  index: number,
+  count: number,
+  maxChars = MAX_SLICE_CHARS,
+): string {
+  const pages = materials
+    .flatMap((material) =>
+      material.pages.map((text, i) => ({ title: material.title, page: i + 1, text: text.trim() })),
+    )
+    .filter((page) => page.text && page.text !== '[no readable text on this page]');
+  if (pages.length === 0) return '';
+
+  const from = Math.floor((index * pages.length) / count);
+  const to = Math.max(from + 1, Math.floor(((index + 1) * pages.length) / count));
+  const window = pages.slice(from, to);
+  const each = Math.floor(maxChars / window.length);
+  return window
+    .map((page) => `--- ${page.title} · page ${page.page} ---\n${page.text.slice(0, each)}`)
+    .join('\n\n');
+}

@@ -235,6 +235,8 @@ export interface DraftSource {
   quote?: QuoteStatus;
   /** Does a second reading of the passage reach the key's answer? */
   check?: AnswerCheck;
+  /** Another wording of a short answer that the key does not list yet. */
+  suggestedAnswer?: string;
 }
 
 /** The create-question body (without subject) a draft carries. */
@@ -319,8 +321,26 @@ export function questionWords(text: string): Set<string> {
   );
 }
 
-/** Two questions are the same if four-fifths of their words are shared. */
+/** The distinct numbers a text mentions, as a sorted list ("15", "2.5"). */
+export function numbersIn(text: string): string[] {
+  return [...new Set((text.match(/\d+(?:\.\d+)?/g) ?? []).map((n) => String(Number(n))))].sort();
+}
+
+/**
+ * False when both texts give numbers and the numbers differ: the same template
+ * with other values ("delay 15 ms" / "delay 20 ms") is a different question.
+ * A text with no numbers cannot tell, so it counts as the same.
+ */
+export function sameNumbers(a: string, b: string): boolean {
+  const left = numbersIn(a);
+  const right = numbersIn(b);
+  if (left.length === 0 || right.length === 0) return true;
+  return left.length === right.length && left.every((n, i) => n === right[i]);
+}
+
+/** Two questions are the same if four-fifths of their words are shared (and they use the same numbers). */
 export function isNearDuplicate(a: string, b: string): boolean {
+  if (!sameNumbers(a, b)) return false;
   const left = questionWords(a);
   const right = questionWords(b);
   if (left.size === 0 || right.size === 0) return a.trim().toLowerCase() === b.trim().toLowerCase();

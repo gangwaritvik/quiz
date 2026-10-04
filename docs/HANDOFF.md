@@ -188,6 +188,8 @@ Checks on every draft (`src/lib/ai/verification.ts`, stored on `QuestionDraft.so
 
 Repeats are checked by meaning (`src/lib/ai/similarity.ts`, embeddings cached in `QuestionEmbedding`, keyed by embedding model): on generation, on accepting a draft, on saving a hand-written question, and on moving a quiz-only question into the bank. "Find repeats" in a subject's bank lists groups of questions that mean the same, for the author to retire. The AI's JSON sometimes drops the backslash of a LaTeX command (`\text` read as a tab); `repairMath` restores it inside `$...$`.
 
+Whole-material focus does not use File Search: each batch of a job is sent a different consecutive window of the material's own text (`sliceForBatch`, up to 100k characters), so many questions cover the whole material; topic focus still searches. Two questions that give different numbers are not repeats (`sameNumbers`). A short-answer key that lacks a wording the second reading used gets a one-click "Also accept it" suggestion. CSV imports report rows that look like repeats but still import them.
+
 ### Results and integrity
 
 `releaseResults` controls score visibility. `releaseAnswers` independently controls answer-key and explanation visibility. Integrity signals are timestamped events aggregated into a score and status for human review; they are not an automatic academic verdict. Manual grading and score changes are audited.

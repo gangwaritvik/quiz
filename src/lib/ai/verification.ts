@@ -177,3 +177,21 @@ export function compareAnswer(question: KeyedQuestion, answer: CheckAnswer | und
   );
   return given.size === correct.size && [...given].every((n) => correct.has(n)) ? 'agrees' : 'differs';
 }
+
+/** Longest wording worth suggesting as an extra accepted answer. */
+const MAX_SUGGESTION_CHARS = 80;
+
+/**
+ * A short-answer key often lists one wording ("TLS") while the material also
+ * uses another ("Transport Layer Security"), so a student who writes the other
+ * is marked wrong. When the second reading answers correctly but in words the
+ * key does not list, that wording is offered as an extra accepted answer.
+ */
+export function suggestAnswer(question: KeyedQuestion, answer: CheckAnswer | undefined): string | null {
+  if (question.type !== 'SHORT_ANSWER' || !answer?.canAnswer) return null;
+  const given = (answer.text ?? '').trim().replace(/[.\s]+$/, '');
+  if (!given || given.length > MAX_SUGGESTION_CHARS) return null;
+  if (compareAnswer(question, answer) !== 'agrees') return null;
+  const listed = (question.acceptedAnswers ?? []).map(normalizeForMatch);
+  return listed.includes(normalizeForMatch(given)) ? null : given;
+}

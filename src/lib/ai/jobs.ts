@@ -2,6 +2,7 @@ import 'server-only';
 
 import type { Prisma } from '@prisma/client';
 
+import { sliceForBatch } from '@/lib/ai/material-text';
 import { materialPages, readMaterialFile } from '@/lib/ai/materials';
 import { extractPages, pageRange } from '@/lib/ai/pdf-pages';
 import { AiError, type RetrievedSource, getProvider } from '@/lib/ai/provider';
@@ -29,6 +30,7 @@ import {
   compareAnswer,
   isFlagged,
   locateQuote,
+  suggestAnswer,
   toCheckItem,
 } from '@/lib/ai/verification';
 import { createQuestionSchema, quizSecuritySchema } from '@/lib/validation';
@@ -48,6 +50,7 @@ interface JobContext {
   guard: SemanticGuard;
   /** The materials' own text by id, one entry per page, for checking quotes. */
   pages: Map<string, string[]>;
+  titles: Map<string, string>;
 }
 
 async function loadContext(job: {
@@ -69,7 +72,7 @@ async function loadContext(job: {
     }),
     prisma.studyMaterial.findMany({
       where: { id: { in: job.materialIds }, status: 'READY' },
-      select: { id: true, storageKey: true, mimeType: true, ocrText: true },
+      select: { id: true, title: true, storageKey: true, mimeType: true, ocrText: true },
     }),
   ]);
   if (materials.length === 0) throw new AiError('None of the chosen materials is ready any more.');
@@ -96,6 +99,7 @@ async function loadContext(job: {
     inline,
     guard: await createSemanticGuard(job.subjectId),
     pages: new Map(await Promise.all(materials.map(async (material) => [material.id, await materialPages(material)] as const))),
+    titles: new Map(materials.map((material) => [material.id, material.title])),
   };
 }
 
@@ -161,8 +165,12 @@ async function verifyDrafts(drafts: Array<{ body: AcceptedDraft['body']; source:
   try {
     const answers = await (await getProvider()).check(items);
     for (const item of items) {
-      const verdict = compareAnswer(drafts[item.id]!.body, answers.find((answer) => answer.id === item.id));
-      if (verdict) drafts[item.id]!.source.check = verdict;
+      const draft = drafts[item.id]!;
+      const answer = answers.find((entry) => entry.id === item.id);
+      const verdict = compareAnswer(draft.body, answer);
+      if (verdict) draft.source.check = verdict;
+      const suggestion = suggestAnswer(draft.body, answer);
+      if (suggestion) draft.source.suggestedAnswer = suggestion;
     }
   } catch (error) {
     console.warn('[ai] second reading unavailable', error);
@@ -170,8 +178,24 @@ async function verifyDrafts(drafts: Array<{ body: AcceptedDraft['body']; source:
 }
 
 /** One model call: `batch` questions of the job's types, validated and de-duplicated. */
-async function generateBatch(ctx: JobContext, batch: DifficultyCounts, types: AiQuestionType[], avoid: string[]) {
+async function generateBatch(
+  ctx: JobContext,
+  batch: DifficultyCounts,
+  types: AiQuestionType[],
+  avoid: string[],
+  /** Which of the job's batches this is, so each covers a different part of the material. */
+  slot: { index: number; count: number } = { index: 0, count: 1 },
+) {
   const provider = await getProvider();
+  // Whole-material focus reads our own copy of the text, a different window per batch.
+  const whole =
+    ctx.params.focus.mode === 'whole'
+      ? sliceForBatch(
+          ctx.materialIds.map((id) => ({ title: ctx.titles.get(id) ?? 'Material', pages: ctx.pages.get(id) ?? [] })),
+          slot.index,
+          slot.count,
+        )
+      : '';
   const { json, sources } = await provider.generate({
     prompt: buildPrompt({
       subjectName: ctx.subjectName,
@@ -185,7 +209,9 @@ async function generateBatch(ctx: JobContext, batch: DifficultyCounts, types: Ai
     schema: AI_RESPONSE_SCHEMA,
     ...(ctx.inline
       ? { inline: ctx.inline }
-      : { retrieval: { store: ctx.store ?? '', materialIds: ctx.materialIds } }),
+      : whole
+        ? { text: whole }
+        : { retrieval: { store: ctx.store ?? '', materialIds: ctx.materialIds } }),
     request: { batch, types },
   });
   const outcome = validateModelOutput(json, {
@@ -216,8 +242,9 @@ export async function runJob(jobId: string) {
     const ctx = await loadContext(job);
     const avoid = [...ctx.existing];
 
-    for (const batch of planBatches(splitByMix(ctx.params.count, ctx.params.mix))) {
-      const outcome = await generateBatch(ctx, batch, ctx.params.types, avoid);
+    const batches = planBatches(splitByMix(ctx.params.count, ctx.params.mix));
+    for (const [index, batch] of batches.entries()) {
+      const outcome = await generateBatch(ctx, batch, ctx.params.types, avoid, { index, count: batches.length });
       dropped += outcome.dropped;
       if (outcome.drafts.length > 0) {
         await prisma.questionDraft.createMany({

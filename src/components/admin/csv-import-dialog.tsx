@@ -23,6 +23,8 @@ interface ImportResult {
   rejected: number;
   skipped?: number;
   issues: Array<{ row: number; message: string }>;
+  /** Rows that were imported but look like questions the subject already has. */
+  repeats?: Array<{ row: number; message: string }>;
 }
 
 interface CsvImportDialogProps {
@@ -165,6 +167,25 @@ export function CsvImportDialog({
                 </ul>
                 <p className="mt-2 text-xs text-muted-foreground">
                   Valid rows were imported. Fix these rows and import them again.
+                </p>
+              </section>
+            ) : null}
+
+            {result.repeats && result.repeats.length > 0 ? (
+              <section aria-labelledby="csv-repeats-heading">
+                <h3 id="csv-repeats-heading" className="text-sm font-semibold">
+                  Imported, but they look like repeats
+                </h3>
+                <ul className="scrollbar-slim mt-2 max-h-48 divide-y divide-border overflow-y-auto rounded-md border border-border text-xs">
+                  {result.repeats.map((repeat) => (
+                    <li key={repeat.row} className="flex gap-3 px-3 py-2">
+                      <span className="tabular w-14 shrink-0 font-medium text-muted-foreground">Row {repeat.row}</span>
+                      <span className="min-w-0 break-words text-warning">{repeat.message}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  They are in the bank now. Use Find repeats to keep one of each and retire the others.
                 </p>
               </section>
             ) : null}

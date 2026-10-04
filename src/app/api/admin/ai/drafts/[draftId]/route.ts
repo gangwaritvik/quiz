@@ -1,5 +1,7 @@
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 
+import { normalizeForMatch } from '@/lib/ai/verification';
 import { ApiError, assertSameOrigin, ok, parseBody, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
@@ -30,9 +32,16 @@ export const PATCH = route(async (request: Request, { params }: Params) => {
   await assertDraftOwner(draftId, session.adminId);
 
   const body = await parseBody(request, editDraftSchema);
+  // A suggested extra answer is dropped once the teacher's version lists it.
+  const current = await prisma.questionDraft.findUnique({ where: { id: draftId }, select: { source: true } });
+  const source = { ...((current?.source as Record<string, unknown> | null) ?? {}) };
+  const listed = (body.draft.acceptedAnswers ?? []).map(normalizeForMatch);
+  if (typeof source.suggestedAnswer === 'string' && listed.includes(normalizeForMatch(source.suggestedAnswer))) {
+    delete source.suggestedAnswer;
+  }
   const updated = await prisma.questionDraft.updateMany({
     where: { id: draftId, status: 'PENDING' },
-    data: { payload: { ...body.draft, topicId: body.topicId } },
+    data: { payload: { ...body.draft, topicId: body.topicId }, source: source as Prisma.InputJsonValue },
   });
   if (updated.count !== 1) throw new ApiError('CONFLICT', 'This draft has already been handled.');
   return ok({ id: draftId });

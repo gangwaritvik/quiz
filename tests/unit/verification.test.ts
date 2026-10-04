@@ -9,6 +9,7 @@ import {
   isFlagged,
   locateQuote,
   normalizeForMatch,
+  suggestAnswer,
   toCheckItem,
 } from '@/lib/ai/verification';
 
@@ -150,5 +151,25 @@ describe('officeTextPages', () => {
 
   test('something that is not a zip throws, so callers can treat it as unreadable', () => {
     assert.throws(() => officeTextPages(new Uint8Array([1, 2, 3]), 'docx'));
+  });
+});
+
+describe('suggestAnswer', () => {
+  const short = { type: 'SHORT_ANSWER', text: 'q', acceptedAnswers: ['TLS'] };
+
+  test('offers the wording the key lacks when the second reading is right', () => {
+    assert.equal(suggestAnswer(short, { id: 0, canAnswer: true, text: 'Transport Layer Security (TLS)' }), 'Transport Layer Security (TLS)');
+  });
+
+  test('offers nothing when the key already lists that wording, or the reading is wrong or unsure', () => {
+    assert.equal(suggestAnswer(short, { id: 0, canAnswer: true, text: 'tls.' }), null);
+    assert.equal(suggestAnswer(short, { id: 0, canAnswer: true, text: 'Secure Sockets Layer' }), null);
+    assert.equal(suggestAnswer(short, { id: 0, canAnswer: false }), null);
+    assert.equal(suggestAnswer(short, undefined), null);
+  });
+
+  test('only short answers, and only short wordings, are suggested', () => {
+    assert.equal(suggestAnswer({ ...short, type: 'MCQ_SINGLE' }, { id: 0, canAnswer: true, text: 'x TLS' }), null);
+    assert.equal(suggestAnswer(short, { id: 0, canAnswer: true, text: `TLS ${'very long '.repeat(20)}` }), null);
   });
 });

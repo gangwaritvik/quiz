@@ -50,8 +50,10 @@ export const fakeProvider: AiProvider = {
     });
   },
 
-  async generate({ request, inline }) {
+  async generate({ request, inline, text }) {
     const questions: unknown[] = [];
+    // Given text (whole-material focus), quote the first line of its first page.
+    const firstLine = text?.match(/^---[^\n]*---\n([^\n]+)/)?.[1]?.split(/\s+/).slice(0, 8).join(' ');
     let n = 0;
     for (const difficulty of DIFFICULTIES) {
       for (let i = 0; i < request.batch[difficulty]; i += 1) {
@@ -64,7 +66,8 @@ export const fakeProvider: AiProvider = {
           explanation: 'Stated in the material.',
           sourcePage: inline ? 1 : 2,
           // Words that really appear in the e2e fixtures, so quote checking finds them.
-          sourceQuote: inline ? 'TCP gives reliable ordered delivery' : 'the transport layer provides reliable delivery',
+          sourceQuote:
+            firstLine ?? (inline ? 'TCP gives reliable ordered delivery' : 'the transport layer provides reliable delivery'),
         };
         if (type === 'TRUE_FALSE') questions.push({ ...common, type, text, answerTrue: n % 2 === 0 });
         else if (type === 'ASSERTION_REASON')

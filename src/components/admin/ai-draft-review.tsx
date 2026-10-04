@@ -64,7 +64,7 @@ interface Draft {
   id: string;
   status: 'PENDING' | 'ACCEPTED' | 'DISCARDED';
   payload: DraftPayload;
-  source: { materialId?: string; page?: number; excerpt?: string; quote?: QuoteStatus; check?: AnswerCheck } | null;
+  source: { materialId?: string; page?: number; excerpt?: string; quote?: QuoteStatus; check?: AnswerCheck; suggestedAnswer?: string } | null;
   questionId: string | null;
   /** For an accepted draft: false when it joined a quiz only, not the bank. */
   question?: { adHoc: boolean } | null;
@@ -404,7 +404,7 @@ function DraftCard({
         </p>
       ) : null}
 
-      <DraftChecks source={draft.source} />
+      <DraftChecks draft={draft} onChanged={onChanged} />
 
       {!done ? (
         <div className="mt-4 flex flex-wrap gap-2">
@@ -596,8 +596,11 @@ function QuizFromDraftsDialog({
 }
 
 /** What the checks found about a draft's source, so the teacher knows where to look first. */
-function DraftChecks({ source }: { source: Draft['source'] }) {
+function DraftChecks({ draft, onChanged }: { draft: Draft; onChanged: () => void }) {
+  const { source, payload } = draft;
+  const [adding, setAdding] = React.useState(false);
   if (!source) return null;
+
   const items: Array<{ ok: boolean | null; text: string }> = [];
   if (source.quote === 'exact') items.push({ ok: true, text: 'Quote found in the material' });
   else if (source.quote === 'close') items.push({ ok: true, text: 'Quote closely matches the material' });
@@ -605,18 +608,52 @@ function DraftChecks({ source }: { source: Draft['source'] }) {
   else if (source.quote === 'unchecked') items.push({ ok: null, text: 'Quote could not be checked' });
   if (source.check === 'agrees') items.push({ ok: true, text: 'Answer re-derived from the page and matches' });
   else if (source.check === 'differs') items.push({ ok: false, text: 'A second reading gives a different answer: check the key' });
-  if (items.length === 0) return null;
 
+  const suggestion = draft.status === 'PENDING' && payload.type === 'SHORT_ANSWER' ? source.suggestedAnswer : undefined;
+  const alsoAccept = async () => {
+    setAdding(true);
+    try {
+      await apiFetch(`/api/admin/ai/drafts/${draft.id}`, {
+        method: 'PATCH',
+        body: { draft: { ...payload, acceptedAnswers: [...(payload.acceptedAnswers ?? []), suggestion] }, topicId: payload.topicId ?? '' },
+      });
+      onChanged();
+    } catch (caught) {
+      toast.error(caught instanceof ApiClientError ? caught.message : 'We could not update the answer key.');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  if (items.length === 0 && !suggestion) return null;
   return (
-    <ul className="mt-3 flex flex-wrap gap-2" aria-label="Checks on this question">
-      {items.map((item) => (
-        <li key={item.text}>
-          <Badge variant={item.ok === null ? 'muted' : item.ok ? 'success' : 'warning'}>
-            {item.ok === false ? <AlertTriangle aria-hidden /> : item.ok ? <CheckCircle2 aria-hidden /> : null}
-            {item.text}
+    <div className="mt-3 space-y-2">
+      {items.length > 0 ? (
+        <ul className="flex flex-wrap gap-2" aria-label="Checks on this question">
+          {items.map((item) => (
+            <li key={item.text}>
+              <Badge variant={item.ok === null ? 'muted' : item.ok ? 'success' : 'warning'}>
+                {item.ok === false ? <AlertTriangle aria-hidden /> : item.ok ? <CheckCircle2 aria-hidden /> : null}
+                {item.text}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {suggestion ? (
+        <p className="flex flex-wrap items-center gap-2 text-sm">
+          <Badge variant="warning">
+            <AlertTriangle aria-hidden />
+            Answer key may be too narrow
           </Badge>
-        </li>
-      ))}
-    </ul>
+          <span className="text-muted-foreground">
+            It accepts only {(payload.acceptedAnswers ?? []).join(', ') || 'nothing'}; the material also words it as “{suggestion}”.
+          </span>
+          <Button size="sm" variant="outline" loading={adding} onClick={() => void alsoAccept()}>
+            Also accept it
+          </Button>
+        </p>
+      ) : null}
+    </div>
   );
 }

@@ -36,6 +36,8 @@ export interface AiProvider {
     schema: object;
     /** Retrieve from these materials in this store (topic / whole focus). */
     retrieval?: { store: string; materialIds: string[] };
+    /** Or read this text, already chosen by us (whole-material focus). */
+    text?: string;
     /** Or read this document directly (page focus). */
     inline?: { bytes: Uint8Array; mimeType: string };
     /** What was asked, so the fake provider can answer in kind. */

@@ -8,6 +8,8 @@ import {
   SEMANTIC_DUPLICATE,
   cosine,
   isNearDuplicate,
+  numbersIn,
+  sameNumbers,
   planBatches,
   questionSignature,
   repairMath,
@@ -18,6 +20,7 @@ import {
   MAX_OCR_PAGES,
   batchPages,
   buildCompanion,
+  sliceForBatch,
   isScannedPage,
   scannedPageNumbers,
   splitTranscript,
@@ -298,5 +301,58 @@ describe('repairMath', () => {
     );
     assert.equal(out.drafts[0]?.body.text, 'What is the delay $15\\text{ms}$ in seconds?');
     assert.equal(out.drafts[0]?.body.options[0]?.text, '$0.015\\text{s}$');
+  });
+});
+
+describe('numbers decide whether a template is a repeat', () => {
+  test('numbersIn lists the distinct numbers, sorted, ignoring layout', () => {
+    assert.deepEqual(numbersIn('A link has B = 10 Mbps, delay 20 ms and 10.0 again; ratio 2.50'), ['10', '2.5', '20']);
+    assert.deepEqual(numbersIn('no digits here'), []);
+  });
+
+  test('different numbers are different questions; same or absent numbers are not told apart', () => {
+    assert.equal(sameNumbers('delay 15 ms', 'delay 20 ms'), false);
+    assert.equal(sameNumbers('delay 15 ms on 10 Mbps', 'a 10 Mbps link with 15 ms delay'), true);
+    assert.equal(sameNumbers('delay 15 ms', 'what is the delay'), true);
+  });
+
+  test('isNearDuplicate no longer calls the same template with other values a repeat', () => {
+    assert.equal(
+      isNearDuplicate('Compute the propagation delay of a link of 300 km at 2 x 10^8 m/s', 'Compute the propagation delay of a link of 600 km at 2 x 10^8 m/s'),
+      false,
+    );
+    assert.equal(isNearDuplicate('What is the delay of a 300 km link?', 'what is the delay of a 300 km link'), true);
+  });
+});
+
+describe('sliceForBatch', () => {
+  const books = [
+    { title: 'Book', pages: ['alpha page', 'beta page', 'gamma page', 'delta page', '   ', '[no readable text on this page]'] },
+    { title: 'Notes', pages: ['epsilon page', 'zeta page'] },
+  ];
+
+  test('one batch gets every readable page, labelled', () => {
+    const text = sliceForBatch(books, 0, 1);
+    assert.match(text, /--- Book · page 1 ---\nalpha page/);
+    assert.match(text, /--- Notes · page 2 ---\nzeta page/);
+    assert.doesNotMatch(text, /no readable text/);
+  });
+
+  test('several batches get different consecutive windows that together cover everything', () => {
+    const parts = [0, 1, 2].map((i) => sliceForBatch(books, i, 3));
+    const pagesOf = (text: string) => [...text.matchAll(/--- (\w+) · page (\d+) ---/g)].map((m) => `${m[1]}${m[2]}`);
+    const all = parts.flatMap(pagesOf);
+    assert.deepEqual(all, ['Book1', 'Book2', 'Book3', 'Book4', 'Notes1', 'Notes2']);
+    assert.ok(parts.every((p) => p.length > 0));
+  });
+
+  test('a long window is cut to the budget, every page keeping a share', () => {
+    const text = sliceForBatch([{ title: 'T', pages: ['a'.repeat(1000), 'b'.repeat(1000)] }], 0, 1, 100);
+    assert.ok(text.length < 300);
+    assert.match(text, /page 2 ---\nb{50}/);
+  });
+
+  test('no readable text gives an empty string, so the caller can search instead', () => {
+    assert.equal(sliceForBatch([{ title: 'T', pages: ['', '  '] }], 0, 1), '');
   });
 });

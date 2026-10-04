@@ -212,7 +212,7 @@ export const geminiProvider: AiProvider = {
     }
   },
 
-  async generate({ prompt, schema, retrieval, inline }) {
+  async generate({ prompt, schema, retrieval, inline, text }) {
     try {
       // With JSON output switched on, Gemini skips the file search and writes from
       // the subject name alone. So the passages are fetched first, as plain text.
@@ -272,6 +272,7 @@ export const geminiProvider: AiProvider = {
                   ? [{ inlineData: { data: base64(inline.bytes), mimeType: inline.mimeType } }]
                   : []),
                 ...(passages ? [{ text: `Study material:\n${passages}` }] : []),
+                ...(text ? [{ text: `Study material:\n${text}` }] : []),
                 { text: prompt },
               ],
             },

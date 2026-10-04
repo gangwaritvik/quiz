@@ -2,13 +2,14 @@ import 'server-only';
 
 import { createHash } from 'node:crypto';
 
-import { type AiProvider, getProvider } from '@/lib/ai/provider';
+import { type AiProvider, aiEnabled, getProvider } from '@/lib/ai/provider';
 import { ApiError } from '@/lib/api';
 import {
   type AcceptedDraft,
   SEMANTIC_DUPLICATE,
   cosine,
   questionSignature,
+  sameNumbers,
 } from '@/lib/ai/question-generation';
 import { prisma } from '@/lib/db';
 
@@ -23,6 +24,8 @@ interface Known {
   id?: string;
   /** What to show a teacher when a new question matches this one. */
   label: string;
+  /** The question's text, to tell a rewording from the same template with other numbers. */
+  signature: string;
   vector: number[];
 }
 
@@ -64,13 +67,13 @@ async function loadBank(
     ),
   );
   return {
-    bank: rows.map((row): Known => ({ id: row.id, label: row.label, vector: row.cached!.vector })),
+    bank: rows.map((row): Known => ({ id: row.id, label: row.label, signature: row.signature, vector: row.cached!.vector })),
     extra: fresh.slice(stale.length),
   };
 }
 
-const nearest = (vector: number[], known: Known[]) =>
-  known.find((entry) => cosine(entry.vector, vector) >= SEMANTIC_DUPLICATE);
+const nearest = (vector: number[], signature: string, known: Known[]) =>
+  known.find((entry) => cosine(entry.vector, vector) >= SEMANTIC_DUPLICATE && sameNumbers(entry.signature, signature));
 
 /**
  * For each text, the bank question it repeats in meaning, or null. Fails open
@@ -85,7 +88,7 @@ export async function findSimilarInBank(
   try {
     const provider = await getProvider();
     const { bank, extra } = await loadBank(provider, subjectId, signatures, excludeId);
-    return extra.map((vector) => nearest(vector, bank)?.label ?? null);
+    return extra.map((vector, i) => nearest(vector, signatures[i]!, bank)?.label ?? null);
   } catch (error) {
     console.warn('[ai] meaning check unavailable', error);
     return signatures.map(() => null);
@@ -111,12 +114,53 @@ export async function findDuplicateGroups(subjectId: string, limit = SCAN_LIMIT)
   };
   for (let i = 0; i < bank.length; i += 1) {
     for (let j = i + 1; j < bank.length; j += 1) {
-      if (cosine(bank[i]!.vector, bank[j]!.vector) >= SEMANTIC_DUPLICATE) parent[root(j)] = root(i);
+      if (cosine(bank[i]!.vector, bank[j]!.vector) >= SEMANTIC_DUPLICATE && sameNumbers(bank[i]!.signature, bank[j]!.signature)) {
+        parent[root(j)] = root(i);
+      }
     }
   }
   const groups = new Map<number, string[]>();
   bank.forEach((entry, i) => groups.set(root(i), [...(groups.get(root(i)) ?? []), entry.id!]));
   return [...groups.values()].filter((ids) => ids.length > 1).sort((a, b) => b.length - a.length);
+}
+
+/**
+ * After an import: which freshly imported rows repeat something in the bank or
+ * an earlier row, in words a teacher can act on. Null when the check could not
+ * run (no AI key, or Google unavailable), so the import itself is never held up.
+ */
+export async function describeImportRepeats(
+  subjectId: string,
+  imported: Array<{ id: string; row: number }>,
+): Promise<Array<{ row: number; message: string }> | null> {
+  if (imported.length === 0 || !aiEnabled()) return null;
+  try {
+    const groups = await findDuplicateGroups(subjectId);
+    const rowOf = new Map(imported.map((entry) => [entry.id, entry.row]));
+    const relevant = groups.filter((group) => group.some((id) => rowOf.has(id)));
+    const texts = new Map(
+      (await prisma.question.findMany({ where: { id: { in: relevant.flat() } }, select: { id: true, text: true } })).map(
+        (question) => [question.id, question.text] as const,
+      ),
+    );
+    const quote = (id: string) => `“${(texts.get(id) ?? '').slice(0, 100)}”`;
+    const found: Array<{ row: number; message: string }> = [];
+    for (const group of relevant) {
+      for (const id of group) {
+        const row = rowOf.get(id);
+        if (row === undefined) continue;
+        const others = group.filter((other) => other !== id);
+        const inBank = others.find((other) => !rowOf.has(other));
+        const earlier = others.find((other) => (rowOf.get(other) ?? Infinity) < row);
+        if (inBank) found.push({ row, message: `Means the same as ${quote(inBank)}, already in the bank.` });
+        else if (earlier) found.push({ row, message: `Means the same as row ${rowOf.get(earlier)} of this file.` });
+      }
+    }
+    return found.sort((a, b) => a.row - b.row).slice(0, 50);
+  } catch (error) {
+    console.warn('[ai] could not check the import for repeats', error);
+    return null;
+  }
 }
 
 /**
@@ -163,7 +207,7 @@ export async function createSemanticGuard(subjectId: string): Promise<SemanticGu
       questionSignature(draft.payload as { text: string; assertionText?: string; reasonText?: string }),
     );
     const loaded = await loadBank(provider, subjectId, texts);
-    known.push(...loaded.bank, ...loaded.extra.map((vector, i) => ({ label: texts[i]!, vector })));
+    known.push(...loaded.bank, ...loaded.extra.map((vector, i) => ({ label: texts[i]!, signature: texts[i]!, vector })));
   } catch (error) {
     console.warn('[ai] meaning check unavailable, using word overlap only', error);
   }
@@ -180,8 +224,9 @@ export async function createSemanticGuard(subjectId: string): Promise<SemanticGu
       }
       const kept: AcceptedDraft[] = [];
       drafts.forEach((draft, i) => {
-        if (nearest(embedded[i]!, known)) return;
-        known.push({ label: draft.body.text, vector: embedded[i]! });
+        const signature = questionSignature(draft.body);
+        if (nearest(embedded[i]!, signature, known)) return;
+        known.push({ label: draft.body.text, signature, vector: embedded[i]! });
         kept.push(draft);
       });
       return { kept, dropped: drafts.length - kept.length };

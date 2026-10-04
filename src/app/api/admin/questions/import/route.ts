@@ -1,5 +1,6 @@
 import type { Prisma, QuestionType } from '@prisma/client';
 
+import { describeImportRepeats } from '@/lib/ai/similarity';
 import { ApiError, assertSameOrigin, ok, parseBody, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
@@ -162,6 +163,7 @@ export const POST = route(async (request: Request) => {
   const topicsByName = new Map(subject.topics.map((t) => [t.name.toLowerCase(), t]));
   const issues: ImportIssue[] = [];
   let imported = 0;
+  const created: Array<{ id: string; row: number }> = [];
 
   for (const [index, row] of rows.entries()) {
     const rowNumber = index + 2; // +1 for zero-index, +1 for the header row
@@ -240,7 +242,8 @@ export const POST = route(async (request: Request) => {
       ...(plan.options.length > 0 ? { options: { create: plan.options } } : {}),
     };
 
-    await prisma.question.create({ data });
+    const question = await prisma.question.create({ data, select: { id: true } });
+    created.push({ id: question.id, row: rowNumber });
     imported += 1;
   }
 
@@ -253,5 +256,8 @@ export const POST = route(async (request: Request) => {
     metadata: { imported, rejected: issues.length },
   });
 
-  return ok({ imported, rejected: issues.length, issues: issues.slice(0, 50) });
+  // Imported either way; the teacher is told which rows look like repeats.
+  const repeats = await describeImportRepeats(subject.id, created);
+
+  return ok({ imported, rejected: issues.length, issues: issues.slice(0, 50), ...(repeats ? { repeats } : {}) });
 });

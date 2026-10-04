@@ -722,11 +722,18 @@ check('(p) topic=none returns only topicless questions, matching the count', qsN
   await fac('(q) a quiz-only repeat of a bank question is stopped', 'POST', `/api/admin/questions/${repeatQ}/add-to-bank`, {}, { expect: [409] });
   await fac('(q) unless the teacher insists', 'POST', `/api/admin/questions/${repeatQ}/add-to-bank`, { allowSimilar: true }, { expect: [200] });
 
+  // The same template with other numbers is a different question, not a repeat.
+  const delayBody = (km) => ({ subjectId: subj.id, text: `Compute the propagation delay of a copper link that is ${km} km long`, type: 'SHORT_ANSWER', difficulty: 'MEDIUM', marks: 1, negativeMarks: 0, acceptedAnswers: ['x'] });
+  const delay300 = (await fac('(q) a numeric question is added', 'POST', '/api/admin/questions', delayBody(300), { expect: [200] })).data;
+  const delay600 = (await fac('(q) the same template with other numbers is not called a repeat', 'POST', '/api/admin/questions', delayBody(600), { expect: [200] })).data;
+  await fac('(q) but the same numbers are', 'POST', '/api/admin/questions', delayBody(300), { expect: [409] });
+
   // Finding repeats already in the bank.
   const scan = (await fac('(q) scan the bank for repeats', 'GET', `/api/admin/subjects/${subj.id}/duplicates`, undefined, { expect: [200] })).data;
   const repeatGroup = scan.groups.find((g) => g.some((qq) => qq.id === q1.id));
   check('(q) the scan groups the repeats of one question together', !!repeatGroup && repeatGroup.some((qq) => qq.id === twinQ.questionId) && repeatGroup.some((qq) => qq.id === repeatQ), JSON.stringify(scan.groups.map((g) => g.length)));
   check('(q) the scan marks which are mine and counts quiz use', repeatGroup.every((qq) => qq.mine === true) && repeatGroup.find((qq) => qq.id === repeatQ).onQuizzes === 1);
+  check('(q) the same template with other numbers is not grouped', !scan.groups.flat().some((qq) => qq.id === delay300.questionId || qq.id === delay600.questionId));
   check('(q) unrelated questions are not grouped', scan.groups.every((g) => g.length <= 4) && scan.scanned >= 8);
   const scan2 = (await fac2('(q) another faculty member can scan, but owns none of them', 'GET', `/api/admin/subjects/${subj.id}/duplicates`, undefined, { expect: [200] })).data;
   check('(q) the other faculty member sees them as not theirs', scan2.groups.flat().every((qq) => qq.mine === false));
@@ -735,6 +742,38 @@ check('(p) topic=none returns only topicless questions, matching the count', qsN
   await fac('(q) retire the twin', 'DELETE', `/api/admin/questions/${twinQ.questionId}`, undefined, { expect: [200] });
   const scan3 = (await fac('(q) scan again', 'GET', `/api/admin/subjects/${subj.id}/duplicates`, undefined, { expect: [200] })).data;
   check('(q) a retired question no longer shows as a repeat', !scan3.groups.flat().some((qq) => qq.id === twinQ.questionId));
+
+  // A CSV import says which rows look like repeats, and imports them anyway.
+  const csv = [
+    'question,optionA,optionB,optionC,optionD,correct,difficulty,topic,marks,explanation',
+    `${q1.text},Yes,No,,,A,EASY,,1,`,
+    'Zebras have black and white stripes on the savanna plains today,Yes,No,,,A,EASY,,1,',
+    `${q1.text},Yes,No,,,A,EASY,,1,`,
+  ].join('\n');
+  const imp = (await fac('(q) import rows, two of them repeats', 'POST', '/api/admin/questions/import', { subjectId: subj.id, csv }, { expect: [200] })).data;
+  check('(q) all three rows are imported', imp.imported === 3 && imp.rejected === 0, JSON.stringify(imp));
+  check('(q) the repeats are reported by row, the unrelated row is not', Array.isArray(imp.repeats) && imp.repeats.map((r) => r.row).join() === '2,4' && imp.repeats.every((r) => r.message.includes('already in the bank')), JSON.stringify(imp.repeats));
+
+  // Whole-material focus covers different parts of the material in each batch.
+  const wholeJob = (await fac('(q) start a whole-material batch of 12', 'POST', '/api/admin/ai/jobs', { subjectId: subj.id, materialIds: [mText.id], params: { ...params, count: 12, types: ['MCQ_SINGLE'], focus: { mode: 'whole' } } }, { expect: [200] })).data;
+  const wholeDone = await waitFor(async () => {
+    const j = (await fac('(q) poll the whole-material batch', 'GET', `/api/admin/ai/jobs/${wholeJob.id}`, undefined, {})).data;
+    return j.status === 'DONE' || j.status === 'FAILED' ? j : null;
+  });
+  check('(q) the whole-material batch finishes with drafts found in the material', wholeDone?.status === 'DONE' && wholeDone.drafts.length >= 10 && wholeDone.drafts.every((d) => d.source?.quote === 'exact'), JSON.stringify(wholeDone?.stats));
+  check('(q) its questions come from different pages, not just the first', new Set(wholeDone.drafts.map((d) => d.source.page)).size >= 2, JSON.stringify([...new Set(wholeDone.drafts.map((d) => d.source.page))]));
+
+  // A short-answer key that lacks another wording gets a suggestion the teacher can accept in one click.
+  const saJob = (await fac('(q) start a short-answer batch', 'POST', '/api/admin/ai/jobs', { subjectId: subj.id, materialIds: [mText.id], params: { ...params, count: 2, types: ['SHORT_ANSWER'] } }, { expect: [200] })).data;
+  const saDone = await waitFor(async () => {
+    const j = (await fac('(q) poll the short-answer batch', 'GET', `/api/admin/ai/jobs/${saJob.id}`, undefined, {})).data;
+    return j.status === 'DONE' || j.status === 'FAILED' ? j : null;
+  });
+  const sa = saDone.drafts[0];
+  await prisma.questionDraft.update({ where: { id: sa.id }, data: { source: { ...sa.source, suggestedAnswer: 'another wording' } } });
+  await fac('(q) add the suggested wording to the key', 'PATCH', `/api/admin/ai/drafts/${sa.id}`, { draft: { ...sa.payload, acceptedAnswers: [...sa.payload.acceptedAnswers, 'another wording'] }, topicId: '' }, { expect: [200] });
+  const saAfter = (await fac('(q) read the draft again', 'GET', `/api/admin/ai/jobs/${saJob.id}`, undefined, { expect: [200] })).data.drafts.find((d) => d.id === sa.id);
+  check('(q) the key now lists it and the suggestion is gone', saAfter.payload.acceptedAnswers.includes('another wording') && saAfter.source.suggestedAnswer === undefined, JSON.stringify(saAfter.source));
 
   await fac2('(q) another faculty member cannot delete the material', 'DELETE', `/api/admin/materials/${mDocx.id}`, undefined, { expect: [403] });
   await fac('(q) delete a material', 'DELETE', `/api/admin/materials/${mDocx.id}`, undefined, { expect: [200] });
