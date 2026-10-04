@@ -28,3 +28,6 @@ var/
 
 # Local server logs
 *.log
+
+# Local design-critique notes
+.impeccable/

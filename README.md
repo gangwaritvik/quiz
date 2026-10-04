@@ -1,5 +1,7 @@
 # SecureQuiz
 
+> **Reviewing this code?** Start with [`docs/REVIEWING.md`](docs/REVIEWING.md): what is built, what has and has not been verified, and where a second pair of eyes would help most.
+
 A college examination platform built so that the parts that matter — which
 questions a student sees, how long they have, and what they scored — are decided
 on the server and never in the browser.
@@ -54,6 +56,8 @@ sign in as faculty and open **Marking** to mark what the server could not.
 | `npm run dev` | Development server |
 | `npm run build` / `npm start` | Production build and serve |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm test` | Unit tests (`tests/unit`) |
+| `npm run test:e2e` | HTTP-level end-to-end suite against a production build and a throwaway database (see `tests/e2e/README.md`) |
 | `npm run db:push` | Sync the schema without a migration |
 | `npm run db:migrate` | Create and apply a migration |
 | `npm run db:seed` | Reset and repopulate demo data |
@@ -306,6 +310,14 @@ cookies and HSTS in production · CSP, `X-Frame-Options: DENY` and a restrictive
 throughout.
 
 ---
+
+## AI question generation
+
+Teachers can upload study material (PDF, Word, PowerPoint, or photos of notes) in a subject's question bank and have an LLM draft questions from it: choose the focus (whole material, a topic, or a page range), how many, the difficulty mix, question types, thinking levels and marks. Every question is a **draft** that a teacher reviews, edits, regenerates or discards before it enters the bank, so nothing AI-written reaches a student unreviewed.
+
+Around that: scanned pages are read by the model (OCR); each draft's source quote is checked against the material's own text and the answer is re-derived from that page, flagging what disagrees; questions that mean the same as one already in the bank are caught by meaning (embeddings), not just wording, with a "Find repeats" scan for existing banks; a batch can become a quiz directly; and a fixed paper can be built from the bank by difficulty mix and topic spread.
+
+It is off until a provider is configured: a free `GEMINI_API_KEY` (Google AI Studio), or `AI_PROVIDER=ollama` for a model on your own machine. Settings are in `.env.example`; the design and limits are in `docs/HANDOFF.md`. Note that on Google's free tier uploaded material may be used to improve its products.
 
 ## Project structure
 

@@ -12,9 +12,10 @@ const ROOT = resolve(import.meta.dirname, '../..');
 const PORT = 3001;
 const BASE = `http://localhost:${PORT}`;
 const TEST_URL = process.env.E2E_DATABASE_URL ?? 'postgresql://securequiz@localhost:5433/securequiz_e2e';
-const PG_BIN = process.env.PG_BIN ?? 'C:/Program Files/PostgreSQL/18/bin';
+// Windows default; elsewhere psql and pg_ctl are taken from PATH unless PG_BIN says otherwise.
+const PG_BIN = process.env.PG_BIN ?? (process.platform === 'win32' ? 'C:/Program Files/PostgreSQL/18/bin' : '');
 const PG_DATA = join(tmpdir(), 'sq-staging-pg');
-const exe = (n) => join(PG_BIN, process.platform === 'win32' ? `${n}.exe` : n);
+const exe = (n) => (PG_BIN ? join(PG_BIN, process.platform === 'win32' ? `${n}.exe` : n) : n);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const die = (msg) => { console.error(`[e2e] ${msg}`); process.exit(2); };
 const say = (msg) => console.log(`[e2e] ${msg}`);
@@ -55,7 +56,7 @@ const dbEnv = { ...process.env, DATABASE_URL: TEST_URL };
 const tmpUploads = mkdtempSync(join(tmpdir(), 'sq-e2e-uploads-'));
 let server, pgStartedByUs = false, cleaned = false, e2e;
 
-const psql = (sql) => spawnSync(exe('psql'), ['-h', test.hostname, '-p', test.port || '5432', '-U', decodeURIComponent(test.username) || 'securequiz', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', sql], { encoding: 'utf8' });
+const psql = (sql) => spawnSync(exe('psql'), ['-h', test.hostname, '-p', test.port || '5432', '-U', decodeURIComponent(test.username) || 'securequiz', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', sql], { encoding: 'utf8', env: { ...process.env, ...(test.password ? { PGPASSWORD: decodeURIComponent(test.password) } : {}) } });
 const step = (name, cmd, args, env = dbEnv) => {
   say(name);
   const r = spawnSync(cmd, args, { cwd: ROOT, env, stdio: 'inherit' });

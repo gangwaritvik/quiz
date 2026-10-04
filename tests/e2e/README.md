@@ -4,6 +4,10 @@
 isolation, result-release window, device release, parallel start/submit, body-size and event
 abuse cases) against a production build on :3001 and a throwaway Postgres database.
 
+- **Quick start on macOS or Linux:** `docker compose up -d`, then
+  `E2E_DATABASE_URL=postgresql://securequiz:securequiz@localhost:5432/securequiz_e2e npm run build && E2E_DATABASE_URL=postgresql://securequiz:securequiz@localhost:5432/securequiz_e2e npm run test:e2e`.
+  If a Postgres is already listening on the target port the runner uses it (it needs `psql` on
+  PATH, or `PG_BIN` set) and only ever drops the `*_e2e` database.
 - **Prerequisites:** a fresh production build (`npm run build`; the run exits 2 with
   "Run npm run build first" if `.next/BUILD_ID` is older than `src/`), and the disposable
   Postgres 18 data dir at `%TEMP%\sq-staging-pg` (binaries via `PG_BIN`, default

@@ -13,9 +13,9 @@ The application is server-authoritative. The browser provides the exam UI and re
 
 ## 2. Technology and prerequisites
 
-- Next.js `15.1.x` with the App Router
-- React `19.x`, TypeScript `5.7.x`, Tailwind CSS, Radix UI, Framer Motion, Recharts, and Lucide
-- Prisma `6.2.x` with PostgreSQL
+- Next.js `15.5.x` with the App Router
+- React `19.2.x`, TypeScript `5.9.x`, Tailwind CSS, Radix UI, Framer Motion, Recharts, and Lucide
+- Prisma `6.19.x` with PostgreSQL
 - Node.js `20.6+` (Node 24 is the documented recommendation)
 - Docker Desktop, if using the bundled PostgreSQL container
 - Resend, only when OTP delivery must use email outside development
