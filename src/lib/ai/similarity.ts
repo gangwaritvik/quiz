@@ -20,6 +20,7 @@ const PENDING_LIMIT = 100;
 const keyOf = (model: string, signature: string) => createHash('sha1').update(`${model}\n${signature}`).digest('hex');
 
 interface Known {
+  id?: string;
   /** What to show a teacher when a new question matches this one. */
   label: string;
   vector: number[];
@@ -29,13 +30,19 @@ interface Known {
  * The subject's bank as vectors. Each question is embedded once and cached
  * (re-embedded when its text changes); `extra` texts are embedded alongside.
  */
-async function loadBank(provider: AiProvider, subjectId: string, extra: string[] = [], excludeId?: string) {
+async function loadBank(
+  provider: AiProvider,
+  subjectId: string,
+  extra: string[] = [],
+  excludeId?: string,
+  limit = BANK_LIMIT,
+) {
   const bank = await prisma.question.findMany({
     // Questions private to one quiz are not the bank.
     where: { subjectId, active: true, adHoc: false, ...(excludeId ? { id: { not: excludeId } } : {}) },
     select: { id: true, text: true, assertionText: true, reasonText: true, embedding: true },
     orderBy: { createdAt: 'desc' },
-    take: BANK_LIMIT,
+    take: limit,
   });
   const rows = bank.map((question) => {
     const signature = questionSignature(question);
@@ -57,7 +64,7 @@ async function loadBank(provider: AiProvider, subjectId: string, extra: string[]
     ),
   );
   return {
-    bank: rows.map((row): Known => ({ label: row.label, vector: row.cached!.vector })),
+    bank: rows.map((row): Known => ({ id: row.id, label: row.label, vector: row.cached!.vector })),
     extra: fresh.slice(stale.length),
   };
 }
@@ -83,6 +90,33 @@ export async function findSimilarInBank(
     console.warn('[ai] meaning check unavailable', error);
     return signatures.map(() => null);
   }
+}
+
+/** Most questions one duplicate scan compares (pairs grow with the square of this). */
+export const SCAN_LIMIT = 1000;
+
+/**
+ * Groups of bank questions that mean the same, as ids. Questions are linked
+ * when similar enough, and a chain A~B~C is one group.
+ */
+export async function findDuplicateGroups(subjectId: string, limit = SCAN_LIMIT): Promise<string[][]> {
+  const { bank } = await loadBank(await getProvider(), subjectId, [], undefined, limit);
+  const parent = bank.map((_, i) => i);
+  const root = (i: number): number => {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]!]!;
+      i = parent[i]!;
+    }
+    return i;
+  };
+  for (let i = 0; i < bank.length; i += 1) {
+    for (let j = i + 1; j < bank.length; j += 1) {
+      if (cosine(bank[i]!.vector, bank[j]!.vector) >= SEMANTIC_DUPLICATE) parent[root(j)] = root(i);
+    }
+  }
+  const groups = new Map<number, string[]>();
+  bank.forEach((entry, i) => groups.set(root(i), [...(groups.get(root(i)) ?? []), entry.id!]));
+  return [...groups.values()].filter((ids) => ids.length > 1).sort((a, b) => b.length - a.length);
 }
 
 /**

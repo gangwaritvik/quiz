@@ -10,6 +10,7 @@ import {
   isNearDuplicate,
   planBatches,
   questionSignature,
+  repairMath,
   splitByMix,
   validateModelOutput,
 } from '@/lib/ai/question-generation';
@@ -271,5 +272,31 @@ describe('meaning comparison', () => {
       'Assertion-reason A R',
     );
     assert.equal(questionSignature({ text: ' Q ', assertionText: null }), 'Q');
+  });
+});
+
+describe('repairMath', () => {
+  test('a LaTeX command that JSON read as a control character is restored inside $...$', () => {
+    assert.equal(repairMath('delay $15\text{ms}$'), 'delay $15\\text{ms}$');
+    assert.equal(repairMath('$\frac{8}{3}$'), '$\\frac{8}{3}$');
+    assert.equal(repairMath('$\beta + \rho$'), '$\\beta + \\rho$');
+    assert.equal(repairMath('$a\neq b$'), '$a\\neq b$');
+  });
+
+  test('correct LaTeX and ordinary text are left alone', () => {
+    assert.equal(repairMath('$\\frac{8}{3}$ and plain text\nsecond line'), '$\\frac{8}{3}$ and plain text\nsecond line');
+  });
+
+  test('a stray control character outside maths becomes a space', () => {
+    assert.equal(repairMath('a\tb'), 'a b');
+  });
+
+  test('model output is repaired before it is validated', () => {
+    const out = validateModelOutput(
+      { questions: [{ type: 'MCQ_SINGLE', difficulty: 'EASY', text: 'What is the delay $15\text{ms}$ in seconds?', options: [{ text: '$0.015\text{s}$', correct: true }, { text: '$15\text{s}$', correct: false }], explanation: 'x' }] },
+      ctx(),
+    );
+    assert.equal(out.drafts[0]?.body.text, 'What is the delay $15\\text{ms}$ in seconds?');
+    assert.equal(out.drafts[0]?.body.options[0]?.text, '$0.015\\text{s}$');
   });
 });

@@ -5,6 +5,7 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
+  Copy,
   FileQuestion,
   Pencil,
   Plus,
@@ -21,6 +22,7 @@ import * as React from 'react';
 import { toast } from 'sonner';
 
 import { CsvImportDialog } from '@/components/admin/csv-import-dialog';
+import { DuplicateFinder } from '@/components/admin/duplicate-finder';
 import { FilterBar, FilterSearch, FilterSelect } from '@/components/admin/filter-select';
 import { QuestionEditor, type QuestionRecord } from '@/components/admin/question-editor';
 import { StudyMaterials } from '@/components/admin/study-materials';
@@ -291,6 +293,7 @@ function SubjectBank({
   const [editorOpen, setEditorOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<QuestionRecord | null>(null);
   const [importOpen, setImportOpen] = React.useState(false);
+  const [duplicatesOpen, setDuplicatesOpen] = React.useState(false);
   const [deleting, setDeleting] = React.useState<QuestionListItem | null>(null);
 
   // Debounce so typing does not fire a request per keystroke.
@@ -391,6 +394,10 @@ function SubjectBank({
         description={`${subject.code} · ${subject.pool.total} question${subject.pool.total === 1 ? '' : 's'} in the bank. Quizzes draw their papers from here at exam time.`}
         actions={
           <>
+            <Button variant="outline" onClick={() => setDuplicatesOpen(true)}>
+              <Copy />
+              Find repeats
+            </Button>
             <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Upload />
               Import CSV
@@ -646,6 +653,14 @@ function SubjectBank({
         question={editing}
         subjects={editorSubjects}
         onSaved={changed}
+      />
+
+      <DuplicateFinder
+        open={duplicatesOpen}
+        onOpenChange={setDuplicatesOpen}
+        subjectId={subject.id}
+        subjectName={subject.name}
+        onChanged={changed}
       />
 
       <CsvImportDialog

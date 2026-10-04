@@ -376,13 +376,39 @@ export interface ValidationOutcome {
  * malformed, anything the bank's own validation rejects, and anything that
  * repeats an existing question or another question in the same answer.
  */
+const LATEX_CONTROL: Record<string, string> = { '\t': '\\t', '\f': '\\f', '\b': '\\b', '\r': '\\r', '\v': '\\v' };
+
+/**
+ * A model writing JSON sometimes leaves a LaTeX backslash unescaped, and JSON
+ * then reads `\text` as a tab + "ext", `\frac` as a form feed + "rac", `\beta`
+ * as a backspace + "eta". Inside $...$ those are turned back into the LaTeX
+ * command; anywhere else a stray control character becomes a space.
+ */
+export function repairMath(text: string): string {
+  return text
+    .replace(/\$[^$]*\$/g, (math) =>
+      math.replace(/[\t\f\b\r\v]/g, (c) => LATEX_CONTROL[c]!).replace(/\n(?=[a-zA-Z])/g, '\\n'),
+    )
+    .replace(/[\t\f\b\v]/g, ' ');
+}
+
+function repairStrings(value: unknown): unknown {
+  if (typeof value === 'string') return repairMath(value);
+  if (Array.isArray(value)) return value.map(repairStrings);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, repairStrings(inner)]));
+  }
+  return value;
+}
+
 export function validateModelOutput(
   raw: unknown,
   ctx: MapContext & { existing: string[]; materialId?: string },
 ): ValidationOutcome {
+  const fixed = repairStrings(raw);
   const list =
-    raw && typeof raw === 'object' && Array.isArray((raw as { questions?: unknown }).questions)
-      ? ((raw as { questions: unknown[] }).questions)
+    fixed && typeof fixed === 'object' && Array.isArray((fixed as { questions?: unknown }).questions)
+      ? ((fixed as { questions: unknown[] }).questions)
       : [];
   const drafts: AcceptedDraft[] = [];
   const reasons: string[] = [];

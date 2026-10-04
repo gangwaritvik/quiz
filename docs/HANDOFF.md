@@ -186,6 +186,8 @@ In a subject's bank a teacher uploads study material (PDF, DOCX, PPTX, JPG/PNG, 
 
 Checks on every draft (`src/lib/ai/verification.ts`, stored on `QuestionDraft.source`): the quote is searched for in the material's own text (PDF text layer, OCR text, or Word/PowerPoint text read with `fflate`), and the page is corrected to where it was found; then a second Gemini call answers each question from that page alone and the result is compared with the key. A missing quote or a disagreeing answer flags the draft: it is left out of "Add all" and of quizzes built from the batch until the teacher accepts it by hand. Quotes in maths-heavy PDFs can be flagged wrongly because Gemini and the text layer render formulas differently; the flag means "look", not "wrong". Each batch costs one extra Gemini call.
 
+Repeats are checked by meaning (`src/lib/ai/similarity.ts`, embeddings cached in `QuestionEmbedding`, keyed by embedding model): on generation, on accepting a draft, on saving a hand-written question, and on moving a quiz-only question into the bank. "Find repeats" in a subject's bank lists groups of questions that mean the same, for the author to retire. The AI's JSON sometimes drops the backslash of a LaTeX command (`\text` read as a tab); `repairMath` restores it inside `$...$`.
+
 ### Results and integrity
 
 `releaseResults` controls score visibility. `releaseAnswers` independently controls answer-key and explanation visibility. Integrity signals are timestamped events aggregated into a score and status for human review; they are not an automatic academic verdict. Manual grading and score changes are audited.

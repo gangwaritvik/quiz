@@ -7,12 +7,15 @@ import { CHECK_SCHEMA, type CheckAnswer, buildCheckPrompt } from '@/lib/ai/verif
 
 /** A Flash model on the free tier. Override with GEMINI_MODEL if Google renames it. */
 const DEFAULT_MODEL = 'gemini-flash-latest';
+/** Longest a single request to Google may take. */
+const REQUEST_TIMEOUT_MS = 3 * 60_000;
 /** How long indexing may take before we give up on it. */
 const INDEX_TIMEOUT_MS = 10 * 60_000;
 
 let client: GoogleGenAI | null = null;
 function ai(): GoogleGenAI {
-  client ??= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  // A call that hangs fails after this, so a stuck request cannot hold a job open.
+  client ??= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, httpOptions: { timeout: REQUEST_TIMEOUT_MS } });
   return client;
 }
 

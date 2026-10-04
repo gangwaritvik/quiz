@@ -722,6 +722,20 @@ check('(p) topic=none returns only topicless questions, matching the count', qsN
   await fac('(q) a quiz-only repeat of a bank question is stopped', 'POST', `/api/admin/questions/${repeatQ}/add-to-bank`, {}, { expect: [409] });
   await fac('(q) unless the teacher insists', 'POST', `/api/admin/questions/${repeatQ}/add-to-bank`, { allowSimilar: true }, { expect: [200] });
 
+  // Finding repeats already in the bank.
+  const scan = (await fac('(q) scan the bank for repeats', 'GET', `/api/admin/subjects/${subj.id}/duplicates`, undefined, { expect: [200] })).data;
+  const repeatGroup = scan.groups.find((g) => g.some((qq) => qq.id === q1.id));
+  check('(q) the scan groups the repeats of one question together', !!repeatGroup && repeatGroup.some((qq) => qq.id === twinQ.questionId) && repeatGroup.some((qq) => qq.id === repeatQ), JSON.stringify(scan.groups.map((g) => g.length)));
+  check('(q) the scan marks which are mine and counts quiz use', repeatGroup.every((qq) => qq.mine === true) && repeatGroup.find((qq) => qq.id === repeatQ).onQuizzes === 1);
+  check('(q) unrelated questions are not grouped', scan.groups.every((g) => g.length <= 4) && scan.scanned >= 8);
+  const scan2 = (await fac2('(q) another faculty member can scan, but owns none of them', 'GET', `/api/admin/subjects/${subj.id}/duplicates`, undefined, { expect: [200] })).data;
+  check('(q) the other faculty member sees them as not theirs', scan2.groups.flat().every((qq) => qq.mine === false));
+  await stu('(q) a student cannot scan the bank', 'GET', `/api/admin/subjects/${subj.id}/duplicates`, undefined, { expect: [401, 403] });
+  await fac2('(q) nor retire a repeat that is not theirs', 'DELETE', `/api/admin/questions/${twinQ.questionId}`, undefined, { expect: [403] });
+  await fac('(q) retire the twin', 'DELETE', `/api/admin/questions/${twinQ.questionId}`, undefined, { expect: [200] });
+  const scan3 = (await fac('(q) scan again', 'GET', `/api/admin/subjects/${subj.id}/duplicates`, undefined, { expect: [200] })).data;
+  check('(q) a retired question no longer shows as a repeat', !scan3.groups.flat().some((qq) => qq.id === twinQ.questionId));
+
   await fac2('(q) another faculty member cannot delete the material', 'DELETE', `/api/admin/materials/${mDocx.id}`, undefined, { expect: [403] });
   await fac('(q) delete a material', 'DELETE', `/api/admin/materials/${mDocx.id}`, undefined, { expect: [200] });
   check('(q) a deleted material is gone', (await prisma.studyMaterial.count({ where: { id: mDocx.id } })) === 0);
