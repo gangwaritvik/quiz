@@ -52,7 +52,7 @@ const BLOOM = [
 type Focus = 'whole' | 'topic' | 'pages';
 
 /** A row of toggle chips for a multi-choice setting. */
-function ChipGroup<T extends string>({
+export function ChipGroup<T extends string>({
   label,
   options,
   value,

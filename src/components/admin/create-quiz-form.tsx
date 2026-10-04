@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, ArrowLeft, Check, Library, PenLine, Save, Send, Users } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, Library, PenLine, Save, Send, Users, Wand2 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import {
   InstantQuestionBuilder,
   blankQuestion,
+  fromSavedQuestion,
   toApiQuestion,
   validateQuestion,
   type InstantQuestion,
@@ -23,6 +24,7 @@ import {
   SecuritySettings,
   type QuizSecurity,
 } from '@/components/admin/security-settings';
+import { AssemblePaperDialog } from '@/components/admin/assemble-paper-dialog';
 import { SectionChips } from '@/components/admin/section-chips';
 import { InlineError } from '@/components/shared/error-state';
 import { PageHeader, PageShell } from '@/components/shared/page-header';
@@ -94,6 +96,9 @@ export function CreateQuizForm() {
 
   const [sourceMode, setSourceMode] = React.useState<'POOL' | 'FIXED'>('POOL');
   const [questions, setQuestions] = React.useState<InstantQuestion[]>(() => [blankQuestion()]);
+  const [assembleOpen, setAssembleOpen] = React.useState(false);
+  /** Bank questions already copied onto this paper, so a second proposal picks others. */
+  const [usedBankIds, setUsedBankIds] = React.useState<string[]>([]);
 
   const [title, setTitle] = React.useState('');
   const [subjectId, setSubjectId] = React.useState('');
@@ -468,6 +473,22 @@ export function CreateQuizForm() {
                   title="Questions"
                   description="Everyone sits these, in this order — unless you shuffle them under security settings."
                 >
+                  <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border px-4 py-3">
+                    <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+                      Rather than writing every question, build the paper from the question bank: the
+                      mix you choose, spread over the topics, with no repeats.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={!subject}
+                      title={subject ? undefined : 'Choose a subject first'}
+                      onClick={() => setAssembleOpen(true)}
+                    >
+                      <Wand2 />
+                      Build from the bank
+                    </Button>
+                  </div>
                   <InstantQuestionBuilder
                     questions={questions}
                     onChange={setQuestions}
@@ -813,6 +834,25 @@ export function CreateQuizForm() {
           </form>
         </div>
       </div>
+      {subject ? (
+        <AssemblePaperDialog
+          open={assembleOpen}
+          onOpenChange={setAssembleOpen}
+          subjectId={subject.id}
+          subjectName={subject.name}
+          topics={subject.topics}
+          avoidIds={usedBankIds}
+          onUse={(picked, bankIds) => {
+            // Drop the untouched blank starter question, then add the proposal.
+            const written = questions.filter(
+              (question) => question.text.trim() !== '' || question.options.some((option) => option.text.trim() !== ''),
+            );
+            setQuestions([...written, ...picked.map(fromSavedQuestion)]);
+            setUsedBankIds((current) => [...current, ...bankIds]);
+            toast.success(`${picked.length} questions added to the paper. Check them, then create the quiz.`);
+          }}
+        />
+      ) : null}
     </PageShell>
   );
 }

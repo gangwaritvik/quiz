@@ -749,6 +749,18 @@ check('(p) topic=none returns only topicless questions, matching the count', qsN
   check('(q) a hand-set level can be filtered on', applyList.questions.some((qq) => qq.id === delay300.questionId) && applyList.questions.every((qq) => qq.bloom === 'APPLY'));
   await fac('(q) but the same numbers are', 'POST', '/api/admin/questions', delayBody(300), { expect: [409] });
 
+  // Building a fixed paper from the bank.
+  const asm = { subjectId: subj.id, count: 5, easyPct: 40, mediumPct: 40, hardPct: 20, topicIds: [], bloom: [], avoidIds: [] };
+  const paper = (await fac('(q) build a paper from the bank', 'POST', '/api/admin/quizzes/assemble', asm, { expect: [200] })).data;
+  check('(q) the proposal has questions with their answer options, and no repeated question', paper.questions.length > 0 && paper.questions.length <= 5 && paper.questions.every((qq) => qq.text && Array.isArray(qq.options)) && new Set(paper.questions.map((qq) => qq.id)).size === paper.questions.length, JSON.stringify(paper.summary));
+  check('(q) it reports what it picked from', paper.summary.asked === 5 && paper.summary.picked === paper.questions.length && paper.summary.available >= paper.questions.length);
+  const paperApply = (await fac('(q) build a paper of one thinking level', 'POST', '/api/admin/quizzes/assemble', { ...asm, bloom: ['APPLY'] }, { expect: [200] })).data;
+  check('(q) a thinking-level filter limits the choice to those questions', paperApply.summary.available === applyList.questions.length && paperApply.questions.length <= applyList.questions.length, JSON.stringify(paperApply.summary));
+  const paperAvoid = (await fac('(q) build another that avoids the first', 'POST', '/api/admin/quizzes/assemble', { ...asm, avoidIds: paper.questions.map((qq) => qq.id) }, { expect: [200] })).data;
+  check('(q) a second proposal skips the questions already chosen', paperAvoid.questions.every((qq) => !paper.questions.some((first) => first.id === qq.id)));
+  await fac('(q) a mix that does not add up is refused', 'POST', '/api/admin/quizzes/assemble', { ...asm, easyPct: 10 }, { expect: [422] });
+  await stu('(q) a student cannot build papers', 'POST', '/api/admin/quizzes/assemble', asm, { expect: [401, 403] });
+
   // Finding repeats already in the bank.
   const scan = (await fac('(q) scan the bank for repeats', 'GET', `/api/admin/subjects/${subj.id}/duplicates`, undefined, { expect: [200] })).data;
   const repeatGroup = scan.groups.find((g) => g.some((qq) => qq.id === q1.id));

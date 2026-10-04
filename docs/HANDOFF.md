@@ -241,6 +241,10 @@ Question types are `MCQ_SINGLE`, `MCQ_MULTI`, `TRUE_FALSE`, `ASSERTION_REASON`, 
 
 At the time this handoff was prepared, `npm run typecheck` completed successfully. No automated test command is defined in the project manifest. The repository analysis detected one JavaScript/TypeScript Next.js service with Prisma; deployment should be treated as a web service plus PostgreSQL plus private persistent media storage.
 
+### Thinking level and paper assembly
+
+`Question.bloom` (remember, understand, apply, analyse) is set by the AI when it writes a draft, or by the author in the question editor; it can be filtered in the bank. On the fixed-paper quiz form, "Build from the bank" calls `POST /api/admin/quizzes/assemble` (`src/lib/assemble-paper.ts`): it meets the difficulty mix exactly when the bank allows, takes questions from the topic with the fewest picks so far, prefers the least-used, skips any question that repeats one already chosen (word overlap, or cached meaning-vectors with the same numbers), and says plainly when the bank is short of a difficulty. It saves nothing; the questions are copied onto the form like hand-written ones.
+
 ### Running the AI on your own machine (Ollama)
 
 Set `AI_PROVIDER=ollama` (see `.env.example`) instead of a Gemini key. `src/lib/ai/ollama.ts` talks to Ollama's HTTP API. Ollama cannot search a store or read a PDF, so the job hands it the text directly: whole-material jobs get a different window of pages per batch, topic jobs get the pages that mention the topic (`pagesForQuery`), page-range jobs get those pages as text (`pagesInRange`); each is cut to `maxContextChars` (24,000 for Ollama, which also asks for a context size big enough for it). Everything else (validation, repeat checks, quote checks, the second reading) works the same, with the embedding model taken from `OLLAMA_EMBED_MODEL`. Limits: scanned PDF pages cannot be read (photos can, with `OLLAMA_VISION_MODEL`), and a small local model writes weaker questions and takes minutes per batch, so the review step matters even more. Tested against a mock Ollama server, not a real model.

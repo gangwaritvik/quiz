@@ -493,6 +493,24 @@ export const createQuizFromDraftsSchema = z
     path: ['endsAt'],
   });
 
+/** A fixed paper proposed from the bank: how many, in what mix, from which topics. */
+export const assemblePaperSchema = z
+  .object({
+    subjectId: cuid,
+    count: z.coerce.number().int().min(1).max(100),
+    easyPct: z.coerce.number().int().min(0).max(100),
+    mediumPct: z.coerce.number().int().min(0).max(100),
+    hardPct: z.coerce.number().int().min(0).max(100),
+    topicIds: z.array(cuid).max(100).default([]),
+    bloom: z.array(z.enum(['REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYSE'])).max(4).default([]),
+    /** Bank questions already on the paper, so a second proposal does not repeat them. */
+    avoidIds: z.array(cuid).max(500).default([]),
+  })
+  .refine((data) => data.easyPct + data.mediumPct + data.hardPct === 100, {
+    message: 'Difficulty mix must add up to 100%',
+    path: ['mediumPct'],
+  });
+
 /** Replaces the written paper of a fixed-mode quiz, in order. */
 export const replaceQuizQuestionsSchema = z.object({
   questions: z.array(instantQuestionSchema).min(1, 'A quiz needs at least one question').max(100),
