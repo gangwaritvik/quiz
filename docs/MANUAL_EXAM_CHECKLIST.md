@@ -85,6 +85,30 @@ npx prisma studio
 Open `QuizAttempt`, set that attempt's `pausedAt` to more than an hour ago,
 save, then watch B: within about 20 seconds the cover disappears.
 
+## Weak or lost connection
+
+On window B (the student), with the exam open and a few questions answered:
+
+1. Open the browser's developer tools, Network tab, and set throttling to
+   **Offline**. Within about 20 seconds a yellow banner appears saying the
+   connection was interrupted. Answer two more questions: the banner now says
+   "2 answers are waiting to be sent".
+2. Set throttling back to **No throttling**. The banner disappears within
+   about 20 seconds and the waiting answers are sent. Reload the page to
+   confirm they were saved.
+3. Set throttling to **Slow 3G** and answer a question. Saving is slow but the
+   exam keeps working, and a stalled request is given up after 15 seconds
+   rather than hanging.
+4. On window A, open the student's integrity report: the "Network
+   disconnected" events are on the timeline, but the score is unchanged.
+5. Before starting an exam, with throttling on **Slow 3G**, the "Connection
+   quality" row in "Your device" shows a warning with the measured delay and
+   speed. It does not stop the student from starting.
+6. Go offline when about 20 seconds remain, wait for the timer to reach zero,
+   then go back online within a minute: the answers written before time ran
+   out are still saved and the exam submits. Come back after more than a
+   minute and they are refused.
+
 ## Report back
 
 For each step: pass, fail, or "looked odd" with what you saw. A screenshot of

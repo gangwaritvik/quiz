@@ -161,6 +161,7 @@ export function useExamSecurity({
       try {
         await apiFetch(`/api/exam/${attemptId}/events`, {
           method: 'POST',
+          timeoutMs: 15_000,
           body: { events },
         });
       } catch {

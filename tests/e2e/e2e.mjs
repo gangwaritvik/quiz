@@ -23,7 +23,9 @@ function client(name, deviceId) {
     let payload;
     if (raw !== undefined) payload = raw;
     else if (body !== undefined) { headers['content-type'] = 'application/json'; payload = JSON.stringify(body); }
-    const res = await fetch(BASE + path, { method, headers, redirect: 'manual', body: payload });
+    // A pooled connection the server has just closed fails the first request on it; try once more.
+    const send = () => fetch(BASE + path, { method, headers, redirect: 'manual', body: payload });
+    const res = await send().catch(() => send());
     for (const c of res.headers.getSetCookie()) {
       const [kv] = c.split(';');
       const i = kv.indexOf('=');
@@ -443,6 +445,22 @@ const re9 = await s9('(n) start the retake', 'POST', '/api/exam/start', { quizId
 check('(n) it is a new attempt', re9.data?.resumed === false && re9.data.attemptId !== a9);
 const dashLive = await s9('(n) dashboard while sitting', 'GET', '/api/student/dashboard', undefined, { expect: [200] });
 check('(n) a live retake shows as in progress, not completed', dashLive.data?.upcoming.find((q) => q.id === quiz4)?.state === 'IN_PROGRESS');
+// Weak-connection handling: network trouble is recorded but not scored, and answers written before the buzzer still arrive shortly after it.
+const reA = re9.data.attemptId;
+await s9('(n) the connection test answers a student', 'GET', '/api/net-check?size=2048', undefined, { expect: [200] });
+await fac('(n) and is closed to faculty', 'GET', '/api/net-check?size=2048', undefined, { expect: [401, 403] });
+await s9('(n) a flaky connection is reported', 'POST', `/api/exam/${reA}/events`, { events: Array.from({ length: 6 }, () => ({ type: 'NETWORK_OFFLINE' })) }, { expect: [200] });
+const repNet = await fac('(n) integrity report after network drops', 'GET', `/api/admin/integrity/${reA}`, undefined, { expect: [200] });
+check('(n) dropped connections cost no integrity points', repNet.data?.integrity?.score === 100, JSON.stringify(repNet.data?.integrity));
+const reQs = (await s9('(n) retake state', 'GET', `/api/exam/${reA}/state`, undefined, { expect: [200] })).data.questions;
+const reMcq = reQs.find((q) => q.type === 'MCQ_SINGLE');
+await prisma.quizAttempt.update({ where: { id: reA }, data: { expiresAt: new Date(Date.now() - 20_000) } });
+await s9('(n) an answer 20 s past the deadline is still accepted', 'POST', `/api/exam/${reA}/answer`, { attemptQuestionId: reMcq.attemptQuestionId, selectedOptionId: reMcq.options[0].id }, { expect: [200] });
+await s9('(n) a heartbeat in that window does not end the exam early', 'POST', `/api/exam/${reA}/heartbeat`, {}, { expect: [200] });
+check('(n) the attempt is still open inside the window', (await prisma.quizAttempt.findUnique({ where: { id: reA }, select: { status: true } })).status === 'IN_PROGRESS');
+await prisma.quizAttempt.update({ where: { id: reA }, data: { expiresAt: new Date(Date.now() - 90_000) } });
+await s9('(n) an answer 90 s past the deadline is refused', 'POST', `/api/exam/${reA}/answer`, { attemptQuestionId: reMcq.attemptQuestionId, selectedOptionId: reMcq.options[1].id }, { expect: [410] });
+check('(n) and the attempt is closed', (await prisma.quizAttempt.findUnique({ where: { id: reA }, select: { status: true } })).status === 'AUTO_SUBMITTED');
 await s9('(n) submit the retake', 'POST', `/api/exam/${re9.data.attemptId}/submit`, { confirm: true }, { expect: [200] });
 await s9('(n) no third attempt', 'POST', '/api/exam/start', { quizId: quiz4, acknowledgedRules: true }, abuse);
 const g2 = await fac('(n) grant another', 'POST', retakeUrl, grant9, { expect: [200] });

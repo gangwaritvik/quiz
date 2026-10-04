@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import { ApiClientError, apiUpload } from '@/lib/client/api';
+import { compressImage } from '@/lib/client/compress-image';
 import { cn } from '@/lib/utils';
 
 interface UploadResult {
@@ -48,7 +49,7 @@ export function ImageUploadField({
     setUploading(true);
     try {
       const form = new FormData();
-      form.append('file', file);
+      form.append('file', await compressImage(file, { maxSide: 2000, quality: 0.9 }));
       form.append('kind', kind);
       const result = await apiUpload<UploadResult>('/api/admin/media', form);
       onChange(result.id);

@@ -41,6 +41,8 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown;
   /** Skip the automatic one-shot session refresh on 401. */
   noRefresh?: boolean;
+  /** Give up after this long and report a network error, instead of waiting on a stalled link. */
+  timeoutMs?: number;
 }
 
 let refreshInFlight: Promise<boolean> | null = null;
@@ -62,6 +64,20 @@ async function refreshSession(): Promise<boolean> {
 }
 
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { timeoutMs, ...rest } = options;
+  if (!timeoutMs) return request<T>(path, rest);
+  // The timer covers the whole exchange, body included: a response that starts
+  // and then stalls is as useless to an exam as one that never starts.
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await request<T>(path, { ...rest, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function request<T>(path: string, options: RequestOptions): Promise<T> {
   const { body, noRefresh, headers, ...rest } = options;
   const method = (rest.method ?? (body ? 'POST' : 'GET')).toUpperCase();
 
@@ -103,6 +119,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   try {
     payload = await response.json();
   } catch {
+    if (rest.signal?.aborted) throw new ApiClientError('NETWORK', 'Connection is too slow. Retrying…', 0);
     if (!response.ok) {
       throw new ApiClientError('SERVER_ERROR', 'The server returned an unexpected response.', response.status);
     }
@@ -133,7 +150,17 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
  * it has to append the multipart boundary, and overriding the header would
  * produce a body the server cannot parse.
  */
-export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+export async function apiUpload<T>(path: string, form: FormData, timeoutMs = 120_000): Promise<T> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await upload<T>(path, form, controller.signal);
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function upload<T>(path: string, form: FormData, signal: AbortSignal): Promise<T> {
   let response: Response;
   try {
     response = await fetch(path, {
@@ -141,15 +168,23 @@ export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
       credentials: 'same-origin',
       headers: { 'x-device-id': getDeviceId() },
       body: form,
+      signal,
     });
   } catch {
-    throw new ApiClientError('NETWORK', 'Connection interrupted. Retrying…', 0);
+    throw new ApiClientError(
+      'NETWORK',
+      signal.aborted ? 'The upload is taking too long. Check your connection and try again.' : 'Connection interrupted. Retrying…',
+      0,
+    );
   }
 
   let payload: unknown;
   try {
     payload = await response.json();
   } catch {
+    if (signal.aborted) {
+      throw new ApiClientError('NETWORK', 'The upload is taking too long. Check your connection and try again.', 0);
+    }
     throw new ApiClientError(
       'SERVER_ERROR',
       'The server returned an unexpected response.',

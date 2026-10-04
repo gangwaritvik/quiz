@@ -47,8 +47,15 @@ function shuffle<T>(items: T[]): T[] {
   return result;
 }
 
-/** Grace period after `expiresAt` during which a late submit is still accepted. */
-export const SUBMIT_GRACE_MS = 10_000;
+/**
+ * Grace period after `expiresAt` during which a late submit is still accepted,
+ * and during which answers the student made before the buzzer may still arrive.
+ * A student whose connection dropped near the end sends their queued answers
+ * the moment it returns; without this they would be refused even though the
+ * screen told them their work was safe. The client's own paper is locked at
+ * zero, so the window only helps answers that were already written.
+ */
+export const SUBMIT_GRACE_MS = 60_000;
 
 /** Explicit limits for interactive transactions on hot exam paths. */
 const TX_OPTIONS = { maxWait: 10_000, timeout: 15_000 };
@@ -535,7 +542,7 @@ async function loadWritableAttempt(attemptId: string, studentId: string) {
     throw new ApiError('ATTEMPT_EXPIRED', 'This attempt has already been submitted.');
   }
   if (attempt.pausedAt) throw pausedError();
-  if (remainingTime(attempt.expiresAt).remainingMs <= 0) {
+  if (remainingTime(attempt.expiresAt).remainingMs <= -SUBMIT_GRACE_MS) {
     await finalizeAttempt(attempt.id, 'AUTO_SUBMITTED');
     throw new ApiError('ATTEMPT_EXPIRED', 'Time is up — your exam has been submitted.');
   }
@@ -552,7 +559,12 @@ async function loadWritableAttempt(attemptId: string, studentId: string) {
 async function lockWritableAttempt(tx: Prisma.TransactionClient, attemptId: string) {
   const now = new Date();
   const { count } = await tx.quizAttempt.updateMany({
-    where: { id: attemptId, status: 'IN_PROGRESS', expiresAt: { gt: now }, pausedAt: null },
+    where: {
+      id: attemptId,
+      status: 'IN_PROGRESS',
+      expiresAt: { gt: new Date(now.getTime() - SUBMIT_GRACE_MS) },
+      pausedAt: null,
+    },
     data: { lastSeenAt: now },
   });
   if (count !== 1) {

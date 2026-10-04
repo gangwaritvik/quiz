@@ -7,6 +7,9 @@ import { Button } from '@/components/ui/button';
 import type { SecurityEventType } from '@/hooks/use-exam-security';
 import { cn } from '@/lib/utils';
 
+/** A microphone muted for longer than this counts as lost; a blip (Bluetooth switching, a cough button) does not. */
+const MUTE_GRACE_MS = 5000;
+
 interface CameraMonitorProps {
   enabled: boolean;
   microphoneEnabled?: boolean;
@@ -59,6 +62,7 @@ export function CameraMonitor({
     if (!enabled && !microphoneEnabled) return;
     let cancelled = false;
     let media: MediaStream | null = null;
+    let muteTimer: number | undefined;
 
     const start = async () => {
       try {
@@ -94,6 +98,26 @@ export function CameraMonitor({
             setMicrophoneActive(false);
             onEventRef.current('MICROPHONE_LOST');
           });
+          // A hardware or system mute leaves the track alive but silent, so
+          // 'ended' never fires. Only a mute that lasts counts.
+          track.addEventListener('mute', () => {
+            window.clearTimeout(muteTimer);
+            muteTimer = window.setTimeout(() => {
+              muteTimer = undefined;
+              setMicrophoneActive(false);
+              onMicrophoneStatusChange?.(false);
+              onEventRef.current('MICROPHONE_LOST', { metadata: { source: 'muted' } });
+            }, MUTE_GRACE_MS);
+          });
+          track.addEventListener('unmute', () => {
+            if (muteTimer !== undefined) {
+              window.clearTimeout(muteTimer);
+              muteTimer = undefined;
+              return;
+            }
+            setMicrophoneActive(true);
+            onMicrophoneStatusChange?.(true);
+          });
         });
       } catch {
         if (cancelled) return;
@@ -112,6 +136,7 @@ export function CameraMonitor({
 
     return () => {
       cancelled = true;
+      window.clearTimeout(muteTimer);
       media?.getTracks().forEach((track) => track.stop());
     };
   }, [enabled, microphoneEnabled, onMicrophoneStatusChange]);
@@ -292,7 +317,7 @@ export function CameraMonitor({
       ) : null}
 
       <p className="border-t border-border px-3 py-2 text-2xs leading-relaxed text-muted-foreground">
-        Proctoring streams are verified locally. Only device availability and events are reported.
+        Your camera, microphone and screen are checked on this device only. Nothing is recorded or uploaded; only whether they are on is reported.
       </p>
     </div>
   );

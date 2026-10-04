@@ -15,6 +15,61 @@ export interface SecurityCheck {
   required: boolean;
 }
 
+/** Measured on the student's own connection. Exams need little speed but a steady link. */
+const SLOW_DELAY_MS = 1500;
+const SLOW_SPEED_KBPS = 256;
+const PROBE_TIMEOUT_MS = 8000;
+
+interface LinkQuality {
+  state: CheckState;
+  detail: string;
+}
+
+const median = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]!;
+
+async function probe(size: number): Promise<{ ms: number; bytes: number }> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
+  try {
+    const started = performance.now();
+    const response = await fetch(`/api/net-check?size=${size}`, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error('probe failed');
+    const bytes = (await response.arrayBuffer()).byteLength;
+    return { ms: performance.now() - started, bytes };
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+/**
+ * Three tiny round trips for the delay, one 128 KB download for the speed. It
+ * only ever warns: a slow link can still sit an exam, the student should simply
+ * know before the clock starts.
+ */
+async function measureLink(): Promise<LinkQuality> {
+  try {
+    const delays: number[] = [];
+    for (let i = 0; i < 3; i += 1) delays.push((await probe(0)).ms);
+    const delay = median(delays);
+    const download = await probe(128 * 1024);
+    const kbps = (download.bytes * 8) / 1000 / Math.max(download.ms / 1000, 0.001);
+    const summary = `${Math.round(delay)} ms delay · ${kbps >= 1000 ? `${(kbps / 1000).toFixed(1)} Mbps` : `${Math.round(kbps)} kbps`}`;
+    if (delay > SLOW_DELAY_MS || kbps < SLOW_SPEED_KBPS) {
+      return {
+        state: 'warn',
+        detail: `Slow connection (${summary}). Answers may take longer to save. Move closer to the router or use a cable if you can.`,
+      };
+    }
+    return { state: 'pass', detail: `Connection looks good (${summary})` };
+  } catch {
+    return { state: 'warn', detail: 'Could not test your connection speed. If saving feels slow during the exam, check your Wi-Fi.' };
+  }
+}
+
 interface UseSecurityChecksOptions {
   requireFullscreen: boolean;
   cameraMonitoring: boolean;
@@ -45,6 +100,7 @@ export function useSecurityChecks({
   const [micState, setMicState] = React.useState<CheckState>('pending');
   const [micDetail, setMicDetail] = React.useState('Waiting for permission');
   const [stream, setStream] = React.useState<MediaStream | null>(null);
+  const [link, setLink] = React.useState<LinkQuality>({ state: 'pending', detail: 'Testing your connection' });
 
   React.useEffect(() => {
     setEnvironment(describeEnvironment());
@@ -60,17 +116,34 @@ export function useSecurityChecks({
     };
   }, []);
 
+  // Test the link on arrival and again whenever the connection comes back.
+  React.useEffect(() => {
+    if (!online) return;
+    let cancelled = false;
+    setLink({ state: 'pending', detail: 'Testing your connection' });
+    void measureLink().then((result) => {
+      if (!cancelled) setLink(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [online]);
+
   const requestMedia = React.useCallback(async () => {
     if (!cameraMonitoring && !microphoneMonitoring) return;
 
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      // Browsers only offer camera and microphone on https (or localhost).
+      const why = !window.isSecureContext
+        ? 'needs a secure (https) connection. Ask your college to open the exam over https'
+        : 'is not available in this browser';
       if (cameraMonitoring) {
         setCameraState('fail');
-        setCameraDetail('This browser cannot provide camera access');
+        setCameraDetail(`Camera access ${why}`);
       }
       if (microphoneMonitoring) {
         setMicState('fail');
-        setMicDetail('This browser cannot provide microphone access');
+        setMicDetail(`Microphone access ${why}`);
       }
       return;
     }
@@ -100,7 +173,9 @@ export function useSecurityChecks({
           ? 'Permission denied — allow access in your browser and retry'
           : name === 'NotFoundError'
             ? 'No device found'
-            : 'Could not access the device';
+            : name === 'NotReadableError'
+              ? 'Another app is using the camera or microphone. Close it (for example Zoom or Teams) and retry'
+              : 'Could not access the device';
 
       if (cameraMonitoring) {
         setCameraState('fail');
@@ -160,6 +235,13 @@ export function useSecurityChecks({
       required: true,
     },
     {
+      id: 'connection',
+      label: 'Connection quality',
+      state: online ? link.state : 'warn',
+      detail: online ? link.detail : 'Waiting for a connection',
+      required: false,
+    },
+    {
       id: 'fullscreen',
       label: 'Fullscreen',
       state: fullscreenSupported ? 'pass' : requireFullscreen ? 'fail' : 'warn',
@@ -212,7 +294,9 @@ export function useSecurityChecks({
       state: screenShareSupported ? 'pass' : 'fail',
       detail: screenShareSupported
         ? 'Entire-screen capture supported'
-        : 'Browser does not support screen sharing',
+        : typeof window !== 'undefined' && !window.isSecureContext
+          ? 'Screen sharing needs a secure (https) connection. Ask your college to open the exam over https'
+          : 'Browser does not support screen sharing (phones usually cannot share their screen)',
       required: true,
     });
   }

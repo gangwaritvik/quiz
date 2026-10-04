@@ -35,7 +35,6 @@ const SIGNALS: Partial<Record<ExamEventType, SignalRule>> = {
   CONTEXT_MENU: { base: 2, repeat: 1, cap: 8, label: 'Context menu', tolerance: 1 },
   PRINT_ATTEMPT: { base: 12, repeat: 8, cap: 30, label: 'Print attempt' },
   SHORTCUT_BLOCKED: { base: 4, repeat: 3, cap: 18, label: 'Blocked shortcut' },
-  NETWORK_OFFLINE: { base: 2, repeat: 2, cap: 10, label: 'Network disconnected', tolerance: 1 },
   MULTIPLE_SESSION: { base: 20, repeat: 12, cap: 40, label: 'Second active session' },
   DEVICE_MISMATCH: { base: 18, repeat: 10, cap: 36, label: 'Device changed mid-exam' },
   CAMERA_PERMISSION_LOST: { base: 10, repeat: 6, cap: 26, label: 'Camera permission lost' },
@@ -44,15 +43,20 @@ const SIGNALS: Partial<Record<ExamEventType, SignalRule>> = {
   MULTIPLE_FACES: { base: 14, repeat: 9, cap: 34, label: 'Multiple faces detected' },
   MICROPHONE_LOST: { base: 6, repeat: 4, cap: 18, label: 'Microphone lost' },
   RESIZE_SUSPICIOUS: { base: 3, repeat: 2, cap: 10, label: 'Unusual window resize', tolerance: 1 },
-  HEARTBEAT_MISSED: { base: 3, repeat: 3, cap: 15, label: 'Heartbeat missed', tolerance: 1 },
   IDLE_TIMEOUT: { base: 2, repeat: 2, cap: 8, label: 'Extended inactivity', tolerance: 1 },
   MULTIPLE_DISPLAYS_DETECTED: { base: 14, repeat: 9, cap: 32, label: 'Secondary display detected' },
   SCREEN_SHARE_STOPPED: { base: 12, repeat: 8, cap: 30, label: 'Screen share stopped' },
   SCREEN_SHARE_PERMISSION_LOST: { base: 10, repeat: 6, cap: 24, label: 'Screen share permission lost' },
 };
 
-/** Informational events that are recorded for the timeline but never scored. */
+/**
+ * Informational events that are recorded for the timeline but never scored.
+ * A dropped connection or a missed heartbeat says something about the student's
+ * network, not their conduct; faculty still see them, labelled, on the timeline.
+ */
 const NEUTRAL_EVENTS: ExamEventType[] = [
+  'NETWORK_OFFLINE',
+  'HEARTBEAT_MISSED',
   'ATTEMPT_STARTED',
   'ATTEMPT_SUBMITTED',
   'AUTO_SUBMITTED',

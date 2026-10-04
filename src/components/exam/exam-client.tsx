@@ -36,6 +36,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useExamSecurity } from '@/hooks/use-exam-security';
 import { useExamTimer, type ExamTimer, type TimerSync } from '@/hooks/use-exam-timer';
 import { ApiClientError, apiFetch, apiUpload } from '@/lib/client/api';
+import { compressImage } from '@/lib/client/compress-image';
 import {
   ackDraft,
   clearDrafts,
@@ -136,6 +137,9 @@ interface SubmitResult {
 type Phase = 'loading' | 'active' | 'submitting' | 'submitted' | 'blocked';
 
 const HEARTBEAT_MS = 20_000;
+/** A request that has not finished by now counts as a dropped connection. */
+const REQUEST_TIMEOUT_MS = 15_000;
+const SUBMIT_TIMEOUT_MS = 30_000;
 
 /** Auto-submit retry delays; after the list runs out, retry at the steady rate. */
 const AUTO_SUBMIT_BACKOFF_MS = [1_000, 2_000, 4_000, 8_000];
@@ -168,6 +172,8 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
   const [submitResult, setSubmitResult] = React.useState<SubmitResult | null>(null);
   const [online, setOnline] = React.useState(true);
   const [connectionLost, setConnectionLost] = React.useState(false);
+  /** Answers written but not yet confirmed by the server; shown while the connection is down. */
+  const [unsentCount, setUnsentCount] = React.useState(0);
   const [cameraActive, setCameraActive] = React.useState<boolean | null>(null);
   const [microphoneActive, setMicrophoneActive] = React.useState<boolean | null>(null);
   const [screenShareActive, setScreenShareActive] = React.useState<boolean | null>(null);
@@ -269,6 +275,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
   const pingServer = React.useCallback(async () => {
     const result = await apiFetch<HeartbeatResponse>(`/api/exam/${attemptId}/heartbeat`, {
       method: 'POST',
+      timeoutMs: REQUEST_TIMEOUT_MS,
       body: noticeCursorRef.current ? { noticesSince: noticeCursorRef.current } : {},
     });
     timerRef.current?.sync(result.timer);
@@ -289,7 +296,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
       const clientSeq = getDraft<AnswerPayload>(kv, attemptId, attemptQuestionId)?.seq;
       const result = await apiFetch<{ timer: { remainingMs: number; serverNow: string } }>(
         `/api/exam/${attemptId}/answer`,
-        { method: 'POST', body: { attemptQuestionId, ...payload, clientSeq } },
+        { method: 'POST', body: { attemptQuestionId, ...payload, clientSeq }, timeoutMs: REQUEST_TIMEOUT_MS },
       );
       ackDraft(kv, attemptId, attemptQuestionId, clientSeq);
       if (pendingSaves.current.get(attemptQuestionId) === payload) {
@@ -346,6 +353,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
           const result = await apiFetch<SubmitResult>(`/api/exam/${attemptId}/submit`, {
             method: 'POST',
             body: { confirm: true },
+            timeoutMs: SUBMIT_TIMEOUT_MS,
           });
 
           clearDrafts(draftStore(), attemptId);
@@ -627,6 +635,18 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
     setOnline(navigator.onLine);
   }, []);
 
+  // The queue lives in a ref, so while the connection is down read its size once a second.
+  React.useEffect(() => {
+    if (!connectionLost) {
+      setUnsentCount(0);
+      return;
+    }
+    const tick = () => setUnsentCount(pendingSaves.current.size);
+    tick();
+    const interval = window.setInterval(tick, 1000);
+    return () => window.clearInterval(interval);
+  }, [connectionLost]);
+
   // --- Heartbeat: liveness plus authoritative time sync --------------------
   // Runs for the whole 'active' phase, including while a gate (fullscreen,
   // focus, screen share) covers the paper. Reads the timer through a ref so
@@ -821,11 +841,13 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
 
       setUploadingId(id);
       try {
+        // A phone photo is often several MB; shrink it so it uploads quickly and fits the limit.
+        const photo = await compressImage(file, { maxSide: 1920, quality: 0.82 });
         const result = await apiUpload<{
           attachment: { id: string; url: string; name: string };
         }>(`/api/exam/${attemptId}/attachments`, (() => {
           const form = new FormData();
-          form.append('file', file);
+          form.append('file', photo);
           form.append('attemptQuestionId', id);
           return form;
         })());
@@ -893,6 +915,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
     try {
       await apiFetch(`/api/exam/${attemptId}/flag`, {
         method: 'POST',
+        timeoutMs: REQUEST_TIMEOUT_MS,
         body: { attemptQuestionId: question.attemptQuestionId, markedForReview: next },
       });
     } catch {
@@ -1021,8 +1044,9 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
               <div className="mx-auto flex max-w-[1440px] items-center gap-2.5 px-4 py-2.5 text-sm text-warning sm:px-6">
                 <WifiOff className="size-4 shrink-0" aria-hidden />
                 <p>
-                  Connection interrupted. Your answers are kept on this device and sent as soon as
-                  you are back online.
+                  {unsentCount > 0
+                    ? `Connection interrupted. ${unsentCount} answer${unsentCount === 1 ? ' is' : 's are'} waiting to be sent. ${unsentCount === 1 ? 'It is' : 'They are'} kept on this device and sent as soon as you are back online.`
+                    : 'Connection interrupted. Your answers are kept on this device and sent as soon as you are back online.'}
                 </p>
                 <Loader2 className="ml-auto size-4 shrink-0 animate-spin" aria-hidden />
               </div>

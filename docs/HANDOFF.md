@@ -240,3 +240,9 @@ Question types are `MCQ_SINGLE`, `MCQ_MULTI`, `TRUE_FALSE`, `ASSERTION_REASON`, 
 ## 12. Verification snapshot
 
 At the time this handoff was prepared, `npm run typecheck` completed successfully. No automated test command is defined in the project manifest. The repository analysis detected one JavaScript/TypeScript Next.js service with Prisma; deployment should be treated as a web service plus PostgreSQL plus private persistent media storage.
+
+### Weak connections
+
+The exam sends a 20-second heartbeat and one small request per answer (about 0.5 to 0.7 MB for an hour). Exam requests give up after 15 seconds (30 for submit) and show the "connection interrupted" banner with a count of answers waiting; answers are kept in the browser and re-sent. The server accepts answers, and a late submit, for `SUBMIT_GRACE_MS` (60 s) after the deadline so answers written before the buzzer still arrive. `NETWORK_OFFLINE` and `HEARTBEAT_MISSED` are recorded for the timeline but never scored. Before the exam, `/api/net-check` lets the briefing page measure delay and speed and warn (never block). Photo answers and question diagrams are shrunk in the browser (`compress-image.ts`) before upload.
+
+Camera, microphone and screen share are checked on the student's device only; nothing is recorded or uploaded. They need https (or localhost): over plain http the checks fail with a message saying so. A microphone muted for more than 5 seconds counts as lost.

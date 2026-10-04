@@ -226,3 +226,16 @@ describe('severityForEvent', () => {
     assert.equal(severityForEvent('FULLSCREEN_ENTER'), 'INFO');
   });
 });
+
+describe('computeIntegrity: network trouble is not misconduct', () => {
+  test('dropped connections and missed heartbeats never lower the score', () => {
+    const out = computeIntegrity([...times(20, 'NETWORK_OFFLINE'), ...times(20, 'HEARTBEAT_MISSED'), ev('NETWORK_ONLINE')]);
+    assert.equal(out.score, 100);
+    assert.equal(out.status, 'NORMAL');
+    assert.deepEqual(out.breakdown, []);
+  });
+
+  test('they sit alongside a real signal without adding to it', () => {
+    assert.equal(computeIntegrity([ev('TAB_SWITCH'), ...times(5, 'NETWORK_OFFLINE')]).score, 92);
+  });
+});
