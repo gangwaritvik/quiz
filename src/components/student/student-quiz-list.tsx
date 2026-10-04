@@ -35,7 +35,7 @@ export function StudentQuizList() {
   const { data, error, initialLoading, refetch } = useApi<QuizListData>('/api/student/quizzes');
   const [picked, setPicked] = React.useState<Filter | null>(null);
 
-  const quizzes = data?.quizzes ?? [];
+  const quizzes = React.useMemo(() => data?.quizzes ?? [], [data]);
   // Open on a tab with content: Active only when something is active.
   const filter: Filter =
     picked ?? (quizzes.some((quiz) => inFilter('active', quiz.state)) ? 'active' : 'all');

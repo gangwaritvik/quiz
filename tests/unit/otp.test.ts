@@ -19,11 +19,12 @@ afterEach(() => {
  * module instance (evicted from require.cache before each load). The module has
  * no side effects beyond constructing a lazy Prisma client: nothing connects.
  */
-function load(nodeEnv: 'production' | 'development', _tag?: string) {
+function load(nodeEnv: 'production' | 'development') {
   env.NODE_ENV = nodeEnv;
   env.AUTH_SECRET = 'test-only-auth-secret-0123456789abcdef-xxxx';
   env.HASH_PEPPER = 'test-only-hash-pepper-0123456789abcdef-yyy';
   delete require.cache[OTP_PATH];
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   return require('../../src/lib/otp.ts') as typeof import('@/lib/otp');
 }
 
@@ -64,7 +65,7 @@ describe('isDevOtpMode truth table', () => {
   for (const [devMode, hatch, production, expected] of rows) {
     test(`${production ? 'production' : 'development'}: OTP_DEV_MODE=${JSON.stringify(devMode)} hatch=${JSON.stringify(hatch)} -> ${expected ? 'ON' : 'OFF'}`, async (t) => {
       t.mock.method(console, 'warn', () => {});
-      const mod = load(production ? 'production' : 'development', `table-${production}-${devMode}-${hatch}`);
+      const mod = load(production ? 'production' : 'development');
       setFlags(devMode, hatch);
       assert.equal(mod.isDevOtpMode(), expected);
     });
@@ -72,7 +73,7 @@ describe('isDevOtpMode truth table', () => {
 
   test('is evaluated per call: flipping the flag at runtime takes effect', async (t) => {
     t.mock.method(console, 'warn', () => {});
-    const mod = load('production', 'live-flip');
+    const mod = load('production');
     setFlags('true', ACK);
     assert.equal(mod.isDevOtpMode(), true);
     setFlags(undefined, ACK);
@@ -81,7 +82,7 @@ describe('isDevOtpMode truth table', () => {
 
   test('production with the hatch warns loudly, once', async (t) => {
     const warn = t.mock.method(console, 'warn', () => {});
-    const mod = load('production', 'warn-once');
+    const mod = load('production');
     setFlags('true', ACK);
     mod.isDevOtpMode();
     mod.isDevOtpMode();
@@ -91,7 +92,7 @@ describe('isDevOtpMode truth table', () => {
 
   test('plain development mode does not warn', async (t) => {
     const warn = t.mock.method(console, 'warn', () => {});
-    const mod = load('development', 'no-warn');
+    const mod = load('development');
     setFlags('true', undefined);
     mod.isDevOtpMode();
     assert.equal(warn.mock.callCount(), 0);
@@ -100,7 +101,7 @@ describe('isDevOtpMode truth table', () => {
 
 describe('otp constants', () => {
   test('lifetime, cooldown and attempt cap are sane', async () => {
-    const mod = load('development', 'consts');
+    const mod = load('development');
     assert.ok(mod.OTP_TTL_SECONDS <= 600);
     assert.ok(mod.OTP_MAX_ATTEMPTS <= 5);
     assert.ok(mod.OTP_RESEND_COOLDOWN_SECONDS > 0);

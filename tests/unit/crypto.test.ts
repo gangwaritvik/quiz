@@ -11,6 +11,8 @@ const CRYPTO_PATH = require.resolve('../../src/lib/crypto.ts');
 /** Fresh evaluation of crypto.ts (it reads env once, at import). */
 function loadCrypto(): CryptoModule {
   delete require.cache[CRYPTO_PATH];
+  // A fresh evaluation each time is the point, which an import cannot give.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   return require('../../src/lib/crypto.ts') as CryptoModule;
 }
 

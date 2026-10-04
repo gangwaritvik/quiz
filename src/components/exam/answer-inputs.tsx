@@ -105,8 +105,7 @@ function OptionBody({
           <MathText text={option.text} className="block text-base leading-[1.625rem]" />
         ) : null}
         {option.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element -- authorised
-          // route, not a static asset; Next's optimiser cannot fetch it.
+          // eslint-disable-next-line @next/next/no-img-element -- authorised route, not a static asset: Next's optimiser cannot fetch it
           <img
             src={option.imageUrl}
             // The letter is aria-hidden, so an image-only option needs its own

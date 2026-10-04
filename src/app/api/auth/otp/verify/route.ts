@@ -22,7 +22,7 @@ export const POST = route(async (request: Request) => {
 
   const { userId, role } = await verifyOtp(body.identifier, body.code, context);
 
-  const { session } = await createSession({ userId, role, context });
+  const { session } = await createSession({ userId, context });
 
   await prisma.user.update({ where: { id: userId }, data: { lastLoginAt: new Date() } });
   await audit({

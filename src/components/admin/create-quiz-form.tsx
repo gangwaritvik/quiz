@@ -122,7 +122,7 @@ export function CreateQuizForm() {
   const [formError, setFormError] = React.useState<string | null>(null);
 
   const subject = meta?.subjects.find((entry) => entry.id === subjectId);
-  const students = studentData?.students ?? [];
+  const students = React.useMemo(() => studentData?.students ?? [], [studentData]);
 
   const sections = React.useMemo(() => {
     const counts = new Map<string, number>();

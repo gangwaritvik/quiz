@@ -197,11 +197,10 @@ async function issueAccessCookie(session: AuthenticatedSession) {
 
 export interface CreateSessionInput {
   userId: string;
-  role: Role;
   context: RequestContext;
 }
 
-export async function createSession({ userId, role, context }: CreateSessionInput) {
+export async function createSession({ userId, context }: CreateSessionInput) {
   const refreshToken = randomToken(32);
 
   const record = await prisma.deviceSession.create({

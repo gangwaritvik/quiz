@@ -108,7 +108,7 @@ await stu('save long', 'POST', `/api/exam/${attemptId}/answer`, { attemptQuestio
 const fd = new FormData();
 fd.set('attemptQuestionId', byType.IMAGE_ANSWER.attemptQuestionId);
 fd.set('file', new Blob([PNG], { type: 'image/png' }), 'diagram.png');
-const up = await stu('upload answer image (1x1 png)', 'POST', `/api/exam/${attemptId}/attachments`, undefined, { raw: fd, expect: [200] });
+await stu('upload answer image (1x1 png)', 'POST', `/api/exam/${attemptId}/attachments`, undefined, { raw: fd, expect: [200] });
 const big = Buffer.alloc(7 * 1024 * 1024, 0x41);
 await stu('(e) upload 7 MB body', 'POST', `/api/exam/${attemptId}/attachments`, undefined, { raw: big, headers: { 'content-type': 'multipart/form-data; boundary=x' }, expect: [413] });
 await stu('events batch', 'POST', `/api/exam/${attemptId}/events`, { events: [
@@ -683,7 +683,7 @@ check('(p) topic=none returns only topicless questions, matching the count', qsN
   check('(q) no draft ids or excerpts reach a student', !done.drafts.some((d) => dashS.text.includes(d.id)) && !dashS.text.includes('Fake OCR'));
 
   // Meaning check on accept: the bank already has q1's text, so the same question again is stopped.
-  const [p1, p2] = pageDone.drafts;
+  const [p1] = pageDone.drafts;
   const twin = { ...p1.payload, text: q1.text };
   const stopped = await fac('(q) a repeat of a bank question is stopped on accept', 'POST', `/api/admin/ai/drafts/${p1.id}/accept`, { question: twin }, { expect: [409] });
   check('(q) the refusal names the question it repeats', stopped.text.includes('means the same'), stopped.text.slice(0, 200));
