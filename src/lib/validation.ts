@@ -294,6 +294,8 @@ const questionBodySchema = z.object({
   text: z.string().trim().min(5, 'Question text is required').max(4000),
   type: questionTypeSchema.default('MCQ_SINGLE'),
   difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).default('MEDIUM'),
+  /** Optional: remember / understand / apply / analyse. */
+  bloom: z.enum(['REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYSE']).nullable().optional(),
   marks: z.coerce.number().int().min(1).max(20).default(1),
   negativeMarks: z.coerce.number().min(0).max(10).default(0),
   explanation: z.string().trim().max(2000).optional().or(z.literal('')),
@@ -564,6 +566,7 @@ export const questionFilterSchema = paginationSchema.extend({
   /** A topic id, or `none` for questions without a topic. */
   topicId: z.string().optional(),
   difficulty: z.enum(['EASY', 'MEDIUM', 'HARD']).optional(),
+  bloom: z.enum(['REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYSE']).optional(),
   type: questionTypeSchema.optional(),
 });
 

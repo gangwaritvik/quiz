@@ -101,3 +101,44 @@ export function sliceForBatch(
     .map((page) => `--- ${page.title} · page ${page.page} ---\n${page.text.slice(0, each)}`)
     .join('\n\n');
 }
+
+/**
+ * For a model that cannot search a store: the pages that mention the topic,
+ * best first, cut to the budget and shown in page order. Empty when nothing
+ * matches. Words of three letters or more are matched; a page that contains
+ * the whole phrase counts for more.
+ */
+export function pagesForQuery(materials: SliceMaterial[], query: string, maxChars = MAX_SLICE_CHARS): string {
+  const phrase = query.trim().toLowerCase();
+  const terms = [...new Set(phrase.split(/[^\p{L}\p{N}]+/u).filter((word) => word.length >= 3))];
+  if (terms.length === 0) return '';
+
+  const scored = materials
+    .flatMap((material, m) =>
+      material.pages.map((text, i) => {
+        const lower = text.toLowerCase();
+        let score = phrase.length >= 3 && lower.includes(phrase) ? 5 : 0;
+        for (const term of terms) score += lower.split(term).length - 1;
+        return { m, i, title: material.title, text: text.trim(), score };
+      }),
+    )
+    .filter((page) => page.score > 0 && page.text);
+  if (scored.length === 0) return '';
+
+  const best = scored.sort((a, b) => b.score - a.score).slice(0, 8);
+  const each = Math.floor(maxChars / best.length);
+  return best
+    .sort((a, b) => a.m - b.m || a.i - b.i)
+    .map((page) => `--- ${page.title} · page ${page.i + 1} ---\n${page.text.slice(0, each)}`)
+    .join('\n\n');
+}
+
+/** For a model that cannot read a PDF: pages `from` to `to` of one material, as text. */
+export function pagesInRange(material: SliceMaterial, from: number, to: number, maxChars = MAX_SLICE_CHARS): string {
+  const window = material.pages
+    .map((text, i) => ({ page: i + 1, text: text.trim() }))
+    .filter((page) => page.page >= from && page.page <= to && page.text);
+  if (window.length === 0) return '';
+  const each = Math.floor(maxChars / window.length);
+  return window.map((page) => `--- ${material.title} · page ${page.page} ---\n${page.text.slice(0, each)}`).join('\n\n');
+}

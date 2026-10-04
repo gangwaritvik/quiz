@@ -206,6 +206,14 @@ model Topic {
   @@map("topics")
 }
 
+/// The level of thinking a question asks for (Bloom's taxonomy, simplified).
+enum BloomLevel {
+  REMEMBER
+  UNDERSTAND
+  APPLY
+  ANALYSE
+}
+
 /// Cached meaning-vector of a bank question, for the AI's "is this a repeat?"
 /// check. `key` is a hash of the text it was made from, so an edited question
 /// is simply embedded again.
@@ -271,6 +279,9 @@ model Question {
 
   /// Drafted by the AI from study material and accepted by a teacher.
   aiGenerated Boolean @default(false)
+
+  /// Optional: what kind of thinking it asks for. Set by the AI, or by the author.
+  bloom BloomLevel?
 
   subject          Subject           @relation(fields: [subjectId], references: [id], onDelete: Restrict)
   topic            Topic?            @relation(fields: [topicId], references: [id], onDelete: SetNull)

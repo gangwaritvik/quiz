@@ -2,7 +2,7 @@ import 'server-only';
 
 import type { Prisma } from '@prisma/client';
 
-import { sliceForBatch } from '@/lib/ai/material-text';
+import { pagesForQuery, pagesInRange, sliceForBatch } from '@/lib/ai/material-text';
 import { materialPages, readMaterialFile } from '@/lib/ai/materials';
 import { extractPages, pageRange } from '@/lib/ai/pdf-pages';
 import { AiError, type RetrievedSource, getProvider } from '@/lib/ai/provider';
@@ -78,7 +78,7 @@ async function loadContext(job: {
   if (materials.length === 0) throw new AiError('None of the chosen materials is ready any more.');
 
   let inline: JobContext['inline'];
-  if (params.focus.mode === 'pages') {
+  if (params.focus.mode === 'pages' && (await getProvider()).readsPdf) {
     const pdf = materials[0]!;
     inline = {
       bytes: await extractPages(
@@ -187,15 +187,20 @@ async function generateBatch(
   slot: { index: number; count: number } = { index: 0, count: 1 },
 ) {
   const provider = await getProvider();
-  // Whole-material focus reads our own copy of the text, a different window per batch.
-  const whole =
-    ctx.params.focus.mode === 'whole'
-      ? sliceForBatch(
-          ctx.materialIds.map((id) => ({ title: ctx.titles.get(id) ?? 'Material', pages: ctx.pages.get(id) ?? [] })),
-          slot.index,
-          slot.count,
-        )
-      : '';
+  // Text we choose ourselves: whole-material focus always (a different window per batch),
+  // and topic or page focus for a model that cannot search a store or read a PDF.
+  const focus = ctx.params.focus;
+  const sliceMaterials = ctx.materialIds.map((id) => ({ title: ctx.titles.get(id) ?? 'Material', pages: ctx.pages.get(id) ?? [] }));
+  let text = '';
+  if (focus.mode === 'whole') {
+    text = sliceForBatch(sliceMaterials, slot.index, slot.count, provider.maxContextChars);
+  } else if (focus.mode === 'topic' && !provider.searchesStore) {
+    text = pagesForQuery(sliceMaterials, focus.query, provider.maxContextChars);
+    if (!text) throw new AiError('Nothing in the chosen material matches that topic.');
+  } else if (focus.mode === 'pages' && !provider.readsPdf) {
+    text = pagesInRange(sliceMaterials[0]!, focus.from, focus.to, provider.maxContextChars);
+    if (!text) throw new AiError('Those pages have no readable text.');
+  }
   const { json, sources } = await provider.generate({
     prompt: buildPrompt({
       subjectName: ctx.subjectName,
@@ -209,8 +214,8 @@ async function generateBatch(
     schema: AI_RESPONSE_SCHEMA,
     ...(ctx.inline
       ? { inline: ctx.inline }
-      : whole
-        ? { text: whole }
+      : text
+        ? { text }
         : { retrieval: { store: ctx.store ?? '', materialIds: ctx.materialIds } }),
     request: { batch, types },
   });

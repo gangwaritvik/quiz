@@ -90,6 +90,9 @@ const base64 = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64');
 
 export const geminiProvider: AiProvider = {
   name: 'gemini',
+  searchesStore: true,
+  readsPdf: true,
+  maxContextChars: 100_000,
   get embedModel() {
     return embedModel();
   },

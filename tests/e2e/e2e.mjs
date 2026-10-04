@@ -659,6 +659,7 @@ check('(p) topic=none returns only topicless questions, matching the count', qsN
   const banked = (await fac('(q) accept a draft', 'POST', `/api/admin/ai/drafts/${d1.id}/accept`, undefined, { expect: [200] })).data;
   await fac('(q) accepting twice is refused', 'POST', `/api/admin/ai/drafts/${d1.id}/accept`, undefined, { expect: [409] });
   const q1 = await prisma.question.findUnique({ where: { id: banked.questionId }, include: { options: true } });
+  check('(q) the AI thinking level is kept on the question', q1?.bloom === 'UNDERSTAND', String(q1?.bloom));
   check('(q) the accepted question is in the bank, marked AI', q1?.aiGenerated === true && q1.subjectId === subj.id && q1.marks === 2 && q1.active && !q1.adHoc);
 
   const edited = { ...d2.payload, text: 'Edited by the teacher: ' + d2.payload.text };
@@ -741,9 +742,11 @@ check('(p) topic=none returns only topicless questions, matching the count', qsN
   await fac('(q) unless the teacher insists', 'POST', `/api/admin/questions/${repeatQ}/add-to-bank`, { allowSimilar: true }, { expect: [200] });
 
   // The same template with other numbers is a different question, not a repeat.
-  const delayBody = (km) => ({ subjectId: subj.id, text: `Compute the propagation delay of a copper link that is ${km} km long`, type: 'SHORT_ANSWER', difficulty: 'MEDIUM', marks: 1, negativeMarks: 0, acceptedAnswers: ['x'] });
+  const delayBody = (km) => ({ subjectId: subj.id, text: `Compute the propagation delay of a copper link that is ${km} km long`, type: 'SHORT_ANSWER', difficulty: 'MEDIUM', bloom: 'APPLY', marks: 1, negativeMarks: 0, acceptedAnswers: ['x'] });
   const delay300 = (await fac('(q) a numeric question is added', 'POST', '/api/admin/questions', delayBody(300), { expect: [200] })).data;
   const delay600 = (await fac('(q) the same template with other numbers is not called a repeat', 'POST', '/api/admin/questions', delayBody(600), { expect: [200] })).data;
+  const applyList = (await fac('(q) filter the bank by thinking level', 'GET', `/api/admin/questions?subjectId=${subj.id}&bloom=APPLY&pageSize=100`, undefined, { expect: [200] })).data;
+  check('(q) a hand-set level can be filtered on', applyList.questions.some((qq) => qq.id === delay300.questionId) && applyList.questions.every((qq) => qq.bloom === 'APPLY'));
   await fac('(q) but the same numbers are', 'POST', '/api/admin/questions', delayBody(300), { expect: [409] });
 
   // Finding repeats already in the bank.

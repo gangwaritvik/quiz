@@ -20,6 +20,8 @@ import {
   MAX_OCR_PAGES,
   batchPages,
   buildCompanion,
+  pagesForQuery,
+  pagesInRange,
   sliceForBatch,
   isScannedPage,
   scannedPageNumbers,
@@ -354,5 +356,53 @@ describe('sliceForBatch', () => {
 
   test('no readable text gives an empty string, so the caller can search instead', () => {
     assert.equal(sliceForBatch([{ title: 'T', pages: ['', '  '] }], 0, 1), '');
+  });
+});
+
+describe('thinking level', () => {
+  test('the model level reaches the draft, and an unknown one is dropped, not guessed', () => {
+    const q = (bloom: string) => ({ type: 'TRUE_FALSE', difficulty: 'EASY', bloom, text: 'Is a byte eight bits long?', answerTrue: true, explanation: 'x' });
+    const out = validateModelOutput({ questions: [q('APPLY')] }, ctx());
+    assert.equal(out.drafts[0]?.body.bloom, 'APPLY');
+    assert.equal(validateModelOutput({ questions: [q('GUESS')] }, ctx()).drafts.length, 0);
+  });
+});
+
+describe('text for a model that cannot search or read a PDF', () => {
+  const book = {
+    title: 'Networks',
+    pages: [
+      'Intro to the course and grading.',
+      'TCP congestion control: slow start doubles the window; congestion avoidance adds one segment.',
+      'UDP is connectionless and has low overhead.',
+      'Congestion control again: fast retransmit after three duplicate ACKs.',
+    ],
+  };
+
+  test('pagesForQuery returns the pages that mention the topic, best first, in page order', () => {
+    const text = pagesForQuery([book], 'TCP congestion control');
+    assert.match(text, /--- Networks · page 2 ---/);
+    assert.match(text, /--- Networks · page 4 ---/);
+    assert.doesNotMatch(text, /page 1 ---/);
+    assert.doesNotMatch(text, /page 3 ---/);
+    assert.ok(text.indexOf('page 2 ---') < text.indexOf('page 4 ---'));
+  });
+
+  test('pagesForQuery gives nothing when nothing matches, or the query is only short words', () => {
+    assert.equal(pagesForQuery([book], 'quantum chromodynamics'), '');
+    assert.equal(pagesForQuery([book], 'is it'), '');
+  });
+
+  test('pagesForQuery keeps to the budget', () => {
+    const long = { title: 'T', pages: ['congestion '.repeat(500), 'congestion '.repeat(500)] };
+    assert.ok(pagesForQuery([long], 'congestion', 1000).length < 1200);
+  });
+
+  test('pagesInRange returns just those pages, labelled with their real numbers', () => {
+    const text = pagesInRange(book, 2, 3);
+    assert.match(text, /page 2 ---\nTCP congestion/);
+    assert.match(text, /page 3 ---\nUDP is/);
+    assert.doesNotMatch(text, /page 1 ---|page 4 ---/);
+    assert.equal(pagesInRange(book, 9, 12), '');
   });
 });

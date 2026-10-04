@@ -30,6 +30,7 @@ export const GET = route(async (request: Request) => {
     ...(filters.subjectId ? { subjectId: filters.subjectId } : {}),
     ...(filters.topicId ? { topicId: filters.topicId === 'none' ? null : filters.topicId } : {}),
     ...(filters.difficulty ? { difficulty: filters.difficulty } : {}),
+    ...(filters.bloom ? { bloom: filters.bloom } : {}),
     ...(filters.type ? { type: filters.type } : {}),
     ...(filters.search
       ? { text: { contains: filters.search, mode: 'insensitive' as const } }

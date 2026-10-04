@@ -64,3 +64,15 @@ export function isOptionBased(type: QuestionTypeValue): boolean {
 export function isManuallyMarked(type: QuestionTypeValue): boolean {
   return MANUALLY_MARKED_TYPES.includes(type);
 }
+
+export type BloomValue = 'REMEMBER' | 'UNDERSTAND' | 'APPLY' | 'ANALYSE';
+
+/** What kind of thinking a question asks for, in the order they are taught. */
+export const BLOOM_ORDER: BloomValue[] = ['REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYSE'];
+
+export const BLOOM_LABEL: Record<BloomValue, string> = {
+  REMEMBER: 'Remember',
+  UNDERSTAND: 'Understand',
+  APPLY: 'Apply',
+  ANALYSE: 'Analyse',
+};

@@ -54,6 +54,8 @@ import {
 import { useApi } from '@/hooks/use-api';
 import { ApiClientError, apiFetch } from '@/lib/client/api';
 import {
+  BLOOM_LABEL,
+  BLOOM_ORDER,
   QUESTION_TYPE_LABEL,
   QUESTION_TYPE_ORDER,
   isManuallyMarked,
@@ -287,6 +289,7 @@ function SubjectBank({
   const [debouncedSearch, setDebouncedSearch] = React.useState('');
   const [topicId, setTopicId] = React.useState(ALL);
   const [difficulty, setDifficulty] = React.useState(ALL);
+  const [bloom, setBloom] = React.useState(ALL);
   const [type, setType] = React.useState(ALL);
   const [page, setPage] = React.useState(1);
 
@@ -314,9 +317,10 @@ function SubjectBank({
     if (debouncedSearch) params.set('search', debouncedSearch);
     if (topicId !== ALL) params.set('topicId', topicId);
     if (difficulty !== ALL) params.set('difficulty', difficulty);
+    if (bloom !== ALL) params.set('bloom', bloom);
     if (type !== ALL) params.set('type', type);
     return `/api/admin/questions?${params.toString()}`;
-  }, [page, subject.id, debouncedSearch, topicId, difficulty, type]);
+  }, [page, subject.id, debouncedSearch, topicId, difficulty, bloom, type]);
 
   const { data, error, initialLoading, loading, refetch } = useApi<QuestionsResponse>(query);
   const questions = data?.questions ?? [];
@@ -347,7 +351,7 @@ function SubjectBank({
     }
   };
 
-  const narrowed = debouncedSearch !== '' || difficulty !== ALL || type !== ALL;
+  const narrowed = debouncedSearch !== '' || difficulty !== ALL || bloom !== ALL || type !== ALL;
   const filtered = narrowed || topicId !== ALL;
 
   const clearFilters = () => {
@@ -467,6 +471,21 @@ function SubjectBank({
                 { value: 'EASY', label: 'Easy' },
                 { value: 'MEDIUM', label: 'Medium' },
                 { value: 'HARD', label: 'Hard' },
+              ]}
+            />
+
+            <FilterSelect
+              compact
+              id="filter-bloom"
+              label="Thinking level"
+              value={bloom}
+              onChange={(value) => {
+                setBloom(value);
+                setPage(1);
+              }}
+              options={[
+                { value: ALL, label: 'Any thinking level' },
+                ...BLOOM_ORDER.map((level) => ({ value: level, label: BLOOM_LABEL[level] })),
               ]}
             />
 
@@ -751,6 +770,7 @@ function QuestionFacts({ question }: { question: QuestionListItem }) {
       {' · '}
       {question.marks} mark{question.marks === 1 ? '' : 's'}
       {question.negativeMarks > 0 ? ` · −${question.negativeMarks} negative` : ''}
+      {question.bloom ? ` · ${BLOOM_LABEL[question.bloom]}` : ''}
       {question.aiGenerated ? ' · AI-drafted, reviewed' : ''}
     </>
   );

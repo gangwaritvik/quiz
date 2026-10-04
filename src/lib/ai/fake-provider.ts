@@ -14,6 +14,9 @@ const word = () => randomBytes(3).toString('hex');
 
 export const fakeProvider: AiProvider = {
   name: 'fake',
+  searchesStore: true,
+  readsPdf: true,
+  maxContextChars: 100_000,
   embedModel: 'fake-bag-of-words',
 
   async createStore(displayName) {

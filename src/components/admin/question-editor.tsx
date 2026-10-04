@@ -31,6 +31,9 @@ import { ApiClientError, apiFetch } from '@/lib/client/api';
 import { sendUnlessRepeat } from '@/lib/client/confirm-similar';
 import { hasMath } from '@/lib/math';
 import {
+  BLOOM_LABEL,
+  BLOOM_ORDER,
+  type BloomValue,
   QUESTION_TYPE_HINT,
   QUESTION_TYPE_LABEL,
   QUESTION_TYPE_ORDER,
@@ -46,6 +49,7 @@ export interface QuestionRecord {
   text: string;
   type: QuestionTypeValue;
   difficulty: 'EASY' | 'MEDIUM' | 'HARD';
+  bloom?: BloomValue | null;
   marks: number;
   negativeMarks: number;
   explanation: string | null;
@@ -129,6 +133,7 @@ export function QuestionEditor({
   const [text, setText] = React.useState('');
   const [type, setType] = React.useState<QuestionTypeValue>('MCQ_SINGLE');
   const [difficulty, setDifficulty] = React.useState<'EASY' | 'MEDIUM' | 'HARD'>('MEDIUM');
+  const [bloom, setBloom] = React.useState<BloomValue | 'NONE'>('NONE');
   const [marks, setMarks] = React.useState('1');
   const [negativeMarks, setNegativeMarks] = React.useState('0');
   const [explanation, setExplanation] = React.useState('');
@@ -159,6 +164,7 @@ export function QuestionEditor({
       setText(question.text);
       setType(question.type);
       setDifficulty(question.difficulty);
+      setBloom(question.bloom ?? 'NONE');
       setMarks(String(question.marks));
       setNegativeMarks(String(question.negativeMarks));
       setExplanation(question.explanation ?? '');
@@ -195,6 +201,7 @@ export function QuestionEditor({
       setText('');
       setType('MCQ_SINGLE');
       setDifficulty('MEDIUM');
+      setBloom('NONE');
       setMarks('1');
       setNegativeMarks('0');
       setExplanation('');
@@ -286,6 +293,7 @@ export function QuestionEditor({
         text: text.trim(),
         type,
         difficulty,
+        bloom: bloom === 'NONE' ? null : bloom,
         marks: Number.parseInt(marks, 10) || 1,
         negativeMarks: Number.parseFloat(negativeMarks) || 0,
         explanation: explanation.trim(),
@@ -660,6 +668,23 @@ export function QuestionEditor({
                     <SelectItem value="EASY">Easy</SelectItem>
                     <SelectItem value="MEDIUM">Medium</SelectItem>
                     <SelectItem value="HARD">Hard</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="question-bloom">Thinking level</Label>
+                <Select value={bloom} onValueChange={(value) => setBloom(value as BloomValue | 'NONE')}>
+                  <SelectTrigger id="question-bloom">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NONE">Not set</SelectItem>
+                    {BLOOM_ORDER.map((level) => (
+                      <SelectItem key={level} value={level}>
+                        {BLOOM_LABEL[level]}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

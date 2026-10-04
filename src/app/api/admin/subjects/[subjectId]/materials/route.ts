@@ -7,7 +7,7 @@ import {
   saveMaterialFile,
 } from '@/lib/ai/materials';
 import { pdfPageCount } from '@/lib/ai/pdf-pages';
-import { aiEnabled } from '@/lib/ai/provider';
+import { aiEnabled, aiProviderName } from '@/lib/ai/provider';
 import { ApiError, assertSameOrigin, ok, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
@@ -63,6 +63,7 @@ export const GET = route(async (_request: Request, { params }: Params) => {
 
   return ok({
     enabled: aiEnabled(),
+    provider: aiProviderName(),
     materials: materials.map((material) => ({
       ...material,
       createdAt: material.createdAt.toISOString(),

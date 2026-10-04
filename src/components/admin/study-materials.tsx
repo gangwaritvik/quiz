@@ -68,6 +68,7 @@ interface Job {
 
 interface MaterialsResponse {
   enabled: boolean;
+  provider?: 'gemini' | 'fake' | 'ollama' | null;
   materials: Material[];
   jobs: Job[];
 }
@@ -128,7 +129,7 @@ export function StudyMaterials({
       <p className="mt-6 flex items-start gap-2 rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
         <Sparkles className="mt-0.5 size-4 shrink-0" aria-hidden />
         AI question generation is switched off. Add a free GEMINI_API_KEY to the server&apos;s
-        .env to turn it on.
+        .env, or set AI_PROVIDER=ollama to use a model on your own machine.
       </p>
     );
   }
@@ -305,8 +306,9 @@ export function StudyMaterials({
       ) : null}
 
       <p className="border-t border-border px-5 py-2.5 text-xs text-muted-foreground">
-        Uploaded files are processed by Google Gemini. On the free tier Google may use them to
-        improve its products, so upload course material, not private student data.
+        {data.provider === 'ollama'
+          ? 'Uploaded files are processed by the AI model running on your own server. Nothing is sent to an outside service.'
+          : 'Uploaded files are processed by Google Gemini. On the free tier Google may use them to improve its products, so upload course material, not private student data.'}
       </p>
 
       <AiGenerateDialog

@@ -10,7 +10,13 @@ import type { CheckAnswer, CheckItem } from '@/lib/ai/verification';
  * calling Google.
  */
 export interface AiProvider {
-  name: 'gemini' | 'fake';
+  name: 'gemini' | 'fake' | 'ollama';
+  /** Can search the material in a store of its own. If not, the job hands it the relevant text. */
+  readonly searchesStore: boolean;
+  /** Can read a PDF handed to it directly. If not, the job hands it the pages as text. */
+  readonly readsPdf: boolean;
+  /** Most characters of study material to put in one request. */
+  readonly maxContextChars: number;
   /** Which embedding model makes the vectors; cached vectors are only reused for the same one. */
   readonly embedModel: string;
   /** The subject's File Search store, created if it does not exist yet. */
@@ -54,8 +60,10 @@ export interface RetrievedSource {
 /** A failure worth showing to the teacher as it is. */
 export class AiError extends Error {}
 
-export function aiProviderName(): 'gemini' | 'fake' | null {
+export function aiProviderName(): 'gemini' | 'fake' | 'ollama' | null {
   if (process.env.AI_PROVIDER === 'fake') return 'fake';
+  // A model on the college's own machine: no key, no quota, nothing sent out.
+  if (process.env.AI_PROVIDER === 'ollama') return 'ollama';
   return process.env.GEMINI_API_KEY ? 'gemini' : null;
 }
 
@@ -68,5 +76,6 @@ export async function getProvider(): Promise<AiProvider> {
   const name = aiProviderName();
   if (name === 'fake') return (await import('@/lib/ai/fake-provider')).fakeProvider;
   if (name === 'gemini') return (await import('@/lib/ai/gemini')).geminiProvider;
+  if (name === 'ollama') return (await import('@/lib/ai/ollama')).ollamaProvider;
   throw new AiError('AI question generation is not set up. Add GEMINI_API_KEY to the server environment.');
 }

@@ -43,13 +43,14 @@ import { SkeletonRows } from '@/components/ui/skeleton';
 import { useApi } from '@/hooks/use-api';
 import { ApiClientError, apiFetch } from '@/lib/client/api';
 import { sendUnlessRepeat } from '@/lib/client/confirm-similar';
-import { QUESTION_TYPE_LABEL, type QuestionTypeValue } from '@/lib/question-types';
+import { BLOOM_LABEL, type BloomValue, QUESTION_TYPE_LABEL, type QuestionTypeValue } from '@/lib/question-types';
 import { cn } from '@/lib/utils';
 
 interface DraftPayload {
   text: string;
   type: QuestionTypeValue;
   difficulty: 'EASY' | 'MEDIUM' | 'HARD';
+  bloom?: BloomValue | null;
   marks: number;
   negativeMarks: number;
   explanation?: string;
@@ -163,6 +164,7 @@ export function AiDraftReview({ jobId }: { jobId: string }) {
         text: editing.payload.text,
         type: editing.payload.type,
         difficulty: editing.payload.difficulty,
+        bloom: editing.payload.bloom ?? null,
         marks: editing.payload.marks,
         negativeMarks: editing.payload.negativeMarks,
         explanation: editing.payload.explanation ?? null,
@@ -329,6 +331,7 @@ function DraftCard({
         <span className="tabular text-sm font-semibold text-muted-foreground">Q{index + 1}</span>
         <Badge variant="outline">{QUESTION_TYPE_LABEL[payload.type]}</Badge>
         <Badge variant="muted">{payload.difficulty.charAt(0) + payload.difficulty.slice(1).toLowerCase()}</Badge>
+        {payload.bloom ? <Badge variant="muted">{BLOOM_LABEL[payload.bloom]}</Badge> : null}
         <Badge variant="muted">
           {payload.marks} mark{payload.marks === 1 ? '' : 's'}
           {payload.negativeMarks > 0 ? ` · −${payload.negativeMarks}` : ''}
