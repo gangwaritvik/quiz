@@ -47,7 +47,7 @@ export function CameraCheck({
       {/* The frame stays dark in both themes: it stands in for the camera. */}
       <div
         className={cn(
-          'relative mt-4 aspect-[4/3] w-full max-w-md overflow-hidden rounded-lg border bg-navy-950',
+          'relative mt-4 aspect-[4/3] w-full max-w-md overflow-hidden rounded-lg border bg-gray-950',
           state === 'fail' ? 'border-danger' : 'border-transparent',
         )}
       >

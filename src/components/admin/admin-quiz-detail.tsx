@@ -701,7 +701,7 @@ function QuestionsTab({
         {questions.map((question, index) => (
           <li key={index} className="p-4 sm:p-5">
             <div className="flex items-start gap-3 sm:gap-4">
-              <span className="tabular w-6 shrink-0 pt-0.5 font-serif text-lg font-semibold leading-none text-muted-foreground">
+              <span className="tabular w-6 shrink-0 pt-0.5 text-lg font-semibold leading-none text-muted-foreground">
                 {index + 1}
               </span>
               <div className="min-w-0 flex-1">
@@ -821,7 +821,7 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="bg-card px-4 py-4 sm:px-5">
       <dt className="truncate text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="tabular mt-1.5 font-serif text-2xl font-semibold leading-none text-foreground">
+      <dd className="tabular mt-1.5 text-2xl font-semibold leading-none text-foreground">
         {value}
       </dd>
     </div>

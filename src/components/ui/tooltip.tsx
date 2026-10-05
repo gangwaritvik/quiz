@@ -83,7 +83,7 @@ function TooltipContent({ className, children, side = 'top', sideOffset = 6 }: T
       placement={side as Placement}
       offset={sideOffset}
       className={cn(
-        'z-50 max-w-xs rounded-md bg-navy-950 px-2.5 py-1.5 text-xs font-medium leading-snug text-white shadow-md',
+        'z-50 max-w-xs rounded-md bg-gray-900 px-2.5 py-1.5 text-xs font-medium leading-snug text-white shadow-md',
         'data-[entering]:animate-in data-[entering]:fade-in-0 data-[entering]:duration-fast data-[entering]:ease-standard',
         'data-[exiting]:animate-out data-[exiting]:fade-out-0 data-[exiting]:duration-fast data-[exiting]:ease-standard',
         className,

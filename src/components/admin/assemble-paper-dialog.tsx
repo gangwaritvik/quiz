@@ -1,6 +1,6 @@
 'use client';
 
-import { Dices, Wand2 } from 'lucide-react';
+import { Dices, ListChecks } from 'lucide-react';
 import * as React from 'react';
 
 import { ChipGroup } from '@/components/admin/ai-generate-dialog';
@@ -211,7 +211,7 @@ export function AssemblePaperDialog({
             Cancel
           </Button>
           <Button variant={proposal ? 'outline' : 'default'} loading={busy} disabled={!valid} onClick={() => void assemble()}>
-            {proposal ? <Dices /> : <Wand2 />}
+            {proposal ? <Dices /> : <ListChecks />}
             {proposal ? 'Pick again' : 'Build a paper'}
           </Button>
           {proposal && proposal.questions.length > 0 ? (

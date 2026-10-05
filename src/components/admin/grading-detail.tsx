@@ -225,7 +225,7 @@ function Fact({
       <dd
         className={cn(
           'tabular mt-1.5 text-foreground',
-          small ? 'text-sm font-medium' : 'font-serif text-2xl font-semibold leading-none',
+          small ? 'text-sm font-medium' : 'text-2xl font-semibold leading-none',
         )}
       >
         {value}

@@ -126,8 +126,7 @@ export function StudyMaterials({
 
   if (!data.enabled) {
     return (
-      <p className="mt-6 flex items-start gap-2 rounded-lg border border-dashed border-border px-4 py-3 text-sm text-muted-foreground">
-        <Sparkles className="mt-0.5 size-4 shrink-0" aria-hidden />
+      <p className="mt-6 rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
         AI question generation is switched off. Add a free GEMINI_API_KEY to the server&apos;s
         .env, or set AI_PROVIDER=ollama to use a model on your own machine.
       </p>
@@ -178,9 +177,8 @@ export function StudyMaterials({
     >
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
         <div className="min-w-0">
-          <h2 id="materials-heading" className="flex items-center gap-2 font-medium text-foreground">
-            <Sparkles className="size-4 text-primary" aria-hidden />
-            Generate questions from your study material
+          <h2 id="materials-heading" className="text-base font-semibold text-foreground">
+            Generate questions from study material
           </h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
             PDF, Word, PowerPoint or photos of notes. Scanned pages are read automatically. Every

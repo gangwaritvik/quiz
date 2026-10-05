@@ -57,7 +57,7 @@ export function StudentQuizList() {
     <PageShell>
       <PageHeader
         title="My Quizzes"
-        description="Everything your faculty has assigned to you. Open a quiz to read its rules and security requirements before you begin."
+        description="Quizzes assigned to you. Open one to read its rules before you start."
       />
 
       <Tabs value={filter} onValueChange={(value) => setPicked(value as Filter)} className="mt-8">
@@ -101,8 +101,8 @@ export function StudentQuizList() {
             />
           ) : (
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {filtered.map((quiz, index) => (
-                <QuizCard key={quiz.id} quiz={quiz} index={index} />
+              {filtered.map((quiz) => (
+                <QuizCard key={quiz.id} quiz={quiz} />
               ))}
             </div>
           )}

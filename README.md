@@ -390,19 +390,15 @@ All timestamps are `timestamptz` written from the server clock.
 
 ## Design
 
-Deep navy and indigo for identity and navigation; near-white surfaces so long
-question text reads comfortably for an hour. Semantic colour is reserved and
-never borrowed for decoration: **green** confirms, **amber** warns, **red**
-alerts. Tokens live in `src/app/globals.css`.
+Grey page, white panels and one blue for actions and links. Text is IBM Plex
+Sans; codes, timers and roll numbers use IBM Plex Mono. **Green** confirms,
+**amber** warns and **red** alerts; they are not used for decoration. Tokens
+live in `src/app/globals.css`, with a light and a dark theme, and every text
+colour pair is at least 4.5:1 in both. Charts carry direct labels and a "View as
+table" fallback, so no reading depends on colour alone.
 
-The platform is light-surface only by design — an examination portal used across
-shared labs benefits from one predictable appearance, and the chart palette in
-`components/admin/charts/chart-theme.ts` is validated against that white surface
-for colour-vision-deficiency separation and contrast. Charts carry direct labels
-and a "View as table" fallback, so no reading depends on colour alone.
-
-Framer Motion is used for page and card entrances, modals and toasts. **The exam
-interface is deliberately still** — nothing animates between questions.
+Motion is limited to dialogs, menus, toasts and reordering questions in the
+builder. The exam screen does not animate between questions.
 
 ### Accessibility
 

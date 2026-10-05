@@ -221,7 +221,7 @@ export function AssertionReasonStem({
           <p className="type-eyebrow">{item.label}</p>
           <MathText
             text={item.value}
-            className="mt-1 block font-serif text-lg leading-[1.75] text-foreground"
+            className="mt-1 block text-lg leading-[1.75] text-foreground"
           />
         </div>
       ))}

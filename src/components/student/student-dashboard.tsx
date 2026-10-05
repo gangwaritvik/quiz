@@ -8,13 +8,12 @@ import { ErrorState } from '@/components/shared/error-state';
 import type { IntegrityStatus } from '@/components/shared/integrity-badge';
 import { PageHeader, PageShell } from '@/components/shared/page-header';
 import { QuizCard, type QuizState, type StudentQuizSummary } from '@/components/student/quiz-card';
-import { CountUp } from '@/components/ui/count-up';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton, SkeletonCard } from '@/components/ui/skeleton';
 import { useApi } from '@/hooks/use-api';
-import { formatDateTime, formatRelativeDay, greeting, pluralize } from '@/lib/utils';
+import { formatDateTime, formatRelativeDay, pluralize } from '@/lib/utils';
 
 interface DashboardData {
   student: {
@@ -84,7 +83,6 @@ export function StudentDashboard() {
     { refreshInterval: 60_000 },
   );
 
-  const firstName = data?.student.name.split(' ')[0] ?? 'there';
   const stats = data?.stats;
 
   // Completed quizzes stay in the feed for the day; the header list only shows
@@ -105,15 +103,7 @@ export function StudentDashboard() {
   return (
     <PageShell>
       <PageHeader
-        title={
-          initialLoading ? (
-            <Skeleton className="h-8 w-64 max-w-full" />
-          ) : (
-            <>
-              {greeting()}, {firstName}
-            </>
-          )
-        }
+        title="Dashboard"
         description={
           initialLoading ? undefined : (
             <>
@@ -125,7 +115,7 @@ export function StudentDashboard() {
         }
       />
 
-      <section aria-labelledby="upcoming-heading" className="mt-10">
+      <section aria-labelledby="upcoming-heading" className="mt-8">
         <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
           <div className="min-w-0">
             <h2 id="upcoming-heading" className="type-heading">
@@ -166,14 +156,14 @@ export function StudentDashboard() {
           />
         ) : (
           <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {upcoming.map((quiz, index) => (
-              <QuizCard key={quiz.id} quiz={quiz} index={index} />
+            {upcoming.map((quiz) => (
+              <QuizCard key={quiz.id} quiz={quiz} />
             ))}
           </div>
         )}
       </section>
 
-      <section aria-labelledby="glance-heading" className="mt-12">
+      <section aria-labelledby="glance-heading" className="mt-10">
         <h2 id="glance-heading" className="type-heading">
           At a glance
         </h2>
@@ -228,14 +218,8 @@ function Stat({
   return (
     <div className="min-w-0 bg-card p-4 sm:p-5">
       <dt className="truncate text-xs font-medium text-muted-foreground">{label}</dt>
-      <dd className="tabular mt-1.5 font-serif text-2xl font-semibold leading-tight text-foreground">
-        {loading ? (
-          <Skeleton className="h-7 w-14" />
-        ) : typeof value === 'string' || typeof value === 'number' ? (
-          <CountUp value={value} />
-        ) : (
-          value
-        )}
+      <dd className="tabular mt-1 text-2xl font-semibold leading-tight text-foreground">
+        {loading ? <Skeleton className="h-7 w-14" /> : value}
       </dd>
       <dd className="mt-1.5 text-xs text-muted-foreground">
         {loading ? <Skeleton className="h-3 w-28" /> : hint}
@@ -255,7 +239,7 @@ function RecentResults({ results, loading }: { results: RecentResult[]; loading:
   if (!loading && results.length === 0) return null;
 
   return (
-    <section aria-labelledby="recent-results-heading" className="mt-12">
+    <section aria-labelledby="recent-results-heading" className="mt-10">
       <div className="flex items-end justify-between gap-4">
         <h2 id="recent-results-heading" className="type-heading">
           Recent results
@@ -292,7 +276,7 @@ function RecentResults({ results, loading }: { results: RecentResult[]; loading:
                 </div>
 
                 {result.released && typeof result.percentage === 'number' ? (
-                  <span className="tabular shrink-0 text-right font-serif text-lg font-semibold text-foreground">
+                  <span className="tabular shrink-0 text-right text-lg font-semibold text-foreground">
                     {result.percentage}%
                     {result.awaitingMarking ? (
                       <span className="block font-sans text-xs font-medium text-muted-foreground">

@@ -997,7 +997,7 @@ export function ExamClient({ attemptId }: { attemptId: string }) {
         <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-3 px-4 sm:gap-4 sm:px-6">
           <Logo size="sm" withWordmark={false} />
           <div className="min-w-0 flex-1 border-l border-border pl-3 sm:pl-4">
-            <p className="truncate font-serif text-base font-semibold leading-tight">
+            <p className="truncate text-base font-semibold leading-tight">
               {state.quiz.title}
             </p>
             <p className="tabular mt-0.5 truncate text-xs text-muted-foreground">
@@ -1350,8 +1350,7 @@ const GATE_TONES = {
 } as const;
 
 /**
- * A blocking screen over the paper. Opaque navy (the design system's lock-screen
- * surface, identical in both themes) plus blur, so no question text shows
+ * A blocking screen over the paper. Fully opaque, so no question text shows
  * through; it appears instantly rather than fading in.
  */
 function ExamGate({
@@ -1373,7 +1372,7 @@ function ExamGate({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/95 p-6 backdrop-blur-xl"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950 p-6"
       role="alertdialog"
       aria-labelledby={titleId}
       aria-describedby={descriptionId}

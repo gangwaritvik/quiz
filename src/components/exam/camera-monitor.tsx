@@ -206,8 +206,8 @@ export function CameraMonitor({
     (!microphoneEnabled || microphoneActive) &&
     (!screenShareEnabled || screenShareActive);
 
-  // The preview is a camera frame: a fixed dark surface (navy-950) in both
-  // themes, so its text is white rather than a theme token.
+  // The preview is a camera frame: dark in both themes, so its text is white
+  // rather than a theme token.
   return (
     <div
       className={cn(
@@ -246,7 +246,7 @@ export function CameraMonitor({
       </button>
 
       {!collapsed && (enabled || screenShareEnabled) ? (
-        <div className="flex flex-col bg-navy-950">
+        <div className="flex flex-col bg-gray-950">
           {enabled && screenShareEnabled && showCameraVideo && showScreenVideo ? (
             <div className="flex border-b border-white/10 text-xs font-medium">
               <button

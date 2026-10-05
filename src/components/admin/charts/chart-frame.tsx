@@ -30,8 +30,8 @@ interface ChartFrameProps {
 }
 
 /**
- * One sheet per dashboard panel: a sans heading, a hairline, the content, and
- * an optional ruled footer. Every overview panel uses it so they align.
+ * One panel per chart: heading, content and an optional footer. Every overview
+ * panel uses it so they align.
  */
 export function ChartFrame({
   title,
@@ -94,7 +94,7 @@ export function ChartFrame({
 export function ChartMetric({ value, label }: { value: React.ReactNode; label: string }) {
   return (
     <div className="text-right">
-      <p className="tabular font-serif text-2xl font-semibold leading-none text-foreground">
+      <p className="tabular text-2xl font-semibold leading-none text-foreground">
         {value}
       </p>
       <p className="type-eyebrow mt-1.5">{label}</p>

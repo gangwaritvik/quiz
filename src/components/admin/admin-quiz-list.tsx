@@ -182,7 +182,7 @@ export function AdminQuizList() {
     <PageShell>
       <PageHeader
         title="Quizzes"
-        description="Every examination you have authored, with its security policy and assignment reach."
+        description="Quizzes you have created."
         actions={
           <Button asChild>
             <Link href="/admin/quizzes/new">
@@ -240,7 +240,7 @@ export function AdminQuizList() {
         </div>
       ) : (
         <>
-          {/* Desktop: a ruled ledger. */}
+          {/* Desktop: a table. */}
           <div className="mt-6 hidden rounded-lg border border-border bg-card md:block">
             <Table>
               <TableHeader>

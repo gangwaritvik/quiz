@@ -9,19 +9,18 @@ interface PageHeaderProps {
   className?: string;
 }
 
-/** Page title in the serif, a measure-limited description, actions on the right. */
 export function PageHeader({ title, description, actions, className }: PageHeaderProps) {
   return (
     <div
       className={cn(
-        'flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-end sm:justify-between',
+        'flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between',
         className,
       )}
     >
       <div className="min-w-0">
         <h1 className="type-title text-foreground">{title}</h1>
         {description ? (
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">{description}</p>
+          <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p>
         ) : null}
       </div>
       {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
@@ -38,7 +37,7 @@ export function PageShell({
   className?: string;
 }) {
   return (
-    <div className={cn('page-enter mx-auto w-full max-w-7xl px-5 py-8 sm:px-8 sm:py-12', className)}>
+    <div className={cn('mx-auto w-full max-w-7xl px-5 py-6 sm:px-8 sm:py-8', className)}>
       {children}
     </div>
   );

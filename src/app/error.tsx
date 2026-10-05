@@ -28,22 +28,21 @@ export default function GlobalError({
 
       <main id="main" className="flex flex-1 items-center px-5 pb-24 pt-8 sm:px-8">
         <div className="mx-auto w-full max-w-xl">
-          <p className="flex items-center gap-2 text-2xs font-semibold uppercase tracking-[0.08em] text-danger">
-            <AlertTriangle className="size-4" aria-hidden />
-            Unexpected error
-          </p>
-          <h1 className="type-display mt-4">Something went wrong</h1>
-          <p className="mt-4 max-w-prose text-base leading-relaxed text-muted-foreground">
+          <h1 className="type-title flex items-center gap-2">
+            <AlertTriangle className="size-6 shrink-0 text-danger" aria-hidden />
+            Something went wrong
+          </h1>
+          <p className="mt-2 max-w-prose text-base leading-relaxed text-muted-foreground">
             We hit an unexpected error. If you were in the middle of an examination, your answers
             were saved on the server — reopen the exam to continue where you left off.
           </p>
 
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Button size="lg" onClick={reset}>
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <Button onClick={reset}>
               <RefreshCw aria-hidden />
               Try again
             </Button>
-            <Button asChild size="lg" variant="outline">
+            <Button asChild variant="outline">
               <Link href="/">Back to dashboard</Link>
             </Button>
           </div>

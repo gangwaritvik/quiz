@@ -32,12 +32,8 @@ export default async function StudentLayout({ children }: { children: React.Reac
 
       <footer className="border-t border-border">
         <div className="mx-auto flex max-w-7xl flex-col gap-1 px-5 py-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:px-8">
-          <p>
-            <span className="font-serif text-sm font-semibold text-foreground">SecureQuiz</span>
-            <span aria-hidden> · </span>
-            College Examination Platform
-          </p>
-          <p>All examination activity is logged for academic integrity review.</p>
+          <p>SecureQuiz</p>
+          <p>Exam activity is logged for integrity review.</p>
         </div>
       </footer>
     </div>

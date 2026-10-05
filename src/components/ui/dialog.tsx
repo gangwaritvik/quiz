@@ -107,7 +107,7 @@ DialogClose.displayName = 'DialogClose';
 
 /** Shared overlay + panel styling; AlertDialog uses the same surface. */
 const overlayBase =
-  'group/overlay fixed inset-0 z-50 flex min-h-full items-center justify-center overflow-y-auto bg-navy-950/40 p-4 backdrop-blur-[2px]';
+  'group/overlay fixed inset-0 z-50 flex min-h-full items-center justify-center overflow-y-auto bg-gray-950/50 p-4';
 const overlayClasses = cn(
   overlayBase,
   'data-[entering]:animate-in data-[entering]:fade-in-0 data-[entering]:duration-base data-[entering]:ease-standard',
@@ -222,7 +222,7 @@ const DialogTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HT
     <Heading
       ref={ref}
       slot="title"
-      className={cn('font-serif text-xl font-semibold leading-snug text-foreground', className)}
+      className={cn('text-lg font-semibold leading-snug text-foreground', className)}
       {...props}
     />
   ),

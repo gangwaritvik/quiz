@@ -197,7 +197,7 @@ export function AdminShell({ user, children }: AdminShellProps) {
   );
 
   return (
-    <div className="console-canvas flex min-h-dvh">
+    <div className="flex min-h-dvh">
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-border bg-card lg:flex">
         <div className="flex h-16 shrink-0 items-center border-b border-border px-5">
           <Link href="/admin" className="rounded-md" aria-label="SecureQuiz admin home">
@@ -205,15 +205,13 @@ export function AdminShell({ user, children }: AdminShellProps) {
           </Link>
         </div>
 
-        {/* "Faculty console" now names the landmark instead of stacking a
-            second eyebrow above the first group label. */}
         <nav aria-label="Faculty console" className="scrollbar-slim flex-1 overflow-y-auto px-3 py-5">
           {navList('nav-side')}
         </nav>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col lg:pl-60">
-        <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <header className="sticky top-0 z-30 border-b border-border bg-card">
           <div className="flex h-16 items-center gap-2 px-3 sm:gap-3 sm:px-6 lg:px-8">
             <Button
               variant="ghost"
@@ -336,7 +334,7 @@ function NotificationBell({
           icon: ShieldAlert,
           tone: 'text-warning',
           title: `${flagged} attempt${flagged === 1 ? '' : 's'} flagged`,
-          detail: 'Counts to look at in context, not conclusions.',
+          detail: 'Waiting for someone to review them.',
         }
       : null,
   ].filter(Boolean) as Array<{

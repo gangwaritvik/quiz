@@ -296,8 +296,7 @@ export function IntegrityEventsChart({
       toolbar={!loading && rows.length > 0 ? <ChartMetric value={total} label="Signals" /> : null}
       footer={
         <p className="text-xs leading-relaxed text-muted-foreground">
-          Counts, not conclusions. Every signal has an innocent explanation and requires human
-          review.
+          Counts only. Each signal needs a person to review it.
         </p>
       }
     >

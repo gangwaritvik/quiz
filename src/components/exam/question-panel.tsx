@@ -171,7 +171,7 @@ export function QuestionPanel({
           <MathText
             as="p"
             text={question.text}
-            className="font-serif text-lg leading-[1.75] text-foreground sm:text-[1.1875rem]"
+            className="text-lg leading-[1.75] text-foreground sm:text-[1.1875rem]"
           />
 
           {question.imageUrl ? (

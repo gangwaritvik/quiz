@@ -251,7 +251,7 @@ export function IntegrityReportDetail({ attemptId }: { attemptId: string }) {
               Integrity score
             </h2>
             <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
-              <p className="tabular font-serif text-4xl font-semibold leading-none text-foreground">
+              <p className="tabular text-3xl font-semibold leading-none text-foreground">
                 {integrity.score}
                 <span className="ml-1 font-sans text-base font-normal text-muted-foreground">
                   / 100
@@ -263,10 +263,9 @@ export function IntegrityReportDetail({ attemptId }: { attemptId: string }) {
 
             {/* The caveat sits beside the number, not in a footnote. */}
             <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-              <span className="font-medium text-foreground">This score is not a finding.</span> It
-              summarises automated signals, each of which has innocent explanations — a
-              notification stealing focus, unstable campus Wi-Fi, a laptop lid closing. Read the
-              timeline and speak with the student before drawing any conclusion.
+              Automated signals only. Each can have an ordinary cause, such as a notification
+              taking focus or a dropped connection, so read the timeline and talk to the student
+              before deciding anything.
             </p>
           </section>
 
@@ -399,11 +398,8 @@ export function IntegrityReportDetail({ attemptId }: { attemptId: string }) {
               </p>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              Events that belong together are grouped, because one tab switch records several.
-              Nothing is left out: open an incident to see every event in it. Exam start, submission
-              and uploads are listed as routine entries and are not counted as incidents. Times are
-              recorded by the server, not the student&apos;s browser; the + figure is time since
-              the exam started.
+              Related events are grouped; open one to see each event in it. Times come from the
+              server, and + is the time since the exam started.
             </p>
 
             {timeline.length === 0 ? (
@@ -491,7 +487,7 @@ export function IntegrityReportDetail({ attemptId }: { attemptId: string }) {
                               {!info ? (
                                 <span
                                   className={cn(
-                                    'text-2xs font-semibold uppercase tracking-wide',
+                                    'text-xs font-medium',
                                     severity.text,
                                   )}
                                 >
@@ -543,7 +539,7 @@ export function IntegrityReportDetail({ attemptId }: { attemptId: string }) {
                                         {!rawInfo ? (
                                           <span
                                             className={cn(
-                                              'text-2xs font-semibold uppercase tracking-wide',
+                                              'text-xs font-medium',
                                               rawSeverity.text,
                                             )}
                                           >

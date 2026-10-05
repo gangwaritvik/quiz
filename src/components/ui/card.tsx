@@ -2,7 +2,7 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
-/* A sheet on the page: white, hairline edge, no shadow. Avoid nesting cards. */
+/* White panel, border, no shadow. Avoid nesting cards. */
 const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
   ({ className, ...props }, ref) => (
     <div

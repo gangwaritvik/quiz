@@ -191,7 +191,7 @@ function IntegrityReportsView() {
     <PageShell>
       <PageHeader
         title="Integrity reports"
-        description="A queue of attempts worth a closer look, highest risk first by default."
+        description="Attempts with integrity signals, highest risk first."
       />
 
       <aside
@@ -200,17 +200,14 @@ function IntegrityReportsView() {
       >
         <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
         <p className="text-sm leading-relaxed text-muted-foreground">
-          <span className="font-medium text-foreground">How to read these scores.</span> The
-          integrity engine counts technical events — losing focus, leaving fullscreen, clipboard
-          use, dropped connections. Each has ordinary explanations, and the score is designed to
-          prompt a human look, not to reach a conclusion. Open the timeline before deciding
-          anything, and treat a low score as a question rather than an answer.
+          The score counts technical events such as losing focus, leaving fullscreen, clipboard
+          use and dropped connections. Each can have an ordinary explanation, so read the
+          timeline before deciding anything.
         </p>
       </aside>
 
-      <section aria-label="Summary" className="mt-8 grid gap-4 sm:grid-cols-3">
+      <section aria-label="Summary" className="mt-6 grid gap-4 sm:grid-cols-3">
         <StatCard
-          index={0}
           label="Normal"
           value={data?.summary.normal ?? 0}
           hint="No follow-up suggested"
@@ -219,7 +216,6 @@ function IntegrityReportsView() {
           loading={initialLoading}
         />
         <StatCard
-          index={1}
           label="Review recommended"
           value={data?.summary.review ?? 0}
           hint="Worth reading the timeline"
@@ -228,10 +224,9 @@ function IntegrityReportsView() {
           loading={initialLoading}
         />
         <StatCard
-          index={2}
           label="High risk"
           value={data?.summary.highRisk ?? 0}
-          hint="Several strong signals recorded — still needs a person"
+          hint="Several strong signals; still needs a person to review"
           icon={AlertOctagon}
           tone="warning"
           loading={initialLoading}

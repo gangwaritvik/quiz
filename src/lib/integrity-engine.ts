@@ -8,8 +8,8 @@ import { EVENT_LABELS_CLIENT } from './event-labels';
  * The Integrity Engine.
  *
  * It produces a *risk indicator for human review*, never a verdict. Every
- * signal it consumes has an innocent explanation â€” a notification stealing
- * focus, flaky campus Wi-Fi, a laptop lid closing â€” so penalties are
+ * signal it consumes has an innocent explanation — a notification stealing
+ * focus, flaky campus Wi-Fi, a laptop lid closing — so penalties are
  * deliberately gentle for the first occurrence and grow with repetition.
  */
 

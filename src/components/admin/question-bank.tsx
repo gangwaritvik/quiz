@@ -187,11 +187,11 @@ function SubjectPicker({
     <PageShell>
       <PageHeader
         title="Question bank"
-        description="Choose a subject to see its questions. Quizzes draw their papers from here at exam time."
+        description="Choose a subject to see its questions."
       />
 
       {subjects.length === 0 ? (
-        <div className="mt-8">
+        <div className="mt-6">
           <EmptyState
             icon={BookOpen}
             title="No subjects yet"
@@ -199,77 +199,35 @@ function SubjectPicker({
           />
         </div>
       ) : (
-        <ul className="stagger mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="mt-6 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
           {subjects.map((subject) => (
             <li key={subject.id}>
               <button
                 type="button"
                 onClick={() => onPick(subject.id)}
-                className="group flex h-full w-full flex-col rounded-lg border border-border bg-card p-5 text-left transition-colors duration-fast ease-standard hover:border-primary/40 hover:bg-accent/30"
+                className="grid w-full gap-x-6 gap-y-1 px-4 py-3.5 text-left transition-colors duration-fast ease-standard hover:bg-accent/60 sm:grid-cols-[minmax(0,1fr)_8rem_minmax(0,13rem)_1rem] sm:items-center"
               >
-                <span className="type-eyebrow">{subject.code}</span>
-                <span className="mt-1 break-words font-serif text-xl font-semibold text-foreground">
-                  {subject.name}
-                </span>
-
-                <span className="tabular mt-4 flex items-baseline gap-1.5">
-                  <span className="font-serif text-3xl font-semibold leading-none text-foreground">
-                    {subject.pool.total}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    question{subject.pool.total === 1 ? '' : 's'}
+                <span className="min-w-0">
+                  <span className="block break-words font-medium text-foreground">{subject.name}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {subject.code} · {subject.topics.length} topic{subject.topics.length === 1 ? '' : 's'}
                   </span>
                 </span>
-
-                <DifficultyMix pool={subject.pool} />
-
-                <span className="mt-4 flex items-center justify-between gap-2 text-sm text-muted-foreground">
-                  {subject.topics.length} topic{subject.topics.length === 1 ? '' : 's'}
-                  <span className="inline-flex items-center gap-1 font-medium text-primary">
-                    Open
-                    <ChevronRight
-                      className="size-4 transition-transform duration-fast ease-standard group-hover:translate-x-0.5"
-                      aria-hidden
-                    />
-                  </span>
+                <span className="tabular text-sm text-foreground">
+                  {subject.pool.total} question{subject.pool.total === 1 ? '' : 's'}
                 </span>
+                <span className="tabular text-sm text-muted-foreground">
+                  {subject.pool.total === 0
+                    ? 'Nothing added yet'
+                    : `${subject.pool.EASY} easy · ${subject.pool.MEDIUM} medium · ${subject.pool.HARD} hard`}
+                </span>
+                <ChevronRight className="hidden size-4 text-muted-foreground sm:block" aria-hidden />
               </button>
             </li>
           ))}
         </ul>
       )}
     </PageShell>
-  );
-}
-
-/** Easy / medium / hard as one proportional bar with a plain-text legend. */
-function DifficultyMix({ pool }: { pool: SubjectMeta['pool'] }) {
-  if (pool.total === 0) {
-    return <span className="mt-3 text-sm text-muted-foreground">Nothing added yet</span>;
-  }
-  const parts = [
-    { key: 'EASY', label: 'Easy', count: pool.EASY, className: 'bg-success' },
-    { key: 'MEDIUM', label: 'Medium', count: pool.MEDIUM, className: 'bg-primary' },
-    { key: 'HARD', label: 'Hard', count: pool.HARD, className: 'bg-warning' },
-  ] as const;
-  return (
-    <>
-      <span
-        aria-hidden
-        className="mt-3 flex h-1.5 w-full overflow-hidden rounded-full bg-muted"
-      >
-        {parts.map((part) => (
-          <span
-            key={part.key}
-            className={part.className}
-            style={{ width: `${(part.count / pool.total) * 100}%` }}
-          />
-        ))}
-      </span>
-      <span className="tabular mt-2 text-xs text-muted-foreground">
-        {parts.map((part) => `${part.count} ${part.label.toLowerCase()}`).join(' · ')}
-      </span>
-    </>
   );
 }
 
@@ -395,7 +353,7 @@ function SubjectBank({
 
       <PageHeader
         title={subject.name}
-        description={`${subject.code} · ${subject.pool.total} question${subject.pool.total === 1 ? '' : 's'} in the bank. Quizzes draw their papers from here at exam time.`}
+        description={`${subject.code} · ${subject.pool.total} question${subject.pool.total === 1 ? '' : 's'}`}
         actions={
           <>
             <Button variant="outline" onClick={() => setDuplicatesOpen(true)}>
@@ -552,7 +510,7 @@ function SubjectBank({
                 ) : null}
               </div>
 
-              {/* Desktop: a ruled ledger. */}
+              {/* Desktop: a table. */}
               <div className="mt-4 hidden rounded-lg border border-border bg-card md:block">
                 <Table>
                   <TableHeader>
@@ -606,7 +564,7 @@ function SubjectBank({
               </div>
 
               {/* Mobile: the same facts as a list, nothing to scroll sideways. */}
-              <ul className="stagger mt-4 divide-y divide-border rounded-lg border border-border bg-card md:hidden">
+              <ul className="mt-4 divide-y divide-border rounded-lg border border-border bg-card md:hidden">
                 {questions.map((question) => (
                   <li key={question.id} className="p-4">
                     <MathText

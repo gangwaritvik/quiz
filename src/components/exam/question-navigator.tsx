@@ -49,7 +49,7 @@ const STATUS_CLASSES = {
  * Answered is a fill plus a check; marked-for-review is a separate corner flag,
  * so a flagged question still shows whether it has an answer. Both are in the
  * button's accessible name and the legend, so nothing depends on colour alone.
- * The current question gets an inset ink border and an underlined number,
+ * The current question gets an inset dark border and an underlined number,
  * kept distinct from the focus outline (which sits outside the cell).
  */
 export function QuestionNavigator({

@@ -6,7 +6,6 @@ import {
   cn,
   formatDuration,
   formatRelativeDay,
-  greeting,
   initials,
   pluralize,
   relativeTime,
@@ -54,16 +53,6 @@ describe('initials', () => {
     assert.equal(initials('  asha   kumar  rao '), 'AK');
     assert.equal(initials('Madonna'), 'M');
     assert.equal(initials(''), '');
-  });
-});
-
-describe('greeting', () => {
-  test('changes at 12:00 and 17:00 local time', () => {
-    assert.equal(greeting(new Date(2026, 0, 1, 0, 0)), 'Good morning');
-    assert.equal(greeting(new Date(2026, 0, 1, 11, 59)), 'Good morning');
-    assert.equal(greeting(new Date(2026, 0, 1, 12, 0)), 'Good afternoon');
-    assert.equal(greeting(new Date(2026, 0, 1, 16, 59)), 'Good afternoon');
-    assert.equal(greeting(new Date(2026, 0, 1, 17, 0)), 'Good evening');
   });
 });
 

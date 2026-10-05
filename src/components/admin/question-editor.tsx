@@ -781,7 +781,7 @@ export function QuestionEditor({
   );
 }
 
-/** A titled group inside the editor; hairlines, not boxes, separate them. */
+/** A titled group inside the editor, separated from the next by a border. */
 function EditorSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-4 border-t border-border pt-6 first:border-t-0 first:pt-0">

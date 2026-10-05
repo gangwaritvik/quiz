@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, ArrowLeft, Check, Library, PenLine, Save, Send, Users, Wand2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Check, Library, PenLine, Save, Send, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
@@ -366,7 +366,6 @@ export function CreateQuizForm() {
           >
             <div className={activeSection === 'content' ? 'space-y-12' : 'hidden'}>
               <Section
-                number={1}
                 title="How the paper is built"
                 description="Choose this first. It decides what the rest of the form asks for."
               >
@@ -388,7 +387,7 @@ export function CreateQuizForm() {
                 </div>
               </Section>
 
-              <Section number={2} title="Examination details">
+              <Section title="Examination details">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field
                     className="sm:col-span-2"
@@ -469,14 +468,13 @@ export function CreateQuizForm() {
 
               {fixedMode ? (
                 <Section
-                  number={3}
                   title="Questions"
                   description="Everyone sits these, in this order — unless you shuffle them under security settings."
                 >
-                  <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border px-4 py-3">
+                  <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/40 px-4 py-3">
                     <p className="min-w-0 flex-1 text-sm text-muted-foreground">
-                      Rather than writing every question, build the paper from the question bank: the
-                      mix you choose, spread over the topics, with no repeats.
+                      Or pick questions from the question bank by difficulty and topic, with no
+                      repeats.
                     </p>
                     <Button
                       type="button"
@@ -485,7 +483,7 @@ export function CreateQuizForm() {
                       title={subject ? undefined : 'Choose a subject first'}
                       onClick={() => setAssembleOpen(true)}
                     >
-                      <Wand2 />
+                      <Library />
                       Build from the bank
                     </Button>
                   </div>
@@ -506,7 +504,6 @@ export function CreateQuizForm() {
                 </Section>
               ) : (
                 <Section
-                  number={3}
                   title="Question pool"
                   description="The server selects this many questions per student from the pool below."
                 >
@@ -626,7 +623,7 @@ export function CreateQuizForm() {
                 </Section>
               )}
 
-              <Section number={4} title="Examination window">
+              <Section title="Examination window">
                 <div className="grid gap-5 sm:grid-cols-2">
                   <Field label="Opens" required htmlFor="startsAt">
                     <Input
@@ -909,14 +906,11 @@ function ModeCard({
   );
 }
 
-/** A numbered form section: serif title on a hairline, no surrounding box. */
 function Section({
-  number,
   title,
   description,
   children,
 }: {
-  number?: number;
   title: string;
   description?: string;
   children: React.ReactNode;
@@ -925,15 +919,7 @@ function Section({
   return (
     <section aria-labelledby={id}>
       <div className="border-b border-border pb-3">
-        <h2 id={id} className="type-heading flex items-baseline gap-3">
-          {number ? (
-            <span
-              className="tabular font-sans text-sm font-semibold text-muted-foreground"
-              aria-hidden
-            >
-              {String(number).padStart(2, '0')}
-            </span>
-          ) : null}
+        <h2 id={id} className="type-heading">
           {title}
         </h2>
         {description ? (

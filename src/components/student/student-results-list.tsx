@@ -6,7 +6,6 @@ import * as React from 'react';
 
 import { ErrorState } from '@/components/shared/error-state';
 import { PageHeader, PageShell } from '@/components/shared/page-header';
-import { CountUp } from '@/components/ui/count-up';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -87,9 +86,7 @@ export function StudentResultsList() {
           {average !== null ? (
             <section aria-label="Average" className="mt-8 max-w-md">
               <p className="text-sm text-muted-foreground">Average across released results</p>
-              <p className="tabular mt-1 font-serif text-4xl font-semibold text-foreground">
-                <CountUp value={`${average}%`} />
-              </p>
+              <p className="tabular mt-1 text-3xl font-semibold text-foreground">{average}%</p>
               <Progress value={average} aria-label="Average score" className="mt-3 h-1.5" />
               <p className="mt-2 text-xs text-muted-foreground">
                 {pluralize(final.length, 'final result')} counted
@@ -99,7 +96,7 @@ export function StudentResultsList() {
             </section>
           ) : null}
 
-          <ul className="stagger mt-8 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+          <ul className="mt-8 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
             {released.map((attempt) => (
               <li key={attempt.id}>
                 <Link
@@ -117,7 +114,7 @@ export function StudentResultsList() {
                   </div>
 
                   <div className="shrink-0 text-right">
-                    <p className="tabular font-serif text-2xl font-semibold leading-none text-foreground">
+                    <p className="tabular text-xl font-semibold leading-none text-foreground">
                       {attempt.percentage}%
                     </p>
                     {attempt.awaitingMarking ? (

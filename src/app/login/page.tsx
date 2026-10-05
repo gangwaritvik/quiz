@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { Suspense } from 'react';
 
 import { LoginPanel } from '@/components/auth/login-panel';
-import { LoginShowcase } from '@/components/auth/login-showcase';
+import { Logo } from '@/components/brand/logo';
 import { Skeleton } from '@/components/ui/skeleton';
 
 export const metadata: Metadata = {
@@ -12,17 +12,16 @@ export const metadata: Metadata = {
 
 export default function LoginPage() {
   return (
-    <div className="grid min-h-dvh lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-      <LoginShowcase />
-
-      <main
-        id="main"
-        className="flex min-w-0 flex-col items-center px-5 py-10 sm:px-8 sm:py-16 lg:justify-center lg:py-12"
-      >
-        <Suspense fallback={<Skeleton className="h-[420px] w-full max-w-sm rounded-lg" />}>
+    <main
+      id="main"
+      className="flex min-h-dvh flex-col items-center px-5 py-10 sm:justify-center sm:py-16"
+    >
+      <Logo size="md" className="mb-6" />
+      <div className="w-full max-w-sm rounded-lg border border-border bg-card p-6 sm:p-8">
+        <Suspense fallback={<Skeleton className="h-72 w-full" />}>
           <LoginPanel />
         </Suspense>
-      </main>
-    </div>
+      </div>
+    </main>
   );
 }

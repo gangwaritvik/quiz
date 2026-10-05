@@ -1,20 +1,11 @@
 'use client';
 
-import {
-  AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
-  Info,
-  Loader2,
-  MailCheck,
-  ShieldCheck,
-} from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Loader2 } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import * as React from 'react';
 import { toast } from 'sonner';
 
 import { OtpInput } from '@/components/auth/otp-input';
-import { Logo } from '@/components/brand/logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -34,9 +25,6 @@ interface VerifyResponse {
   role: 'STUDENT' | 'ADMIN';
   redirectTo: string;
 }
-
-// A CSS fade on mount: it never gates which step is shown.
-const STEP_ENTER = 'animate-in fade-in-0 slide-in-from-bottom-1 duration-base ease-standard';
 
 export function LoginPanel() {
   const router = useRouter();
@@ -150,32 +138,24 @@ export function LoginPanel() {
   const countdown = `${Math.floor(expiresIn / 60)}:${(expiresIn % 60).toString().padStart(2, '0')}`;
 
   return (
-    // No card: the form sits directly on the page, set like a printed form.
-    <div className="flex w-full max-w-sm flex-1 flex-col lg:flex-none">
-      {/* The mark repeats here because the showcase panel is hidden on mobile. */}
-      <div className="mb-12 lg:hidden">
-        <Logo size="sm" />
-      </div>
-
+    <div className="w-full">
       {sessionExpired && step === 'identifier' ? (
-        <div className="mb-8 flex items-start gap-2.5 rounded-md border border-warning/25 bg-warning-subtle px-3.5 py-3 text-sm text-warning">
+        <div className="mb-6 flex items-start gap-2.5 rounded-md border border-warning/25 bg-warning-subtle px-3.5 py-3 text-sm text-warning">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
-          <p>Your session expired for security. Please sign in again to continue.</p>
+          <p>Your session expired. Sign in again to continue.</p>
         </div>
       ) : null}
 
-      <div className="mb-12">
+      <div>
           {step === 'identifier' ? (
-            <div key="identifier" className={STEP_ENTER}>
-              <p className="type-eyebrow">Step 1 of 2</p>
-              <h1 className="type-title mt-2">College sign in</h1>
-              <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:text-base">
-                We&apos;ll send a one-time code to your registered college address. No password
-                needed.
+            <div key="identifier">
+              <h1 className="text-xl font-semibold">Sign in</h1>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                Use your student ID or college email. We&apos;ll send you a one-time code.
               </p>
 
               <form
-                className="mt-8 space-y-5"
+                className="mt-6 space-y-5"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void requestOtp();
@@ -207,40 +187,32 @@ export function LoginPanel() {
                     </p>
                   ) : (
                     <p id="identifier-hint" className="text-xs text-muted-foreground">
-                      Faculty accounts sign in here too, using their college email.
+                      Faculty sign in with their college email.
                     </p>
                   )}
                 </div>
 
-                <Button type="submit" size="lg" className="w-full" loading={sending}>
+                <Button type="submit" className="w-full" loading={sending}>
                   {sending ? 'Sending code…' : 'Send OTP'}
-                  {sending ? null : <ArrowRight aria-hidden />}
                 </Button>
               </form>
             </div>
           ) : (
-            <div key="otp" className={STEP_ENTER}>
-              <p className="type-eyebrow">Step 2 of 2</p>
-              <h1 className="type-title mt-2">Enter your code</h1>
+            <div key="otp">
+              <h1 className="text-xl font-semibold">Enter your code</h1>
               {/* The identifier as typed, never the server's view of it: echoing
                 the user's own input tells an attacker nothing about whether
                 the account exists. */}
-              <p className="mt-3 flex items-start gap-2 text-sm leading-relaxed text-muted-foreground sm:text-base">
-                <MailCheck className="mt-[0.2em] size-4 shrink-0 text-success" aria-hidden />
-                <span className="min-w-0 [overflow-wrap:anywhere]">
-                  Sent to <span className="font-medium text-foreground">{sentTo}</span>
-                </span>
+              <p className="mt-1.5 text-sm text-muted-foreground [overflow-wrap:anywhere]">
+                Sent to <span className="font-medium text-foreground">{sentTo}</span>
               </p>
 
               {devCode ? (
                 // Dashed edge and its own label so it can never be mistaken for
                 // part of the production sign-in flow.
-                <div className="mt-6 rounded-md border border-dashed border-warning/60 bg-warning-subtle px-4 py-3.5">
-                  <p className="flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-[0.08em] text-warning">
-                    <Info className="size-3.5" aria-hidden />
-                    Development OTP mode
-                  </p>
-                  <p className="mt-2 text-sm text-warning">
+                <div className="mt-5 rounded-md border border-dashed border-warning/60 bg-warning-subtle px-4 py-3">
+                  <p className="text-xs font-semibold text-warning">Development mode</p>
+                  <p className="mt-1 text-sm text-warning">
                     Your code is{' '}
                     <span className="tabular font-mono text-lg font-semibold tracking-[0.2em]">
                       {devCode}
@@ -254,7 +226,7 @@ export function LoginPanel() {
               ) : null}
 
               <form
-                className="mt-8 space-y-5"
+                className="mt-6 space-y-5"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void verify();
@@ -316,12 +288,11 @@ export function LoginPanel() {
 
                 <Button
                   type="submit"
-                  size="lg"
                   className="w-full"
                   loading={verifying}
                   disabled={lockedOut || code.length !== 6}
                 >
-                  {verifying ? 'Verifying…' : 'Verify & continue'}
+                  {verifying ? 'Verifying…' : 'Verify and sign in'}
                 </Button>
 
                 <Button
@@ -337,11 +308,6 @@ export function LoginPanel() {
             </div>
           )}
       </div>
-
-      <p className="mt-auto flex items-start gap-2 border-t border-border pt-5 text-xs leading-relaxed text-muted-foreground">
-        <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-        Sessions are bound to your device and can be revoked by your college at any time.
-      </p>
     </div>
   );
 }

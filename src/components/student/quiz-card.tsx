@@ -1,6 +1,5 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import {
   ArrowRight,
   CalendarClock,
@@ -52,20 +51,15 @@ const STATE_BADGE: Record<
   CLOSED: { label: 'Missed', icon: Lock, variant: 'muted' },
 };
 
-export function QuizCard({ quiz, index = 0 }: { quiz: StudentQuizSummary; index?: number }) {
+export function QuizCard({ quiz }: { quiz: StudentQuizSummary }) {
   const badge = STATE_BADGE[quiz.state];
   const BadgeIcon = badge.icon;
-  // The time the student needs to act on is the one set in ink.
+  // The time the student needs to act on is shown in the foreground colour.
   const opensMatters = quiz.state === 'SCHEDULED';
   const closesMatters = quiz.state === 'AVAILABLE' || quiz.state === 'IN_PROGRESS';
 
   return (
-    <motion.article
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, delay: Math.min(index, 6) * 0.03, ease: [0.2, 0, 0, 1] }}
-      className="flex h-full min-w-0 flex-col rounded-lg border border-border bg-card"
-    >
+    <article className="flex h-full min-w-0 flex-col rounded-lg border border-border bg-card">
       <div className="flex flex-1 flex-col p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="type-eyebrow min-w-0 truncate">
@@ -123,7 +117,7 @@ export function QuizCard({ quiz, index = 0 }: { quiz: StudentQuizSummary; index?
       <div className="border-t border-border p-4">
         <QuizAction quiz={quiz} />
       </div>
-    </motion.article>
+    </article>
   );
 }
 

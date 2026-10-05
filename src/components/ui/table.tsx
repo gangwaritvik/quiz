@@ -2,11 +2,7 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
-/*
- * A ruled ledger: hairline row rules, a quiet small-caps header, no zebra.
- * Wraps the table in its own horizontal scroller so the page never scrolls
- * sideways.
- */
+// Wraps the table in its own horizontal scroller so the page never scrolls sideways.
 const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
   ({ className, ...props }, ref) => (
     <div className="scrollbar-slim relative w-full overflow-x-auto">
@@ -28,7 +24,7 @@ const TableBody = React.forwardRef<
   HTMLTableSectionElement,
   React.HTMLAttributes<HTMLTableSectionElement>
 >(({ className, ...props }, ref) => (
-  <tbody ref={ref} className={cn('stagger [&_tr:last-child]:border-0', className)} {...props} />
+  <tbody ref={ref} className={cn('[&_tr:last-child]:border-0', className)} {...props} />
 ));
 TableBody.displayName = 'TableBody';
 
@@ -53,7 +49,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      'h-10 whitespace-nowrap px-4 text-left align-middle text-2xs font-semibold uppercase tracking-[0.08em] text-muted-foreground',
+      'h-10 whitespace-nowrap bg-muted/50 px-4 text-left align-middle text-xs font-medium text-muted-foreground',
       className,
     )}
     {...props}

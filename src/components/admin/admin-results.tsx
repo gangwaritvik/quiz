@@ -204,7 +204,7 @@ export function AdminResults() {
     <PageShell>
       <PageHeader
         title="Results"
-        description="Graded attempts across your quizzes, with the integrity indicator alongside each score."
+        description="Graded attempts across your quizzes."
         actions={
           <Button variant="outline" onClick={exportCsv} disabled={results.length === 0}>
             <Download />
@@ -319,7 +319,7 @@ export function AdminResults() {
                 </p>
 
                 {data && data.quizSummaries.length > 0 ? (
-                  <ul className="stagger mt-5 divide-y divide-border rounded-lg border border-border bg-card">
+                  <ul className="mt-5 divide-y divide-border rounded-lg border border-border bg-card">
                     {data.quizSummaries.map((summary) => (
                       <li key={summary.quizId}>
                         <button
@@ -491,7 +491,7 @@ function NoMatches({ onClear }: { onClear: () => void }) {
   );
 }
 
-/** Average, median, range and count, aligned as a small ledger. */
+/** Average, median, range and attempt count. */
 function QuizFigures({ summary }: { summary: QuizSummary }) {
   const figures = [
     { label: 'Average', value: summary.average === null ? '—' : `${summary.average}%` },
@@ -511,7 +511,7 @@ function QuizFigures({ summary }: { summary: QuizSummary }) {
           <dd
             className={cn(
               'mt-0.5 whitespace-nowrap leading-6 text-foreground',
-              index === 0 ? 'font-serif text-lg font-semibold' : 'font-medium',
+              index === 0 ? 'text-lg font-semibold' : 'font-medium',
             )}
           >
             {figure.value}

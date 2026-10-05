@@ -123,7 +123,7 @@ export function ExtraTimePanel({
           <div className="rounded-lg border border-border bg-card">
             <div
               className={cn(
-                'hidden border-b border-border px-4 py-2.5 text-2xs font-semibold uppercase tracking-[0.08em] text-muted-foreground',
+                'hidden border-b border-border px-4 py-2.5 bg-muted/50 text-xs font-medium text-muted-foreground',
                 ROW_GRID,
               )}
               aria-hidden

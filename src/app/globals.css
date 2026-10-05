@@ -9,46 +9,33 @@
   }
 
   /*
-   * SecureQuiz design tokens — "Quiet Authority".
-   *
-   * Paper, not dashboard: a warm off-white page, white raised surfaces, and
-   * hairline borders doing the separation work. Oxford ink blue carries
-   * identity and action. Semantic colours are reserved: green means
-   * passed/secure, amber means review, red means alert — nothing decorative is
-   * allowed to borrow them.
-   *
-   * Contrast (WCAG 2.2, checked on the rounded values below):
-   *   foreground        16.1:1 page, 17.8:1 white
-   *   muted-foreground   6.1:1 page,  6.7:1 white, 5.7:1 on muted
-   *   success/warning/danger text  ≥5.6:1 on their -subtle fill, ≥5.7:1 page
-   *   input (control boundary)     3.4:1 white, 3.1:1 page
-   *   ring                         7.1:1 white, 6.5:1 page
-   *
-   * The platform is light-surface first. `.dark` is kept working because the
-   * admin console still offers a theme toggle.
+   * Colour tokens (HSL channels so `bg-primary/10` works).
+   * Grey page, white panels, one blue for actions and links. Green, amber and
+   * red are kept for pass / review / alert and nothing else.
+   * Text pairs are at least 4.5:1, control borders (`input`) at least 3:1.
    */
   :root {
-    --background: 48 22% 95%; /* #F5F4EF page */
-    --foreground: 223 13% 10%; /* #16181D ink */
+    --background: 220 14% 96%;
+    --foreground: 220 15% 12%;
 
     --card: 0 0% 100%;
-    --card-foreground: 223 13% 10%;
+    --card-foreground: 220 15% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 223 13% 10%;
+    --popover-foreground: 220 15% 12%;
 
-    --primary: 214 52% 25%; /* #1F3B61 Oxford */
-    --primary-hover: 214 54% 19%;
+    --primary: 214 82% 42%;
+    --primary-hover: 214 84% 35%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 45 17% 91%;
-    --secondary-foreground: 223 13% 10%;
+    --secondary: 220 14% 93%;
+    --secondary-foreground: 220 15% 12%;
 
-    --muted: 43 18% 92%;
-    --muted-foreground: 222 5% 37%;
+    --muted: 220 13% 93%;
+    --muted-foreground: 220 9% 38%;
 
-    --accent: 214 44% 94%; /* light Oxford tint: hover, selected rows */
-    --accent-foreground: 214 52% 25%;
+    --accent: 214 85% 96%;
+    --accent-foreground: 214 82% 32%;
 
     --destructive: 3 71% 41%;
     --destructive-foreground: 0 0% 100%;
@@ -65,40 +52,38 @@
     --danger-foreground: 0 0% 100%;
     --danger-subtle: 9 71% 95%;
 
-    /* Hairline for separating surfaces; `input` is the ≥3:1 boundary for
-       form controls, which must be identifiable without colour. */
-    --border: 44 15% 86%;
-    --input: 220 4% 55%;
-    --ring: 213 55% 37%;
+    --border: 220 13% 87%;
+    --input: 220 8% 56%;
+    --ring: 214 82% 42%;
 
     --radius: 0.375rem;
 
-    /* Chart marks (see chart-theme.ts): ≥3:1 against the card. */
-    --chart-series: #2d5a95;
+    /* Chart marks (see chart-theme.ts), at least 3:1 against the card. */
+    --chart-series: #1f63c6;
     --chart-accent: #b85a1e;
     --chart-critical: #b3261e;
-    --chart-ordinal-1: #6990c4;
-    --chart-ordinal-2: #2d5a95;
-    --chart-ordinal-3: #172e4c;
+    --chart-ordinal-1: #5b8bd0;
+    --chart-ordinal-2: #1f63c6;
+    --chart-ordinal-3: #123a73;
   }
 
   .dark {
     color-scheme: dark;
-    --background: 216 12% 8%;
-    --foreground: 45 17% 91%;
-    --card: 218 13% 12%;
-    --card-foreground: 45 17% 91%;
-    --popover: 220 13% 14%;
-    --popover-foreground: 45 17% 91%;
-    --primary: 214 55% 71%;
-    --primary-hover: 214 57% 78%;
-    --primary-foreground: 216 53% 12%;
-    --secondary: 218 13% 17%;
-    --secondary-foreground: 45 17% 91%;
-    --muted: 216 13% 15%;
-    --muted-foreground: 220 7% 66%;
-    --accent: 214 31% 18%;
-    --accent-foreground: 213 56% 85%;
+    --background: 220 13% 8%;
+    --foreground: 220 14% 92%;
+    --card: 220 12% 11%;
+    --card-foreground: 220 14% 92%;
+    --popover: 220 12% 13%;
+    --popover-foreground: 220 14% 92%;
+    --primary: 214 90% 67%;
+    --primary-hover: 214 92% 74%;
+    --primary-foreground: 220 40% 10%;
+    --secondary: 220 10% 17%;
+    --secondary-foreground: 220 14% 92%;
+    --muted: 220 10% 15%;
+    --muted-foreground: 220 9% 65%;
+    --accent: 214 40% 18%;
+    --accent-foreground: 214 90% 82%;
     --destructive: 4 81% 69%;
     --destructive-foreground: 4 56% 11%;
     --success: 147 43% 56%;
@@ -110,16 +95,16 @@
     --danger: 4 81% 69%;
     --danger-foreground: 4 56% 11%;
     --danger-subtle: 4 40% 16%;
-    --border: 216 10% 20%;
-    --input: 219 6% 44%;
-    --ring: 214 55% 71%;
+    --border: 220 10% 20%;
+    --input: 220 8% 42%;
+    --ring: 214 90% 67%;
 
-    --chart-series: #7ea6dc;
+    --chart-series: #6fa3ec;
     --chart-accent: #e39256;
     --chart-critical: #ef7d73;
-    --chart-ordinal-1: #4d7bb8;
-    --chart-ordinal-2: #7ea6dc;
-    --chart-ordinal-3: #c2d5ee;
+    --chart-ordinal-1: #3f73c0;
+    --chart-ordinal-2: #6fa3ec;
+    --chart-ordinal-3: #bcd4f5;
   }
 
   * {
@@ -132,27 +117,13 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    /* Inter: open 4/6/9 and open digits, for unambiguous numbers in answers. */
-    font-feature-settings:
-      'cv02' on,
-      'cv03' on,
-      'cv04' on,
-      'ss01' on;
-    text-rendering: optimizeLegibility;
-  }
-
-  /* Kept for the admin shell; now a flat page rather than a gradient. */
-  .console-canvas {
-    background: hsl(var(--background));
   }
 
   /*
-   * A single, unmistakable focus treatment everywhere — required for
-   * keyboard-only navigation during a timed exam. An outline (not a
-   * box-shadow ring) so it survives Windows High Contrast / forced colours and
-   * never fights a component's own shadow. Components should not add their
-   * own focus styles; composite widgets (menu items, list options) opt out
-   * with `outline-none` and show a highlighted background instead.
+   * One focus style everywhere, needed for keyboard-only use during a timed
+   * exam. An outline rather than a ring so it survives forced-colours mode.
+   * Composite widgets (menu items, list options) opt out with `outline-none`
+   * and highlight their background instead.
    */
   :focus-visible {
     outline: 2px solid hsl(var(--ring));
@@ -164,13 +135,8 @@
     color: hsl(var(--foreground));
   }
 
-  /* Page and section titles are set in the serif; UI-level headings stay sans. */
   h1,
-  h2 {
-    @apply font-serif font-semibold text-foreground;
-    letter-spacing: -0.01em;
-  }
-
+  h2,
   h3,
   h4 {
     @apply font-semibold text-foreground;
@@ -178,32 +144,25 @@
 }
 
 @layer components {
-  /*
-   * Semantic type styles. Prefixed `type-` (not `text-`) so tailwind-merge
-   * never mistakes them for colours. Pair with any text colour utility.
-   */
-  .type-display {
-    @apply font-serif text-4xl font-semibold;
-  }
-
+  /* Named `type-` rather than `text-` so tailwind-merge never reads them as colours. */
   .type-title {
-    @apply font-serif text-2xl font-semibold sm:text-3xl;
+    @apply text-2xl font-semibold;
   }
 
   .type-heading {
-    @apply font-serif text-xl font-semibold;
+    @apply text-lg font-semibold;
   }
 
   .type-subheading {
-    @apply font-sans text-base font-semibold;
+    @apply text-base font-semibold;
   }
 
   .type-eyebrow {
-    @apply font-sans text-2xs font-semibold uppercase tracking-[0.08em] text-muted-foreground;
+    @apply text-xs font-medium text-muted-foreground;
   }
 
-  /* Applied to the exam shell when the quiz forbids copy/paste. Purely a
-     deterrent — the server-side record of the attempt is what counts. */
+  /* Applied to the exam shell when the quiz forbids copy/paste. A deterrent
+     only; the server-side record of the attempt is what counts. */
   .exam-no-select {
     -webkit-user-select: none;
     user-select: none;
@@ -228,48 +187,13 @@
     @apply bg-gradient-to-r from-transparent via-white/10 to-transparent;
   }
 
-  /* Numeric readouts (timers, scores, IDs) sit on tabular figures so digits
-     do not jitter as they count down. */
+  /* Timers, scores and IDs: digits keep their width while they change. */
   .tabular {
     font-variant-numeric: tabular-nums;
   }
 }
 
 @layer utilities {
-  /* Arrival motion: a short fade and rise, one easing. `backwards` means the
-     element is left exactly as styled once it has finished. */
-  @keyframes rise {
-    from {
-      opacity: 0;
-      transform: translateY(8px);
-    }
-  }
-
-  @keyframes progress-fill {
-    from {
-      transform: translateX(-100%);
-    }
-  }
-
-  .animate-rise,
-  .page-enter,
-  .stagger > * {
-    animation: rise 320ms cubic-bezier(0.2, 0, 0, 1) backwards;
-  }
-
-  /* Rows and cards of a list arrive one after another, then the rest together. */
-  .stagger > :nth-child(2) { animation-delay: 40ms; }
-  .stagger > :nth-child(3) { animation-delay: 80ms; }
-  .stagger > :nth-child(4) { animation-delay: 120ms; }
-  .stagger > :nth-child(5) { animation-delay: 160ms; }
-  .stagger > :nth-child(6) { animation-delay: 200ms; }
-  .stagger > :nth-child(7) { animation-delay: 240ms; }
-  .stagger > :nth-child(n + 8) { animation-delay: 280ms; }
-
-  .progress-fill {
-    animation: progress-fill 700ms cubic-bezier(0.2, 0, 0, 1) backwards;
-  }
-
   .scrollbar-slim {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--border)) transparent;
@@ -298,9 +222,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Stop looping/decorative motion only. Colour, border and opacity
-     transitions stay (they carry state feedback and are not vestibular
-     triggers). */
+  /* Stop looping motion. Colour and opacity transitions stay: they carry state. */
   html {
     scroll-behavior: auto;
   }
@@ -309,20 +231,15 @@
   .animate-pulse,
   .animate-pulse-ring,
   .animate-shimmer,
-  .animate-rise,
-  .page-enter,
-  .stagger > *,
-  .progress-fill,
   .skeleton-shimmer::after {
     animation: none !important;
   }
 
-  /* Skeleton falls back to the static muted block (bg-muted) it already has. */
   .skeleton-shimmer::after {
     display: none;
   }
 
-  /* tailwindcss-animate entrances/exits: drop slide/zoom/rotate, keep the fade. */
+  /* tailwindcss-animate entrances and exits: keep the fade, drop the movement. */
   [class*='animate-in'],
   [class*='animate-out'] {
     --tw-enter-translate-x: 0 !important;

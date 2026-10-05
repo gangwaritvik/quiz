@@ -12,7 +12,7 @@ interface ExamTimerDisplayProps {
 
 /**
  * The countdown. Purely a display of the server's number — it does not decide
- * anything. Calm ink normally; under five minutes it turns amber, under one
+ * anything. Normal text colour at first; under five minutes it turns amber, under one
  * minute red. Each state also changes the icon and adds a word, so it never
  * relies on colour, and it is announced to assistive technology. Nothing
  * pulses or animates.

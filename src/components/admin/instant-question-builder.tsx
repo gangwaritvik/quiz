@@ -361,7 +361,7 @@ function QuestionCard({
       {/* Header: where this question sits, and what can be done to it. */}
       <div className="flex items-center gap-2 border-b border-border py-1.5 pl-4 pr-1.5 sm:pl-5">
         <p className="min-w-0 flex-1 truncate text-sm">
-          <span className="font-serif text-base font-semibold text-foreground">
+          <span className="text-base font-semibold text-foreground">
             Question <span className="tabular">{index + 1}</span>
           </span>
           <span className="ml-2 hidden text-xs text-muted-foreground sm:inline">

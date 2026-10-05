@@ -141,7 +141,7 @@ export function FacultyAttemptReview({ attemptId }: { attemptId: string }) {
 
       <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-4">
         <Fact label="Score">
-          <span className="tabular font-serif text-2xl font-semibold">
+          <span className="tabular text-2xl font-semibold">
             {attempt.score ?? 0}
             <span className="text-base font-normal text-muted-foreground">
               {' '}
@@ -150,7 +150,7 @@ export function FacultyAttemptReview({ attemptId }: { attemptId: string }) {
           </span>
         </Fact>
         <Fact label="Percentage">
-          <span className="tabular font-serif text-2xl font-semibold">
+          <span className="tabular text-2xl font-semibold">
             {attempt.percentage === null ? '—' : `${attempt.percentage}%`}
           </span>
         </Fact>

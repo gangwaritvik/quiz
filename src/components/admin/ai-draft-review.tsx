@@ -11,7 +11,6 @@ import {
   Loader2,
   Pencil,
   RefreshCw,
-  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
@@ -230,7 +229,7 @@ export function AiDraftReview({ jobId }: { jobId: string }) {
       {visible.length === 0 && !running ? (
         <div className="mt-6">
           <EmptyState
-            icon={Sparkles}
+            icon={FileText}
             title="No drafts to review"
             description="Try a broader focus, another material, or fewer constraints."
             action={
@@ -241,7 +240,7 @@ export function AiDraftReview({ jobId }: { jobId: string }) {
           />
         </div>
       ) : (
-        <ol className="stagger mt-6 space-y-4">
+        <ol className="mt-6 space-y-4">
           {visible.map((draft, index) => (
             <DraftCard
               key={draft.id}

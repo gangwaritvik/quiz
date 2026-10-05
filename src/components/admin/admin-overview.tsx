@@ -17,7 +17,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton, SkeletonRows } from '@/components/ui/skeleton';
 import { useApi } from '@/hooks/use-api';
 import { insightsSummary, type AttentionItem, type QuizWord } from '@/lib/dashboard-attention';
-import { cn, formatDateTime, greeting, longDate } from '@/lib/utils';
+import { cn, formatDateTime, longDate } from '@/lib/utils';
 
 interface ListedQuiz {
   id: string;
@@ -57,7 +57,6 @@ export function AdminOverview() {
     );
   }
 
-  const firstName = data?.faculty.name ?? 'there';
   // Someone with no quizzes at all has nothing to be told about yet; they get
   // the way in instead.
   const firstRun = data !== null && data.ownedQuizCount === 0;
@@ -65,24 +64,9 @@ export function AdminOverview() {
   return (
     <PageShell>
       <PageHeader
-        title={
-          initialLoading || !today ? (
-            <Skeleton className="h-9 w-72 max-w-full" />
-          ) : (
-            `${greeting(today)}, ${firstName}`
-          )
-        }
+        title="Dashboard"
         description={
-          <>
-            {today ? (
-              <time dateTime={today.toISOString()} className="font-medium text-foreground">
-                {longDate(today)}.{' '}
-              </time>
-            ) : null}
-            {firstRun
-              ? 'Three steps to your first exam.'
-              : 'Here’s what needs you today.'}
-          </>
+          today ? <time dateTime={today.toISOString()}>{longDate(today)}</time> : null
         }
         actions={
           firstRun ? undefined : (
@@ -115,7 +99,7 @@ export function AdminOverview() {
       {firstRun ? (
         <FirstRun />
       ) : (
-        <div className="mt-8 space-y-10">
+        <div className="mt-6 space-y-8">
           <Attention
             items={data?.attention ?? []}
             next={data?.nextScheduled ?? null}
@@ -129,8 +113,7 @@ export function AdminOverview() {
   );
 }
 
-/** Hairline-ruled list: rules above, between and below, no boxes. */
-const RULED = 'mt-3 divide-y divide-border border-y border-border';
+const PANEL = 'mt-3 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card';
 
 function Attention({
   items,
@@ -150,7 +133,7 @@ function Attention({
       {loading ? (
         <SkeletonRows rows={3} className="mt-3" />
       ) : items.length === 0 ? (
-        <div className="mt-3 border-y border-border py-6">
+        <div className="mt-3 rounded-lg border border-border bg-card px-4 py-5">
           <p className="text-sm font-medium text-foreground">Nothing needs you right now.</p>
           <p className="mt-1 text-sm text-muted-foreground">
             {next ? (
@@ -170,15 +153,15 @@ function Attention({
           </p>
         </div>
       ) : (
-        <ul className={RULED}>
+        <ul className={PANEL}>
           {items.map((item) => (
             // Count, sentence, link. On a phone the link drops under the
             // sentence rather than squeezing it.
             <li
               key={item.id}
-              className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-start gap-x-4 gap-y-3 py-4 sm:grid-cols-[3.5rem_minmax(0,1fr)_auto] sm:items-center"
+              className="grid grid-cols-[3rem_minmax(0,1fr)] items-start gap-x-3 gap-y-3 px-4 py-3.5 sm:grid-cols-[3rem_minmax(0,1fr)_auto] sm:items-center"
             >
-              <span className="tabular font-serif text-2xl font-semibold leading-none text-foreground">
+              <span className="tabular text-2xl font-semibold leading-none text-foreground">
                 {item.count}
               </span>
               <div className="min-w-0">
@@ -247,13 +230,13 @@ function YourQuizzes({ quizzes, loading }: { quizzes: ListedQuiz[]; loading: boo
           className="mt-3 py-8"
         />
       ) : (
-        <ul className={RULED}>
+        <ul className={PANEL}>
           {quizzes.map((quiz) => (
             <li key={quiz.id}>
               {/* Stacked on a phone; title, status and figure in columns from md up. */}
               <Link
                 href={`/admin/quizzes/${quiz.id}`}
-                className="-mx-2 grid min-h-11 gap-x-6 gap-y-1.5 px-2 py-3 transition-colors duration-fast ease-standard hover:bg-accent/60 md:grid-cols-[minmax(0,1fr)_6rem_minmax(11rem,16rem)] md:items-center"
+                className="grid min-h-11 gap-x-6 gap-y-1.5 px-4 py-3 transition-colors duration-fast ease-standard hover:bg-accent/60 md:grid-cols-[minmax(0,1fr)_6rem_minmax(11rem,16rem)] md:items-center"
               >
                 <span className="line-clamp-2 break-words text-sm font-medium text-foreground">
                   {quiz.title}
@@ -278,7 +261,7 @@ function Insights({ data, loading }: { data: OverviewData | null; loading: boole
   const closed = data?.charts.participation.filter((row) => row.closed).map((row) => row.quiz);
 
   return (
-    <details className="group border-y border-border">
+    <details className="group rounded-lg border border-border bg-card px-4">
       <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 py-3 [&::-webkit-details-marker]:hidden">
         <ChevronRight
           className="size-4 shrink-0 text-muted-foreground group-open:rotate-90"
@@ -321,8 +304,8 @@ function FirstRun() {
         Set up your first quiz
       </h2>
 
-      <ol className={cn(RULED, 'max-w-2xl')}>
-        <li className="flex items-center gap-4 py-3">
+      <ol className={cn(PANEL, 'max-w-2xl')}>
+        <li className="flex items-center gap-4 px-4 py-3">
           <span aria-hidden className="tabular w-5 shrink-0 text-sm text-muted-foreground">
             1.
           </span>
@@ -333,7 +316,7 @@ function FirstRun() {
             </Link>
           </Button>
         </li>
-        <li className="flex items-center gap-4 py-1">
+        <li className="flex items-center gap-4 px-4 py-1">
           <span aria-hidden className="tabular w-5 shrink-0 text-sm text-muted-foreground">
             2.
           </span>
@@ -341,7 +324,7 @@ function FirstRun() {
             Add questions (or import from the question bank)
           </Link>
         </li>
-        <li className="flex items-center gap-4 py-1">
+        <li className="flex items-center gap-4 px-4 py-1">
           <span aria-hidden className="tabular w-5 shrink-0 text-sm text-muted-foreground">
             3.
           </span>

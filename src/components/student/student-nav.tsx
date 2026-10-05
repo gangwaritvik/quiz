@@ -117,7 +117,7 @@ export function StudentNav({ user }: StudentNavProps) {
                 aria-current={active ? 'page' : undefined}
                 className={cn(
                   'relative inline-flex items-center whitespace-nowrap px-3 text-sm font-medium transition-colors duration-fast ease-standard',
-                  // The underline sits on the header's own hairline, like a tab.
+                  // The underline sits on the header's bottom border, like a tab.
                   'after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 after:rounded-full after:transition-colors after:duration-fast',
                   active
                     ? 'text-foreground after:bg-primary'

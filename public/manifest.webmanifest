@@ -1,13 +1,13 @@
 {
-  "name": "SecureQuiz — College Examinations",
+  "name": "SecureQuiz",
   "short_name": "SecureQuiz",
-  "description": "Secure, fair and intelligent examinations for colleges.",
+  "description": "Online examinations for colleges.",
   "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#f7f8fb",
-  "theme_color": "#2e4179",
+  "background_color": "#f3f4f6",
+  "theme_color": "#135fc3",
   "categories": ["education", "productivity"],
   "icons": [
     {

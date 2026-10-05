@@ -24,18 +24,17 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 py-14 text-center',
+        'flex flex-col items-center justify-center rounded-lg border border-border bg-card px-6 py-12 text-center',
         className,
       )}
     >
       <Icon
-        className={cn('mb-4 size-7', tone === 'success' ? 'text-success' : 'text-muted-foreground')}
-        strokeWidth={1.5}
+        className={cn('mb-3 size-6', tone === 'success' ? 'text-success' : 'text-muted-foreground')}
         aria-hidden
       />
-      <h3 className="font-serif text-lg font-semibold text-foreground">{title}</h3>
-      <p className="mt-1.5 max-w-sm text-sm text-muted-foreground">{description}</p>
-      {action ? <div className="mt-6">{action}</div> : null}
+      <h3 className="text-base font-semibold text-foreground">{title}</h3>
+      <p className="mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>
+      {action ? <div className="mt-5">{action}</div> : null}
     </div>
   );
 }

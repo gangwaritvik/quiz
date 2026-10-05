@@ -1,6 +1,5 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -209,21 +208,17 @@ export function QuizInstructions({ quizId }: { quizId: string }) {
     <PageShell>
       <BackLink />
 
-      <motion.header
-        initial={{ opacity: 0, y: 4 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
-      >
+      <header>
         <p className="type-eyebrow">
           {quiz.subject} · {quiz.subjectCode}
         </p>
-        <h1 className="type-title mt-2 break-words">{quiz.title}</h1>
+        <h1 className="type-title mt-1 break-words">{quiz.title}</h1>
         {quiz.description ? (
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground sm:text-base">
             {quiz.description}
           </p>
         ) : null}
-      </motion.header>
+      </header>
 
       <section
         aria-labelledby="briefing-heading"

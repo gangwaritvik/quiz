@@ -1,6 +1,5 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import {
   ArrowLeft,
   Check,
@@ -20,7 +19,6 @@ import { AppealSection, type ResultAppealView } from '@/components/student/appea
 import { ErrorState } from '@/components/shared/error-state';
 import type { IntegrityStatus } from '@/components/shared/integrity-badge';
 import { PageShell } from '@/components/shared/page-header';
-import { CountUp } from '@/components/ui/count-up';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -157,17 +155,10 @@ export function StudentResultDetail({ attemptId }: { attemptId: string }) {
     <PageShell>
       <BackLink />
 
-      <motion.header
-        initial={{ opacity: 0, y: 4 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
-        className="border-b border-border pb-6"
-      >
+      <header className="border-b border-border pb-6">
         <h1 className="type-title break-words">{data.quiz.title}</h1>
 
-        {/* Head of an answer booklet: the candidate and the paper's particulars
-            in a ruled grid. Two columns on a phone, three from `sm`; six cells
-            fill both evenly. A missing value leaves its cell out. */}
+        {/* Two columns on a phone, three from `sm`. A missing value leaves its cell out. */}
         <dl className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-3">
           {[
             { label: 'Candidate', value: data.candidate?.name },
@@ -227,7 +218,7 @@ export function StudentResultDetail({ attemptId }: { attemptId: string }) {
             ) : null}
           </div>
         ) : null}
-      </motion.header>
+      </header>
 
       <AppealSection
         attemptId={attemptId}
@@ -245,9 +236,9 @@ export function StudentResultDetail({ attemptId }: { attemptId: string }) {
           <p className="text-sm text-muted-foreground">
             {data.provisional ? 'Score so far' : 'Score'}
           </p>
-          <p className="tabular mt-1 flex items-baseline gap-2 font-serif text-4xl font-semibold text-foreground">
-            {typeof attempt.score === 'number' ? <CountUp value={attempt.score} /> : attempt.score}
-            <span className="font-sans text-xl font-normal text-muted-foreground">
+          <p className="tabular mt-1 flex items-baseline gap-2 text-3xl font-semibold text-foreground">
+            {attempt.score}
+            <span className="text-lg font-normal text-muted-foreground">
               / {attempt.maxScore}
             </span>
           </p>
