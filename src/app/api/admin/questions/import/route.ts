@@ -203,7 +203,14 @@ export const POST = route(async (request: Request) => {
       continue;
     }
 
-    const optionTexts = [a, b, c, d].filter((value): value is string => Boolean(value?.trim()));
+    // A blank cell before a filled one would shift the letters ("C" would mean the third filled option).
+    const cells = [a, b, c, d].map((value) => (value ?? '').trim());
+    const lastFilled = cells.findLastIndex(Boolean);
+    if (cells.slice(0, lastFilled).some((value) => !value)) {
+      issues.push({ row: rowNumber, message: 'Option cells must be filled from A onwards, with no blank in between.' });
+      continue;
+    }
+    const optionTexts = cells.filter(Boolean);
     const plan = planRow(type, optionTexts, correct ?? '', assertion ?? '', reason ?? '');
     if (typeof plan === 'string') {
       issues.push({ row: rowNumber, message: plan });

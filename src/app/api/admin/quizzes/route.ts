@@ -154,9 +154,14 @@ export const POST = route(async (request: Request) => {
       }
     }
 
-    if (body.assignedStudentIds.length > 0) {
+    // Ignore ids that are not students, as the assign route does.
+    const known = await tx.student.findMany({
+      where: { id: { in: body.assignedStudentIds } },
+      select: { id: true },
+    });
+    if (known.length > 0) {
       await tx.quizAssignment.createMany({
-        data: body.assignedStudentIds.map((studentId) => ({
+        data: known.map(({ id: studentId }) => ({
           quizId: created.id,
           studentId,
         })),

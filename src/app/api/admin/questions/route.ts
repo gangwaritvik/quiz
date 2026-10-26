@@ -1,12 +1,13 @@
 import type { Prisma } from '@prisma/client';
 
 import { assertNoBankRepeat } from '@/lib/ai/similarity';
-import { ApiError, assertSameOrigin, ok, parseBody, parseQuery, route } from '@/lib/api';
+import { assertSameOrigin, ok, parseBody, parseQuery, route } from '@/lib/api';
 import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import {
   ADMIN_QUESTION_INCLUDE,
+  assertQuestionRefs,
   questionFieldsFromInput,
   questionOptionsFromInput,
   serializeAdminQuestion,
@@ -68,15 +69,7 @@ export const POST = route(async (request: Request) => {
 
   const body = await parseBody(request, createQuestionSchema);
 
-  const subject = await prisma.subject.findUnique({ where: { id: body.subjectId } });
-  if (!subject) throw new ApiError('VALIDATION', 'Select a valid subject.');
-
-  if (body.topicId) {
-    const topic = await prisma.topic.findFirst({
-      where: { id: body.topicId, subjectId: body.subjectId },
-    });
-    if (!topic) throw new ApiError('VALIDATION', 'That topic does not belong to the subject.');
-  }
+  await assertQuestionRefs(body);
 
   await assertNoBankRepeat({ subjectId: body.subjectId, question: body, allowSimilar: body.allowSimilar });
 

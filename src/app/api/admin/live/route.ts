@@ -42,7 +42,15 @@ export const GET = route(async (request: Request) => {
   const [answeredCounts, recentEvents] = await Promise.all([
     prisma.answer.groupBy({
       by: ['attemptId'],
-      where: { attemptId: { in: attemptIds }, selectedOptionId: { not: null } },
+      where: {
+        attemptId: { in: attemptIds },
+        OR: [
+          { selectedOptionId: { not: null } },
+          { selectedOptions: { some: {} } },
+          { textResponse: { not: null } },
+          { attachments: { some: {} } },
+        ],
+      },
       _count: { _all: true },
     }),
     prisma.examEvent.groupBy({

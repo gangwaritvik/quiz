@@ -5,7 +5,7 @@ import { audit } from '@/lib/audit';
 import { requireAdmin } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { deleteUnreferencedAssets } from '@/lib/media';
-import { questionFieldsFromInput, questionOptionsFromInput } from '@/lib/questions';
+import { assertQuestionRefs, questionFieldsFromInput, questionOptionsFromInput } from '@/lib/questions';
 import { getRequestContext } from '@/lib/session';
 import { updateQuestionSchema } from '@/lib/validation';
 
@@ -29,7 +29,7 @@ export const PATCH = route(async (request: Request, { params }: Params) => {
     where: { id: questionId },
     include: {
       _count: { select: { attemptQuestions: true } },
-      options: { select: { imageAssetId: true } },
+      options: { select: { id: true, imageAssetId: true }, orderBy: { position: 'asc' } },
     },
   });
   if (!existing) throw new ApiError('NOT_FOUND', 'Question not found.');
@@ -58,6 +58,8 @@ export const PATCH = route(async (request: Request, { params }: Params) => {
     );
   }
 
+  await assertQuestionRefs(body);
+
   // Only a change of wording can create a repeat; fixing marks on an old twin must not nag.
   if (questionSignature(existing) !== questionSignature(body)) {
     await assertNoBankRepeat({
@@ -68,14 +70,23 @@ export const PATCH = route(async (request: Request, { params }: Params) => {
     });
   }
 
+  // Options are updated in place, by position, so answers already recorded on
+  // submitted attempts keep pointing at their option. Only surplus options go.
+  const nextOptions = questionOptionsFromInput(body);
   await prisma.$transaction(async (tx) => {
-    await tx.option.deleteMany({ where: { questionId } });
+    const kept = existing.options.slice(0, nextOptions.length);
+    for (const [index, option] of kept.entries()) {
+      await tx.option.update({ where: { id: option.id }, data: nextOptions[index] });
+    }
+    await tx.option.deleteMany({
+      where: { id: { in: existing.options.slice(nextOptions.length).map((o) => o.id) } },
+    });
     await tx.question.update({
       where: { id: questionId },
       data: {
         ...questionFieldsFromInput(body),
         subjectId: body.subjectId,
-        options: { create: questionOptionsFromInput(body) },
+        options: { create: nextOptions.slice(kept.length) },
       },
     });
   });

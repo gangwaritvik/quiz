@@ -99,7 +99,9 @@ export const GET = route(async (request: Request) => {
       sorted.length > 0
         ? Math.round((sorted.reduce((sum, v) => sum + v, 0) / sorted.length) * 10) / 10
         : null;
-    const median = sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)]! : null;
+    const mid = Math.floor(sorted.length / 2);
+    const median =
+      sorted.length === 0 ? null : sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
 
     return {
       quizId: id,

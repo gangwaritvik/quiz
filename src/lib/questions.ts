@@ -2,6 +2,8 @@ import 'server-only';
 
 import type { Prisma } from '@prisma/client';
 
+import { ApiError } from '@/lib/api';
+import { prisma } from '@/lib/db';
 import { MANUAL_TYPES, OPTION_TYPES, TEXT_TYPES } from '@/lib/grading';
 import type { CreateQuestionInput } from '@/lib/validation';
 
@@ -51,6 +53,27 @@ export function questionFieldsFromInput(
 }
 
 /** Options to create for this question — empty for written and uploaded answers. */
+/** The subject, topic and images a question points at must exist, so a bad id is a 422, not a 500. */
+export async function assertQuestionRefs(body: CreateQuestionInput) {
+  const subject = await prisma.subject.findUnique({ where: { id: body.subjectId } });
+  if (!subject) throw new ApiError('VALIDATION', 'Select a valid subject.');
+
+  if (body.topicId) {
+    const topic = await prisma.topic.findFirst({
+      where: { id: body.topicId, subjectId: body.subjectId },
+    });
+    if (!topic) throw new ApiError('VALIDATION', 'That topic does not belong to the subject.');
+  }
+
+  const assetIds = [body.imageAssetId, ...body.options.map((o) => o.imageAssetId)].filter(
+    (id): id is string => !!id,
+  );
+  if (assetIds.length) {
+    const found = await prisma.mediaAsset.count({ where: { id: { in: [...new Set(assetIds)] } } });
+    if (found !== new Set(assetIds).size) throw new ApiError('VALIDATION', 'An attached image no longer exists.');
+  }
+}
+
 export function questionOptionsFromInput(body: CreateQuestionInput) {
   if (!OPTION_TYPES.has(body.type)) return [];
   return body.options.map((option, index) => ({

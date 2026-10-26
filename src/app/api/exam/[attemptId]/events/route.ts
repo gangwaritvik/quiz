@@ -80,9 +80,12 @@ export const POST = route(async (request: Request, { params }: Params) => {
   }
 
   if (accepted.length > 0) {
+    // One millisecond apart, so a batch keeps its order on the integrity timeline.
+    const batchStart = Date.now();
     await prisma.examEvent.createMany({
-      data: accepted.map((event) => ({
+      data: accepted.map((event, index) => ({
         attemptId: attempt.id,
+        occurredAt: new Date(batchStart + index),
         type: event.type,
         severity: severityForEvent(event.type),
         durationMs: event.durationMs ?? null,

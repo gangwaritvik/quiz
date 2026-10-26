@@ -3,6 +3,8 @@ import { describe, test } from 'node:test';
 
 import type { ZodTypeAny } from 'zod';
 
+import { ASSERTION_REASON_OPTIONS, TRUE_FALSE_OPTIONS } from '@/lib/grading';
+
 import {
   createQuestionSchema,
   createQuizSchema,
@@ -325,9 +327,20 @@ describe('createQuestionSchema', () => {
     assert.ok(accepts(createQuestionSchema, { subjectId: id(), text: 'Explain TCP.', type: 'LONG_ANSWER' }));
   });
   test('assertion-reason needs both statements', () => {
-    const ar = mcq({ type: 'ASSERTION_REASON' });
+    const options = ASSERTION_REASON_OPTIONS.map((text, i) => ({ text, isCorrect: i === 0 }));
+    const ar = mcq({ type: 'ASSERTION_REASON', options });
     assert.ok(rejects(createQuestionSchema, ar));
     assert.ok(accepts(createQuestionSchema, { ...ar, assertionText: 'A', reasonText: 'R' }));
+  });
+  test('true/false and assertion-reason keep their fixed option sets', () => {
+    assert.ok(rejects(createQuestionSchema, mcq({ type: 'TRUE_FALSE' })));
+    const tf = TRUE_FALSE_OPTIONS.map((text, i) => ({ text, isCorrect: i === 0 }));
+    assert.ok(accepts(createQuestionSchema, mcq({ type: 'TRUE_FALSE', options: tf })));
+    assert.ok(rejects(createQuestionSchema, mcq({ type: 'TRUE_FALSE', options: [...tf, { text: 'Maybe', isCorrect: false }] })));
+  });
+  test('negative marks cannot exceed the marks', () => {
+    assert.ok(rejects(createQuestionSchema, mcq({ marks: 1, negativeMarks: 5 })));
+    assert.ok(accepts(createQuestionSchema, mcq({ marks: 2, negativeMarks: 1 })));
   });
   test('unknown question types and short text are rejected', () => {
     assert.ok(rejects(createQuestionSchema, mcq({ type: 'ESSAY' })));

@@ -104,6 +104,13 @@ export const PATCH = route(async (request: Request, { params }: Params) => {
     if (taken) throw new ApiError('CONFLICT', 'That student ID is already in use.');
   }
 
+  if (body.email) {
+    const emailTaken = await prisma.user.findFirst({
+      where: { email: body.email.toLowerCase(), NOT: { student: { id: studentId } } },
+    });
+    if (emailTaken) throw new ApiError('CONFLICT', 'That email is already in use.');
+  }
+
   await prisma.student.update({
     where: { id: studentId },
     data: {

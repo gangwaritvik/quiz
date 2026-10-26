@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { ASSERTION_REASON_OPTIONS, TRUE_FALSE_OPTIONS } from '@/lib/grading';
 import { MAX_EXTENSION_MINUTES } from '@/lib/time-extension';
 
 /**
@@ -298,7 +299,7 @@ const questionBodySchema = z.object({
   bloom: z.enum(['REMEMBER', 'UNDERSTAND', 'APPLY', 'ANALYSE']).nullable().optional(),
   marks: z.coerce.number().int().min(1).max(20).default(1),
   negativeMarks: z.coerce.number().min(0).max(10).default(0),
-  explanation: z.string().trim().max(2000).optional().or(z.literal('')),
+  explanation: z.string().trim().max(2000).nullish().or(z.literal('')),
   imageAssetId: cuid.nullable().optional(),
 
   // Assertion–reason
@@ -328,6 +329,14 @@ function refineQuestionBody(data: QuestionBody, ctx: z.RefinementCtx) {
   {
     const optionBased = (OPTION_BASED_TYPES as readonly string[]).includes(data.type);
 
+    if (data.negativeMarks > data.marks) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Negative marks cannot be more than the question marks.',
+        path: ['negativeMarks'],
+      });
+    }
+
     if (optionBased) {
       if (data.options.length < 2) {
         ctx.addIssue({
@@ -349,6 +358,21 @@ function refineQuestionBody(data: QuestionBody, ctx: z.RefinementCtx) {
       });
 
       const correctCount = data.options.filter((o) => o.isCorrect).length;
+
+      // These two types have a fixed answer set; the editor sends it, so anything else is wrong.
+      const fixed: readonly string[] | null =
+        data.type === 'TRUE_FALSE'
+          ? TRUE_FALSE_OPTIONS
+          : data.type === 'ASSERTION_REASON'
+            ? ASSERTION_REASON_OPTIONS
+            : null;
+      if (fixed && (data.options.length !== fixed.length || data.options.some((o, i) => o.text !== fixed[i]))) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'This question type has a fixed set of options.',
+          path: ['options'],
+        });
+      }
 
       if ((SINGLE_CORRECT_TYPES as readonly string[]).includes(data.type) && correctCount !== 1) {
         ctx.addIssue({

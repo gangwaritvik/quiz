@@ -121,9 +121,12 @@ export async function parseBody<S extends ZodTypeAny>(
 ): Promise<output<S>> {
   let raw: unknown;
   try {
-    raw = await request.json();
+    const text = await request.text();
+    // Postgres cannot store a NUL in text; reject it here rather than as a 500.
+    if (/\\u0000/i.test(text)) throw new Error('nul');
+    raw = JSON.parse(text);
   } catch {
-    throw new ApiError('VALIDATION', 'Request body must be valid JSON.');
+    throw new ApiError('VALIDATION', 'Request body must be valid JSON without null characters.');
   }
   const result = schema.safeParse(raw);
   if (!result.success) {
