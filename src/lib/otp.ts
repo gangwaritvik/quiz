@@ -1,5 +1,6 @@
 import 'server-only';
 
+import { after } from 'next/server';
 import { Resend } from 'resend';
 
 import { ApiError } from '@/lib/api';
@@ -128,6 +129,7 @@ export async function issueOtp(
 
   const user = await findUserByIdentifier(identifier);
   if (!user || user.status === 'DISABLED') {
+    await hashSecret(generateOtpCode()); // same cost as a real issue, so timing does not reveal the account
     await audit({
       action: 'auth.otp_requested',
       context,
@@ -144,6 +146,7 @@ export async function issueOtp(
   // Inside the cooldown, answer exactly as for an unknown account (no new code):
   // a distinct error here would reveal that the account exists.
   if (recent && Date.now() - recent.createdAt.getTime() < OTP_RESEND_COOLDOWN_SECONDS * 1000) {
+    await hashSecret(generateOtpCode());
     return baseResult;
   }
 
@@ -178,16 +181,19 @@ export async function issueOtp(
     // Never write a login secret to production logs, even with the escape hatch on.
     if (!isProd) console.info(`[securequiz] development OTP for ${user.email}: ${code}`);
   } else {
-    try {
-      await deliverOtp(user.email, code);
-    } catch (error) {
-      // Kill the undelivered code so the resend cooldown does not block a retry.
-      await prisma.otpChallenge.updateMany({
-        where: { id: challenge.id, consumedAt: null },
-        data: { consumedAt: new Date() },
-      });
-      throw error;
-    }
+    // Sent after the response, so email latency cannot tell a real account from an unknown one.
+    after(async () => {
+      try {
+        await deliverOtp(user.email, code);
+      } catch (error) {
+        // Kill the undelivered code so the resend cooldown does not block a retry.
+        await prisma.otpChallenge.updateMany({
+          where: { id: challenge.id, consumedAt: null },
+          data: { consumedAt: new Date() },
+        });
+        console.error('[securequiz] OTP email failed', error);
+      }
+    });
   }
 
   return {

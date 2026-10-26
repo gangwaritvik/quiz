@@ -883,7 +883,8 @@ export async function recomputeAttemptTotals(attemptId: string) {
 
     score += answer.awardedMarks ?? 0;
     if (answer.isCorrect === true) correctCount += 1;
-    else if (answer.isCorrect === false) incorrectCount += 1;
+    // Partial credit is reported as marks, so it is neither a tick nor a cross.
+    else if (answer.isCorrect === false && (answer.awardedMarks ?? 0) <= 0) incorrectCount += 1;
   }
 
   score = Math.max(0, score); // negative marking never drives a total below zero

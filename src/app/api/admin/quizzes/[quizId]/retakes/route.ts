@@ -80,6 +80,10 @@ export const POST = route(async (request: Request, { params }: Params) => {
         'Answers have already been released, so a retake would be sat with the key in view.',
       );
     }
+    // Without this, a double click stacks a second retake on top of one not yet used.
+    if (1 + current > attemptsMade) {
+      throw new ApiError('CONFLICT', 'This student already has an attempt they have not used.');
+    }
     next = grantOne(current, attemptsMade);
     if (next === current) {
       throw new ApiError(

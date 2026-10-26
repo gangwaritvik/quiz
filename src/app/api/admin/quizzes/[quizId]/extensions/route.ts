@@ -120,6 +120,19 @@ export const PUT = route(async (request: Request, { params }: Params) => {
     );
   }
 
+  // A grant made by mistake should not hold back results for the whole quiz. While
+  // nobody has started, the release horizon can follow the largest remaining grant.
+  if (body.minutes < assignment.extraMinutes && (await prisma.quizAttempt.count({ where: { quizId } })) === 0) {
+    const largest = await prisma.quizAssignment.aggregate({
+      where: { quizId },
+      _max: { extraMinutes: true },
+    });
+    await prisma.quiz.update({
+      where: { id: quizId },
+      data: { maxExtensionMinutes: largest._max.extraMinutes ?? 0 },
+    });
+  }
+
   await audit({
     action: 'admin.time_extended',
     userId: session.userId,

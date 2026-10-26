@@ -102,7 +102,8 @@ function numericallyMatches(response: string, accepted: string, tolerance: numbe
   const given = parseNumber(response);
   const expected = parseNumber(accepted);
   if (!Number.isFinite(given) || !Number.isFinite(expected)) return false;
-  return Math.abs(given - expected) <= tolerance;
+  // 1e-9 absorbs floating-point error: 3.14 - 3.13 is 0.010000000000000231, which is not above 0.01.
+  return Math.abs(given - expected) <= tolerance + 1e-9;
 }
 
 /**

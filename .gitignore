@@ -31,3 +31,4 @@ var/
 
 # Local design-critique notes
 .impeccable/
+tests/selenium/shots/

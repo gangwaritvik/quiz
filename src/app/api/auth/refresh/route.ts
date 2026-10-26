@@ -1,5 +1,3 @@
-import { NextResponse } from 'next/server';
-
 import { route } from '@/lib/api';
 import { ROLE_HOME } from '@/lib/roles';
 import { refreshAccessToken } from '@/lib/session';
@@ -12,6 +10,9 @@ export const dynamic = 'force-dynamic';
  * `middleware.ts` redirects here when the access token has aged out but the
  * session is still valid, so navigation does not bounce the user to login.
  */
+// A relative Location, so the redirect never depends on the (forgeable) Host header.
+const redirectTo = (path: string) => new Response(null, { status: 307, headers: { Location: path } });
+
 export const GET = route(async (request: Request) => {
   const url = new URL(request.url);
   const rawNext = url.searchParams.get('next') ?? '';
@@ -28,11 +29,11 @@ export const GET = route(async (request: Request) => {
   const session = await refreshAccessToken();
 
   if (!session) {
-    const loginUrl = new URL('/login', request.url);
+    const loginUrl = new URL('/login', url);
     if (next) loginUrl.searchParams.set('next', next);
     loginUrl.searchParams.set('reason', 'session');
-    return NextResponse.redirect(loginUrl);
+    return redirectTo(loginUrl.pathname + loginUrl.search);
   }
 
-  return NextResponse.redirect(new URL(next ?? ROLE_HOME[session.role], request.url));
+  return redirectTo(next ?? ROLE_HOME[session.role]);
 });
