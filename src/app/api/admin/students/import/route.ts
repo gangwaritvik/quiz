@@ -25,14 +25,16 @@ export const POST = route(async (request: Request) => {
   enforceRateLimit(RATE_LIMITS.adminWrite, `student-import:${session.userId}`);
 
   const body = await parseBody(request, importStudentsSchema);
-  const rows = stripHeader(parseCsv(body.csv), ['name', 'student name']);
+  const parsedRows = parseCsv(body.csv);
+  const rows = stripHeader(parsedRows, ['name', 'student name']);
+  const firstRow = parsedRows.length - rows.length + 1; // row 1 is the header only when one was dropped
 
   const issues: ImportIssue[] = [];
   let imported = 0;
   let skipped = 0;
 
   for (const [index, row] of rows.entries()) {
-    const rowNumber = index + 2;
+    const rowNumber = index + firstRow;
     const [name, email, rollNumber, department, section, semester] = row;
 
     const parsed = createStudentSchema.safeParse({
@@ -41,7 +43,7 @@ export const POST = route(async (request: Request) => {
       rollNumber,
       department,
       section,
-      semester: semester || 1,
+      semester: semester?.trim() ? Number(semester) : 1,
     });
 
     if (!parsed.success) {

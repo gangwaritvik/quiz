@@ -119,6 +119,10 @@ export async function parseBody<S extends ZodTypeAny>(
   request: Request,
   schema: S,
 ): Promise<output<S>> {
+  // 2 MB covers the largest CSV import; chunked bodies are still bounded by the text() read below.
+  if (Number(request.headers.get('content-length')) > 2_000_000) {
+    throw new ApiError('VALIDATION', 'The request is too large.');
+  }
   let raw: unknown;
   try {
     const text = await request.text();

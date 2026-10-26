@@ -17,16 +17,16 @@ Found by the full test pass (see git log). `[x]` = fixed, `[ ]` = open.
 
 ## Open (lower priority)
 
-- [ ] Import row numbers are off by one when the file has no header row (`students/import`, `questions/import`).
-- [ ] "Expected number, received nan" for a blank semester / empty AI-job params.
-- [ ] 409 text says "students" but counts attempts (`quizzes/[quizId]/questions`, `quizzes/[quizId]`).
+- [x] Import row numbers are off by one when the file has no header row (`students/import`, `questions/import`).
+- [x] "Expected number, received nan" for a blank semester / empty AI-job params.
+- [x] 409 text says "students" but counts attempts (`quizzes/[quizId]/questions`, `quizzes/[quizId]`).
 - [ ] Descriptive answer marked partially (e.g. 4.25/5) is counted as incorrect in the stats (`exam.ts` ~1081).
 - [ ] Double-click on "grant retake" grants two (`attempt-policy.ts` `grantOne`).
 - [ ] Extra time can never be lowered once granted (`maxExtensionMinutes` only rises).
-- [ ] `maxWords` is not enforced server-side.
-- [ ] Marks "abc"/99 in a question CSV silently become 1/20 with no row issue.
+- [x] `maxWords` is not enforced server-side.
+- [x] Marks "abc"/99 in a question CSV silently become 1/20 with no row issue.
 - [ ] OTP request timing differs for known vs unknown accounts (`otp.ts`).
-- [ ] OTP request accepts very large bodies (no size guard before `request.json()`).
+- [x] OTP request accepts very large bodies (no size guard before `request.json()`).
 - [ ] `/api/auth/refresh` redirect trusts the Host header (safe behind the proxy only).
 - [ ] `npm audit`: next 15.5.25 (critical), zod, prisma, sharp, postcss. Update before deploying.
 - [ ] Not yet tested: student/auth API sweep and browser UI (both testers hit the usage limit); real second-faculty ownership check.

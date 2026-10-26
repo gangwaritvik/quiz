@@ -591,6 +591,7 @@ async function loadAttemptQuestion(attemptQuestionId: string, attemptId: string)
         select: {
           type: true,
           maxAttachments: true,
+          maxWords: true,
           options: { select: { id: true } },
         },
       },
@@ -644,7 +645,13 @@ export async function saveAnswer(params: SaveAnswerInput) {
   if (type === 'SHORT_ANSWER' || type === 'LONG_ANSWER') {
     if (params.textResponse !== undefined) {
       const limit = type === 'SHORT_ANSWER' ? MAX_SHORT_ANSWER_CHARS : MAX_LONG_ANSWER_CHARS;
-      const value = (params.textResponse ?? '').slice(0, limit);
+      let value = (params.textResponse ?? '').slice(0, limit);
+      const maxWords = attemptQuestion.question.maxWords;
+      if (maxWords) {
+        // Same silent cap as the character limit; the editor warns before this is reached.
+        const words = value.match(/\S+\s*/g) ?? [];
+        if (words.length > maxWords) value = words.slice(0, maxWords).join('').trimEnd();
+      }
       textResponse = value.trim().length === 0 ? null : value;
     }
   }

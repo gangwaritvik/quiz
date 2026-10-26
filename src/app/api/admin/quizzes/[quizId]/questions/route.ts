@@ -82,7 +82,7 @@ export const PUT = route(async (request: Request, { params }: Params) => {
   if (quiz._count.attempts > 0) {
     throw new ApiError(
       'CONFLICT',
-      `${quiz._count.attempts} student${quiz._count.attempts === 1 ? ' has' : 's have'} already been served this paper, so its questions can no longer be changed. Duplicate the quiz instead if you need a corrected version.`,
+      `${quiz._count.attempts} attempt${quiz._count.attempts === 1 ? ' has' : 's have'} already been made on this paper, so its questions can no longer be changed. Duplicate the quiz instead if you need a corrected version.`,
     );
   }
 

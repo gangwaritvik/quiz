@@ -154,7 +154,9 @@ export const POST = route(async (request: Request) => {
   });
   if (!subject) throw new ApiError('VALIDATION', 'Select a valid subject.');
 
-  const rows = stripHeader(parseCsv(body.csv), ['question', 'question text']);
+  const parsedRows = parseCsv(body.csv);
+  const rows = stripHeader(parsedRows, ['question', 'question text']);
+  const firstRow = parsedRows.length - rows.length + 1; // row 1 is the header only when one was dropped
   if (rows.length === 0) throw new ApiError('VALIDATION', 'The file contains no data rows.');
   if (rows.length > 1000) {
     throw new ApiError('VALIDATION', 'Import files are limited to 1000 questions at a time.');
@@ -166,7 +168,7 @@ export const POST = route(async (request: Request) => {
   const created: Array<{ id: string; row: number }> = [];
 
   for (const [index, row] of rows.entries()) {
-    const rowNumber = index + 2; // +1 for zero-index, +1 for the header row
+    const rowNumber = index + firstRow;
     const [
       text,
       a,
@@ -232,13 +234,17 @@ export const POST = route(async (request: Request) => {
       topicId = topic.id;
     }
 
-    const parsedMarks = Number.parseInt(marks ?? '1', 10);
+    const parsedMarks = Number.parseInt(marks?.trim() || '1', 10);
+    if (!Number.isInteger(parsedMarks) || parsedMarks < 1 || parsedMarks > 20) {
+      issues.push({ row: rowNumber, message: 'Marks must be a whole number from 1 to 20.' });
+      continue;
+    }
 
     const data: Prisma.QuestionUncheckedCreateInput = {
       text: text.trim(),
       type,
       difficulty: normalisedDifficulty as 'EASY' | 'MEDIUM' | 'HARD',
-      marks: Number.isFinite(parsedMarks) ? Math.min(20, Math.max(1, parsedMarks)) : 1,
+      marks: parsedMarks,
       explanation: explanation?.trim() || null,
       subjectId: subject.id,
       topicId,

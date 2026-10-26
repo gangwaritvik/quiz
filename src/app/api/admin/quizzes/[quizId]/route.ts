@@ -272,7 +272,7 @@ export const DELETE = route(async (request: Request, { params }: Params) => {
   if (quiz._count.attempts > 0) {
     throw new ApiError(
       'CONFLICT',
-      `${quiz._count.attempts} student${quiz._count.attempts === 1 ? ' has' : 's have'} attempted this quiz, so it cannot be deleted — that would erase their examination record. Archive it instead.`,
+      `${quiz._count.attempts} attempt${quiz._count.attempts === 1 ? ' has' : 's have'} been made on this quiz, so it cannot be deleted — that would erase their examination record. Archive it instead.`,
     );
   }
 
